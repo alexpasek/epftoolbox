@@ -1,26 +1,748 @@
+/* Tailwind v4 entry */
+
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+/* Tailwind color token so classes like text-brand / border-brand work */
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+    --color-brand: #e11d48;
+    /* rose red */
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+
+/* ===== EPF Estimate Builder (scoped with .epf wrapper) ===== */
+
+.epf {
+    --brand: #e11d48;
+    /* primary red used inside estimate */
+    --ink: #0f172a;
+    --muted: #64748b;
+    --line: #e5e7eb;
+    --bg: #f8fafc;
+    color: var(--ink);
+    font: 14px/1.5 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+
+/* So Tailwind doesn’t get overridden globally */
+
+.epf *,
+.epf *::before,
+.epf *::after {
+    box-sizing: border-box;
+}
+
+
+/* Main “paper” */
+
+.epf .page {
+    width: 100%;
+    max-width: 980px;
+    margin: 16px auto 24px;
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    overflow: hidden;
+    box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
+}
+
+
+/* Header strip */
+
+.epf .header {
+    display: grid;
+    grid-template-columns: 1.2fr auto 1fr;
+    align-items: center;
+    gap: 8px;
+    padding: 14px 18px;
+    border-bottom: 3px solid var(--brand);
+    background: radial-gradient(circle at top left, #fecaca 0, #ffffff 55%);
+}
+
+
+/* Brand + logo */
+
+.epf .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.epf .logo {
+    width: 52px;
+    height: 52px;
+    border: 2px solid var(--brand);
+    border-radius: 12px;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    background: #fff;
+}
+
+.epf .logo img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.epf .title {
+    text-align: center;
+}
+
+.epf .title h1 {
+    margin: 0;
+    font-size: 22px;
+    letter-spacing: 0.3px;
+}
+
+.epf .title small {
+    color: var(--muted);
+}
+
+.epf .badge {
+    justify-self: end;
+    border: 2px solid var(--brand);
+    color: var(--brand);
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-weight: 800;
+}
+
+
+/* Review bar */
+
+.epf .reviewBar {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 18px;
+    background: #fff;
+    border-bottom: 1px solid var(--line);
+}
+
+.epf .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    border: 1px solid var(--line);
+    background: #f9fafb;
+}
+
+.epf .pill .stars {
+    font-size: 12px;
+    color: #fbbf24;
+}
+
+.epf .pill.hs {
+    border-color: #06b6d4;
+    color: #0e7490;
+}
+
+.epf .pill.g {
+    border-color: #22c55e;
+    color: #166534;
+}
+
+
+/* Top “Estimate to / Job details” cards */
+
+.epf .block {
+    padding: 16px 18px;
+}
+
+.epf .grid2 {
+    display: grid;
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+    gap: 12px;
+}
+
+.epf .card {
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 10px 12px;
+    background: #fff;
+    box-shadow: 0 2px 4px rgba(15, 23, 42, 0.03);
+}
+
+.epf .card h3 {
+    margin: 0 0 6px;
+    font-size: 13px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.25px;
+}
+
+.epf .row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 4px;
+}
+
+.epf .kv {
+    flex: 1;
+}
+
+.epf .kv label {
+    display: block;
+    font-size: 11px;
+    color: var(--muted);
+}
+
+
+/* Inputs look like neat rectangles */
+
+.epf .kv input,
+.epf .kv div[contenteditable],
+.epf input.qty,
+.epf input.unit,
+.epf input.rate,
+.epf input.amt {
+    width: 100%;
+    border-radius: 8px;
+    border: 1px solid #d4d4d8;
+    outline: none;
+    font-size: 13px;
+    padding: 4px 8px;
+    background: #f9fafb;
+}
+
+.epf select.unit {
+    width: 100%;
+    border-radius: 8px;
+    border: 1px solid #d4d4d8;
+    outline: none;
+    font-size: 13px;
+    padding: 4px 8px;
+    background: #f9fafb;
+}
+
+.epf select.unit:focus {
+    border-color: var(--brand);
+    box-shadow: 0 0 0 1px rgba(225, 29, 72, 0.18);
+    background: #ffffff;
+}
+
+.epf .kv input:focus,
+.epf input.qty:focus,
+.epf input.unit:focus,
+.epf input.rate:focus {
+    border-color: var(--brand);
+    box-shadow: 0 0 0 1px rgba(225, 29, 72, 0.18);
+    background: #ffffff;
+}
+
+.epf div[contenteditable] {
+    min-height: 24px;
+}
+
+
+/* Service toggles */
+
+.epf .services {
+    padding: 0 18px 6px;
+}
+
+.epf .services .card label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 4px 0;
+    font-size: 13px;
+}
+
+.epf .services .card small {
+    display: block;
+    margin-top: 4px;
+    color: var(--muted);
+    font-size: 11px;
+}
+
+
+/* Sections */
+
+.epf .sec {
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    margin: 12px 18px;
+    background: #fff;
+    overflow: hidden;
+}
+
+.epf .secHead {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--line);
+    gap: 10px;
+    background: #f9fafb;
+}
+
+.epf .secTitle {
+    font-weight: 700;
+}
+
+.epf .secTog {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    color: var(--muted);
+    font-size: 12px;
+}
+
+.epf .secTog button.btn {
+    padding-inline: 10px;
+    padding-block: 5px;
+}
+
+.epf .secDesc {
+    padding: 8px 14px 12px;
+    color: #111827;
+    background: #fefefe;
+}
+
+.epf .secDesc[contenteditable] {
+    outline: 1px dashed #e5e7eb;
+    border-radius: 8px;
+}
+
+.epf .sec[data-enabled="0"] {
+    display: none;
+}
+
+
+/* Tables */
+
+.epf .tableWrap {
+    padding: 0 14px 12px;
+}
+
+.epf table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+}
+
+.epf thead th {
+    background: #f9fafb;
+    color: #111827;
+    text-transform: uppercase;
+    font-size: 11px;
+    letter-spacing: 0.25px;
+    border-bottom: 1px solid var(--line);
+}
+
+.epf th,
+.epf td {
+    padding: 9px 10px;
+    border-bottom: 1px solid var(--line);
+    vertical-align: top;
+    font-size: 13px;
+}
+
+.epf td.num,
+.epf th.num {
+    text-align: right;
+}
+
+.epf tbody tr:nth-child(even) {
+    background: #fdfdfd;
+}
+
+.epf tbody tr:hover {
+    background: #f9fafb;
+}
+
+.epf td .small {
+    color: var(--muted);
+    font-size: 11px;
+}
+
+.epf .roomHeader td {
+    font-weight: 700;
+    background: #fef2f2;
+}
+
+
+/* Buttons / controls row */
+
+.epf .controls {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin: 12px 18px;
+    align-items: center;
+}
+
+.epf .btn {
+    border: 1px solid var(--line);
+    background: #fff;
+    padding: 8px 12px;
+    border-radius: 999px;
+    cursor: pointer;
+    font-size: 13px;
+    transition: box-shadow 0.15s ease, transform 0.02s ease, background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.epf .btn:hover {
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
+}
+
+.epf .btn:active {
+    transform: translateY(1px);
+}
+
+.epf .btn.primary {
+    background: var(--brand);
+    border-color: var(--brand);
+    color: #fff;
+}
+
+.epf .btn.ghost {
+    background: #fff;
+}
+
+.epf .btn.del {
+    padding: 4px 8px;
+    border-radius: 999px;
+}
+
+
+/* Totals area */
+
+.epf .sum {
+    display: grid;
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 360px);
+    gap: 16px;
+    padding: 12px 18px 18px;
+}
+
+@media (max-width: 800px) {
+    .epf .grid2 {
+        grid-template-columns: minmax(0, 1fr);
+    }
+    .epf .sum {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+.epf .sumBox {
+    border: 2px solid var(--brand);
+    border-radius: 14px;
+    padding: 12px;
+    background: #fef2f2;
+}
+
+.epf .sumRow {
+    display: flex;
+    justify-content: space-between;
+    padding: 6px 0;
+    border-bottom: 1px dashed var(--line);
+    font-size: 13px;
+}
+
+.epf .sumRow:last-child {
+    border-bottom: 0;
+}
+
+.epf .sumRow strong {
+    font-size: 18px;
+}
+
+
+/* Footer */
+
+.epf .footer {
+    padding: 14px 18px 18px;
+    border-top: 1px solid var(--line);
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 10px;
+    color: var(--muted);
+    font-size: 12px;
+}
+
+
+/* Customer mode: hide rates & internal lines (screen) */
+
+body.customer .epf .col-rate,
+body.customer .epf td.col-rate,
+body.customer .epf th.col-rate,
+body.customer .epf input.rate {
+    display: none !important;
+}
+
+body.customer .epf tr.private {
+    display: none !important;
+}
+
+body.customer .epf .sec[data-hide-customer="1"] {
+    display: none !important;
+}
+
+
+/* Keep room headers always visible in customer mode */
+
+body.customer .epf .sec .roomHeader {
+    display: table-row !important;
+}
+
+
+/* ===== COLOR-CODED SERVICE SECTIONS (screen + print) ===== */
+
+
+/* POPCORN / STUCCO — deep blue */
+
+.epf #sec-popcorn {
+    border-color: #1d4ed8;
+    /* deep blue */
+    background: #eff6ff;
+    /* very light blue */
+}
+
+.epf #sec-popcorn .secHead {
+    background: #dbeafe;
+}
+
+.epf #sec-popcorn .secDesc,
+.epf #sec-popcorn .tableWrap {
+    background: #eff6ff;
+}
+
+.epf #sec-popcorn .roomHeader td {
+    background: #bfdbfe;
+}
+
+.epf #sec-popcorn .secTitle {
+    color: #1e293b;
+}
+
+
+/* INTERIOR PAINTING — warm amber */
+
+.epf #sec-paint {
+    border-color: #ea580c;
+    /* strong orange */
+    background: #fff7ed;
+    /* light warm */
+}
+
+.epf #sec-paint .secHead {
+    background: #fed7aa;
+}
+
+.epf #sec-paint .secDesc,
+.epf #sec-paint .tableWrap {
+    background: #fff7ed;
+}
+
+.epf #sec-paint .roomHeader td {
+    background: #fed7aa;
+}
+
+.epf #sec-paint .secTitle {
+    color: #7c2d12;
+}
+
+
+/* ADDITIONAL SERVICES — rich green */
+
+.epf #sec-add {
+    border-color: #15803d;
+    /* rich green */
+    background: #f0fdf4;
+    /* light green */
+}
+
+.epf #sec-add .secHead {
+    background: #bbf7d0;
+}
+
+.epf #sec-add .secDesc,
+.epf #sec-add .tableWrap {
+    background: #f0fdf4;
+}
+
+.epf #sec-add .roomHeader td {
+    background: #bbf7d0;
+}
+
+.epf #sec-add .secTitle {
+    color: #14532d;
+}
+
+
+/* Tables stay white for readability */
+
+.epf #sec-popcorn table,
+.epf #sec-paint table,
+.epf #sec-add table {
+    background: #ffffff;
+}
+
+.epf #sec-popcorn th,
+.epf #sec-paint th,
+.epf #sec-add th {
+    background: #f8fafc;
+}
+
+
+/* ===== PRINT / PDF STYLES ===== */
+
+@media print {
+    body {
+        background: #ffffff;
+    }
+    .epf .page {
+        border: 0;
+        border-radius: 0;
+        margin: 0;
+        max-width: none;
+        box-shadow: none;
+    }
+    /* Hide builder controls in PDF */
+    .epf .services,
+    .epf .controls,
+    .epf .secTog,
+    .epf .btn {
+        display: none !important;
+    }
+    /* Hide internal/private rows + rates in PDF */
+    .epf tr.private {
+        display: none !important;
+    }
+    .epf .col-rate,
+    .epf input.rate {
+        display: none !important;
+    }
+    /* NOTE: we do NOT hide .sec[data-hide-customer="1"] here anymore.
+     Customer hiding is controlled only by body.customer in screen/print. */
+    /* Keep sections / totals together on page breaks */
+    body.keep-sections .epf .sec {
+        break-inside: avoid;
+        page-break-inside: avoid;
+    }
+    .epf .sum,
+    .epf .sumBox,
+    .epf .sum .card {
+        break-inside: avoid;
+        page-break-inside: avoid;
+    }
+    @page {
+        size: Letter;
+        margin: 18mm 12mm 14mm;
+        /* extra top margin for both pages */
+    }
+    /* Small gap above each section that follows another section */
+    .epf .sec+.sec::before {
+        content: "";
+        display: block;
+        height: 4mm;
+        /* adjusts vertical offset when new page starts with a section */
+    }
+    /* ===== Service picker (Jobber-style bottom sheet) ===== */
+    .epf-service-picker {
+        position: fixed;
+        inset: 0;
+        display: none;
+        align-items: flex-end;
+        justify-content: center;
+        z-index: 9999;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    .epf-service-picker.open {
+        display: flex;
+    }
+    .epf-service-picker .esp-backdrop {
+        position: absolute;
+        inset: 0;
+        background: rgba(15, 23, 42, 0.35);
+    }
+    .epf-service-picker .esp-panel {
+        position: relative;
+        width: 100%;
+        max-width: 480px;
+        max-height: 70vh;
+        border-radius: 16px 16px 0 0;
+        background: #ffffff;
+        box-shadow: 0 -10px 30px rgba(15, 23, 42, 0.35);
+        padding: 8px 12px 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+    .epf-service-picker .esp-header {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+    }
+    .epf-service-picker .esp-search {
+        flex: 1;
+        border-radius: 999px;
+        border: 1px solid #d4d4d8;
+        padding: 6px 10px;
+        font-size: 14px;
+    }
+    .epf-service-picker .esp-close-btn {
+        border-radius: 999px;
+        border: 1px solid #d4d4d8;
+        padding: 6px 10px;
+        font-size: 13px;
+        background: #f9fafb;
+    }
+    .epf-service-picker .esp-list {
+        overflow-y: auto;
+        padding-top: 4px;
+    }
+    .epf-service-picker .esp-item {
+        width: 100%;
+        border: 0;
+        background: #f9fafb;
+        border-radius: 12px;
+        padding: 8px 10px;
+        margin-bottom: 6px;
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 8px;
+        text-align: left;
+        cursor: pointer;
+    }
+    .epf-service-picker .esp-item:hover {
+        background: #eef2ff;
+    }
+    .epf-service-picker .esp-name {
+        font-size: 14px;
+        font-weight: 600;
+        color: #0f172a;
+    }
+    .epf-service-picker .esp-desc {
+        font-size: 12px;
+        color: #6b7280;
+        margin-top: 2px;
+    }
+    .epf-service-picker .esp-price {
+        font-size: 13px;
+        font-weight: 600;
+        color: #0f172a;
+        white-space: nowrap;
+    }
+    .epf-service-picker .esp-empty {
+        font-size: 13px;
+        color: #6b7280;
+        padding: 8px 4px;
+    }
+    @media print {
+        .epf-service-picker {
+            display: none !important;
+        }
+    }
 }
