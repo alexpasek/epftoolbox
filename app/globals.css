@@ -471,7 +471,7 @@
 }
 
 
-/* Customer mode: hide rates & internal lines (screen) */
+/* Customer mode: hide rates & internal lines (screen + print via .customer) */
 
 body.customer .epf .col-rate,
 body.customer .epf td.col-rate,
@@ -484,118 +484,139 @@ body.customer .epf tr.private {
     display: none !important;
 }
 
+
+/* Whole section hidden when "Hide from customer" is checked */
+
 body.customer .epf .sec[data-hide-customer="1"] {
     display: none !important;
 }
 
 
-/* Keep room headers always visible in customer mode */
+/* But always keep room headers visible */
 
 body.customer .epf .sec .roomHeader {
     display: table-row !important;
 }
 
 
-/* ===== COLOR-CODED SERVICE SECTIONS (screen + print) ===== */
+/* ===== Service picker (Jobber-style bottom sheet) ===== */
 
-
-/* POPCORN / STUCCO — deep blue */
-
-.epf #sec-popcorn {
-    border-color: #1d4ed8;
-    /* deep blue */
-    background: #eff6ff;
-    /* very light blue */
+.epf-service-picker {
+    position: fixed;
+    inset: 0;
+    display: none;
+    align-items: flex-end;
+    justify-content: center;
+    z-index: 9999;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
-.epf #sec-popcorn .secHead {
-    background: #dbeafe;
+.epf-service-picker.open {
+    display: flex;
 }
 
-.epf #sec-popcorn .secDesc,
-.epf #sec-popcorn .tableWrap {
-    background: #eff6ff;
+.epf-service-picker .esp-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.35);
 }
 
-.epf #sec-popcorn .roomHeader td {
-    background: #bfdbfe;
-}
-
-.epf #sec-popcorn .secTitle {
-    color: #1e293b;
-}
-
-
-/* INTERIOR PAINTING — warm amber */
-
-.epf #sec-paint {
-    border-color: #ea580c;
-    /* strong orange */
-    background: #fff7ed;
-    /* light warm */
-}
-
-.epf #sec-paint .secHead {
-    background: #fed7aa;
-}
-
-.epf #sec-paint .secDesc,
-.epf #sec-paint .tableWrap {
-    background: #fff7ed;
-}
-
-.epf #sec-paint .roomHeader td {
-    background: #fed7aa;
-}
-
-.epf #sec-paint .secTitle {
-    color: #7c2d12;
-}
-
-
-/* ADDITIONAL SERVICES — rich green */
-
-.epf #sec-add {
-    border-color: #15803d;
-    /* rich green */
-    background: #f0fdf4;
-    /* light green */
-}
-
-.epf #sec-add .secHead {
-    background: #bbf7d0;
-}
-
-.epf #sec-add .secDesc,
-.epf #sec-add .tableWrap {
-    background: #f0fdf4;
-}
-
-.epf #sec-add .roomHeader td {
-    background: #bbf7d0;
-}
-
-.epf #sec-add .secTitle {
-    color: #14532d;
-}
-
-
-/* Tables stay white for readability */
-
-.epf #sec-popcorn table,
-.epf #sec-paint table,
-.epf #sec-add table {
+.epf-service-picker .esp-panel {
+    position: relative;
+    width: 100%;
+    max-width: 480px;
+    max-height: 70vh;
+    border-radius: 16px 16px 0 0;
     background: #ffffff;
+    box-shadow: 0 -10px 30px rgba(15, 23, 42, 0.35);
+    padding: 8px 12px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
 }
 
-.epf #sec-popcorn th,
-.epf #sec-paint th,
-.epf #sec-add th {
-    background: #f8fafc;
+.epf-service-picker .esp-header {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.epf-service-picker .esp-search {
+    flex: 1;
+    border-radius: 999px;
+    border: 1px solid #d4d4d8;
+    padding: 6px 10px;
+    font-size: 14px;
+}
+
+.epf-service-picker .esp-close-btn {
+    border-radius: 999px;
+    border: 1px solid #d4d4d8;
+    padding: 6px 10px;
+    font-size: 13px;
+    background: #f9fafb;
+}
+
+.epf-service-picker .esp-list {
+    overflow-y: auto;
+    padding-top: 4px;
+}
+
+.epf-service-picker .esp-item {
+    width: 100%;
+    border: 0;
+    background: #f9fafb;
+    border-radius: 12px;
+    padding: 8px 10px;
+    margin-bottom: 6px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 8px;
+    text-align: left;
+    cursor: pointer;
+}
+
+.epf-service-picker .esp-item:hover {
+    background: #eef2ff;
+}
+
+.epf-service-picker .esp-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: #0f172a;
+}
+
+.epf-service-picker .esp-desc {
+    font-size: 12px;
+    color: #6b7280;
+    margin-top: 2px;
+}
+
+.epf-service-picker .esp-price {
+    font-size: 13px;
+    font-weight: 600;
+    color: #0f172a;
+    white-space: nowrap;
+}
+
+.epf-service-picker .esp-empty {
+    font-size: 13px;
+    color: #6b7280;
+    padding: 8px 4px;
 }
 
 
-/* ===== PRINT / PDF STYLES ===== */
+/* Do NOT show picker in PDF */
+
+@media print {
+    .epf-service-picker {
+        display: none !important;
+    }
+}
+
+
+/* ===== PRINT / PDF LAYOUT ===== */
 
 @media print {
     body {
@@ -615,16 +636,6 @@ body.customer .epf .sec .roomHeader {
     .epf .btn {
         display: none !important;
     }
-    /* Hide internal/private rows + rates in PDF */
-    .epf tr.private {
-        display: none !important;
-    }
-    .epf .col-rate,
-    .epf input.rate {
-        display: none !important;
-    }
-    /* NOTE: we do NOT hide .sec[data-hide-customer="1"] here anymore.
-     Customer hiding is controlled only by body.customer in screen/print. */
     /* Keep sections / totals together on page breaks */
     body.keep-sections .epf .sec {
         break-inside: avoid;
@@ -639,110 +650,11 @@ body.customer .epf .sec .roomHeader {
     @page {
         size: Letter;
         margin: 18mm 12mm 14mm;
-        /* extra top margin for both pages */
     }
     /* Small gap above each section that follows another section */
     .epf .sec+.sec::before {
         content: "";
         display: block;
         height: 4mm;
-        /* adjusts vertical offset when new page starts with a section */
-    }
-    /* ===== Service picker (Jobber-style bottom sheet) ===== */
-    .epf-service-picker {
-        position: fixed;
-        inset: 0;
-        display: none;
-        align-items: flex-end;
-        justify-content: center;
-        z-index: 9999;
-        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    }
-    .epf-service-picker.open {
-        display: flex;
-    }
-    .epf-service-picker .esp-backdrop {
-        position: absolute;
-        inset: 0;
-        background: rgba(15, 23, 42, 0.35);
-    }
-    .epf-service-picker .esp-panel {
-        position: relative;
-        width: 100%;
-        max-width: 480px;
-        max-height: 70vh;
-        border-radius: 16px 16px 0 0;
-        background: #ffffff;
-        box-shadow: 0 -10px 30px rgba(15, 23, 42, 0.35);
-        padding: 8px 12px 12px;
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-    }
-    .epf-service-picker .esp-header {
-        display: flex;
-        gap: 8px;
-        align-items: center;
-    }
-    .epf-service-picker .esp-search {
-        flex: 1;
-        border-radius: 999px;
-        border: 1px solid #d4d4d8;
-        padding: 6px 10px;
-        font-size: 14px;
-    }
-    .epf-service-picker .esp-close-btn {
-        border-radius: 999px;
-        border: 1px solid #d4d4d8;
-        padding: 6px 10px;
-        font-size: 13px;
-        background: #f9fafb;
-    }
-    .epf-service-picker .esp-list {
-        overflow-y: auto;
-        padding-top: 4px;
-    }
-    .epf-service-picker .esp-item {
-        width: 100%;
-        border: 0;
-        background: #f9fafb;
-        border-radius: 12px;
-        padding: 8px 10px;
-        margin-bottom: 6px;
-        display: flex;
-        justify-content: space-between;
-        align-items: flex-start;
-        gap: 8px;
-        text-align: left;
-        cursor: pointer;
-    }
-    .epf-service-picker .esp-item:hover {
-        background: #eef2ff;
-    }
-    .epf-service-picker .esp-name {
-        font-size: 14px;
-        font-weight: 600;
-        color: #0f172a;
-    }
-    .epf-service-picker .esp-desc {
-        font-size: 12px;
-        color: #6b7280;
-        margin-top: 2px;
-    }
-    .epf-service-picker .esp-price {
-        font-size: 13px;
-        font-weight: 600;
-        color: #0f172a;
-        white-space: nowrap;
-    }
-    .epf-service-picker .esp-empty {
-        font-size: 13px;
-        color: #6b7280;
-        padding: 8px 4px;
-    }
-    @media print {
-        .epf-service-picker {
-            display: none !important;
-        }
     }
 }

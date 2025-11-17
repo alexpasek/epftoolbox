@@ -179,6 +179,7 @@ function InvoiceBasicPageInner() {
 
     localStorage.setItem("epf.invoices", JSON.stringify(list));
     localStorage.setItem("epf.invoiceDraft", JSON.stringify(toSave));
+    // eslint-disable-next-line no-alert
     alert("Invoice saved.");
   };
 

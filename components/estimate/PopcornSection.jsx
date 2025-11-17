@@ -3,12 +3,12 @@
 export default function PopcornSection() {
   return (
     <section
-      className="sec"
       id="sec-popcorn"
+      className="sec"
       data-enabled="1"
       data-hide-customer="0"
-      data-linksf="1"
       data-height="1"
+      data-linksf="1"
     >
       <div className="secHead">
         <div
@@ -16,14 +16,40 @@ export default function PopcornSection() {
           contentEditable
           suppressContentEditableWarning
         >
-          Popcorn / Stucco Removal — Ceilings
+          Popcorn / Stucco Ceiling Removal
+        </div>
+        <div className="secDesc" contentEditable suppressContentEditableWarning>
+          Dust-controlled removal, Level 5 skim, HEPA sanding, priming, and
+          ceiling ready for final paint.
         </div>
       </div>
-      <div className="secDesc" contentEditable suppressContentEditableWarning>
-        We safely remove textured ceiling, repair joints, and finish to a smooth
-        surface. Clean, dust-controlled process with masking, HEPA vacuuming,
-        and daily cleanup.
+
+      <div className="secTools">
+        <div className="row">
+          <label>
+            Ceiling height:
+            <select className="heightSel">
+              <option value="1">Up to 9'</option>
+              <option value="1.15">10–11'</option>
+              <option value="1.3">12'+ / vaulted</option>
+            </select>
+          </label>
+          <label>
+            <input className="linkSF" type="checkbox" defaultChecked /> Link SF
+            within each room
+          </label>
+        </div>
+        <div className="row">
+          <button className="btn ghost addRoomPop">＋ Add Room</button>
+          <button className="btn ghost addLine">＋ Add line</button>
+          <button className="btn ghost resetPop">Reset rooms</button>
+          <button className="btn ghost clearSection">Clear section</button>
+          <label>
+            <input type="checkbox" className="hideSec" /> Hide from customer
+          </label>
+        </div>
       </div>
+
       <div className="tableWrap">
         <table>
           <thead>
@@ -42,31 +68,8 @@ export default function PopcornSection() {
               <th style={{ width: "4%" }}></th>
             </tr>
           </thead>
-          <tbody id="tb-popcorn"></tbody>
+          <tbody id="tb-popcorn">{/* JS adds rooms here */}</tbody>
         </table>
-      </div>
-      <div className="secTog secTog-bottom">
-        <label>
-          <input type="checkbox" className="hideSec" /> Hide from customer
-        </label>
-        <button className="btn ghost addRoomPop">＋ Add room</button>
-        <button className="btn ghost addLine">＋ Add line</button>
-        <button className="btn ghost clearSection">Clear section</button>
-        <button className="btn ghost resetPop">Reset popcorn</button>
-        <span>|</span>
-        <label>
-          Height{" "}
-          <select className="heightSel">
-            <option value="1">8′ (std)</option>
-            <option value="1.1">9′ (+10%)</option>
-            <option value="1.2">10′ (+20%)</option>
-            <option value="1.35">12′ (+35%)</option>
-          </select>
-        </label>
-        <label>
-          <input type="checkbox" className="linkSF" defaultChecked /> Link SF
-          (same qty for all ceiling lines)
-        </label>
       </div>
     </section>
   );

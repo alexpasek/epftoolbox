@@ -332,6 +332,7 @@ export default function EstimateBuilderPage() {
 
     const $ = (sel, root = document) => root.querySelector(sel);
     const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+
     // ===== Service picker (bottom sheet, like Jobber) =====
     let pickerTargetRow = null;
     let pickerSectionId = null;
@@ -343,15 +344,15 @@ export default function EstimateBuilderPage() {
       pickerRoot.id = "epf-service-picker";
       pickerRoot.className = "epf-service-picker";
       pickerRoot.innerHTML = `
-            <div class="esp-backdrop"></div>
-            <div class="esp-panel">
-              <div class="esp-header">
-                <input class="esp-search" type="text" placeholder="Search service…" />
-                <button type="button" class="esp-close-btn">Close</button>
-              </div>
-              <div class="esp-list"></div>
-            </div>
-          `;
+        <div class="esp-backdrop"></div>
+        <div class="esp-panel">
+          <div class="esp-header">
+            <input class="esp-search" type="text" placeholder="Search service…" />
+            <button type="button" class="esp-close-btn">Close</button>
+          </div>
+          <div class="esp-list"></div>
+        </div>
+      `;
       document.body.appendChild(pickerRoot);
     }
 
@@ -375,9 +376,9 @@ export default function EstimateBuilderPage() {
 
       if (descCell) {
         descCell.innerHTML = `
-              ${tmpl.name}
-              <div class="small">${tmpl.desc}</div>
-            `;
+          ${tmpl.name}
+          <div class="small">${tmpl.desc}</div>
+        `;
       }
       if (
         qtyInput &&
@@ -424,12 +425,12 @@ export default function EstimateBuilderPage() {
         btn.type = "button";
         btn.className = "esp-item";
         btn.innerHTML = `
-              <div class="esp-main">
-                <div class="esp-name">${tmpl.name}</div>
-                <div class="esp-desc">${tmpl.desc}</div>
-              </div>
-              <div class="esp-price">$${(tmpl.rate ?? 0).toFixed(2)}</div>
-            `;
+          <div class="esp-main">
+            <div class="esp-name">${tmpl.name}</div>
+            <div class="esp-desc">${tmpl.desc}</div>
+          </div>
+          <div class="esp-price">$${(tmpl.rate ?? 0).toFixed(2)}</div>
+        `;
         btn.addEventListener("click", () => {
           applyServiceTemplate(tmpl);
           recalc();
@@ -470,7 +471,7 @@ export default function EstimateBuilderPage() {
     const d = $("#date");
     if (d && !d.value) d.value = new Date().toISOString().slice(0, 10);
 
-    // Customer view toggle
+    // Customer view toggle (screen only)
     $("#toggleCustomer")?.addEventListener("click", () => {
       document.body.classList.toggle("customer");
     });
@@ -555,7 +556,7 @@ export default function EstimateBuilderPage() {
     // Delegated clicks
     document.addEventListener("click", (e) => {
       const t = e.target;
-      if (t.classList.contains("chooseService")) {
+      if (t.classList && t.classList.contains("chooseService")) {
         const row = t.closest("tr");
         if (row) {
           openServicePicker(row);
@@ -778,7 +779,6 @@ export default function EstimateBuilderPage() {
       if (tb) tb.appendChild(tr);
     }
 
-
     function addPopRoom(roomLabel, type) {
       const tb = $("#tb-popcorn");
       const group =
@@ -835,7 +835,7 @@ export default function EstimateBuilderPage() {
         desc: "Ceiling priming (internal)",
         unit: "sf",
         rate: 1.0,
-        privateRow: true,
+        privateRow: false,
         group,
         role: "prime",
       });
@@ -843,7 +843,7 @@ export default function EstimateBuilderPage() {
         desc: "Ceiling paint (2 coats, internal)",
         unit: "sf",
         rate: 2.0,
-        privateRow: true,
+        privateRow: false,
         group,
         role: "paint",
       });
@@ -881,7 +881,7 @@ export default function EstimateBuilderPage() {
       hdr.innerHTML = `<td colspan="6">${roomLabel}</td>`;
       tb.appendChild(hdr);
 
-      // customer-visible
+      // customer-visible rows
       addRow(sec, {
         desc: "Walls paint",
         unit: "ea",
@@ -971,7 +971,25 @@ export default function EstimateBuilderPage() {
     // init
     initPopcornDefaults();
     recalc();
+
+    // ===== AUTO CUSTOMER VIEW FOR PRINT =====
+    let hadCustomerClass = false;
+
+    function handleBeforePrint() {
+      hadCustomerClass = document.body.classList.contains("customer");
+      document.body.classList.add("customer");
+    }
+
+    function handleAfterPrint() {
+      if (!hadCustomerClass) {
+        document.body.classList.remove("customer");
+      }
+    }
+
+    window.addEventListener("beforeprint", handleBeforePrint);
+    window.addEventListener("afterprint", handleAfterPrint);
   }, []);
+  
 
   return (
     <main className="min-h-screen bg-slate-100 py-4 px-2 md:px-4">
