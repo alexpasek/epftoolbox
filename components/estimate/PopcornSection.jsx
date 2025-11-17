@@ -1,5 +1,3 @@
-// components/estimate/PopcornSection.jsx
-
 export default function PopcornSection() {
   return (
     <section
@@ -10,66 +8,63 @@ export default function PopcornSection() {
       data-height="1"
       data-linksf="1"
     >
-      <div className="secHead">
-        <div
-          className="secTitle"
-          contentEditable
-          suppressContentEditableWarning
-        >
-          Popcorn / Stucco Ceiling Removal
+      <div className="card">
+        <div className="secHead">
+          <h3 className="secTitle">Popcorn / Stucco Removal</h3>
+          <div className="opts">
+            <label>
+              Height factor{" "}
+              <select className="heightSel" defaultValue="1">
+                <option value="1">1×</option>
+                <option value="1.1">1.1×</option>
+                <option value="1.2">1.2×</option>
+                <option value="1.3">1.3×</option>
+                <option value="1.5">1.5×</option>
+              </select>
+            </label>
+            <label className="ml-3">
+              <input type="checkbox" className="linkSF" defaultChecked /> Link
+              SF inside room
+            </label>
+            <label className="ml-3">
+              <input type="checkbox" className="hideSec" /> Hide from customer
+            </label>
+            <button type="button" className="btn mini resetPop ml-3">
+              Reset defaults
+            </button>
+          </div>
         </div>
-        <div className="secDesc" contentEditable suppressContentEditableWarning>
-          Dust-controlled removal, Level 5 skim, HEPA sanding, priming, and
-          ceiling ready for final paint.
-        </div>
-      </div>
 
-      <div className="secTools">
-        <div className="row">
-          <label>
-            Ceiling height:
-            <select className="heightSel">
-              <option value="1">Up to 9'</option>
-              <option value="1.15">10–11'</option>
-              <option value="1.3">12'+ / vaulted</option>
-            </select>
-          </label>
-          <label>
-            <input className="linkSF" type="checkbox" defaultChecked /> Link SF
-            within each room
-          </label>
-        </div>
-        <div className="row">
-          <button className="btn ghost addRoomPop">＋ Add Room</button>
-          <button className="btn ghost addLine">＋ Add line</button>
-          <button className="btn ghost resetPop">Reset rooms</button>
-          <button className="btn ghost clearSection">Clear section</button>
-          <label>
-            <input type="checkbox" className="hideSec" /> Hide from customer
-          </label>
-        </div>
-      </div>
-
-      <div className="tableWrap">
-        <table>
+        <table className="grid">
           <thead>
             <tr>
-              <th style={{ width: "46%" }}>Description</th>
-              <th style={{ width: "10%" }} className="num">
-                Qty
-              </th>
-              <th style={{ width: "12%" }}>Unit</th>
-              <th style={{ width: "14%" }} className="num col-rate">
-                Rate
-              </th>
-              <th style={{ width: "14%" }} className="num">
-                Amount
-              </th>
-              <th style={{ width: "4%" }}></th>
+              <th>Description</th>
+              <th className="num">Qty</th>
+              <th>Unit</th>
+              <th className="num">Rate</th>
+              <th className="num">Amount</th>
+              <th></th>
             </tr>
           </thead>
-          <tbody id="tb-popcorn">{/* JS adds rooms here */}</tbody>
+          <tbody id="tb-popcorn"></tbody>
         </table>
+
+        {/* TOOLS UNDER SECTION */}
+        <div className="sectionControls">
+          <div className="left">
+            <button type="button" className="btn ghost addRoomPop">
+              ＋ Room
+            </button>
+          </div>
+          <div className="right">
+            <button type="button" className="btn ghost addLine">
+              ＋ Custom line
+            </button>
+            <button type="button" className="btn del clearSection">
+              Clear section
+            </button>
+          </div>
+        </div>
       </div>
     </section>
   );

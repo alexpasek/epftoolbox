@@ -1,5 +1,3 @@
-// components/estimate/PaintingSection.jsx
-
 export default function PaintingSection() {
   return (
     <section
@@ -8,53 +6,44 @@ export default function PaintingSection() {
       data-enabled="1"
       data-hide-customer="0"
     >
-      <div className="secHead">
-        <div
-          className="secTitle"
-          contentEditable
-          suppressContentEditableWarning
-        >
-          Interior Painting
+      <div className="card">
+        <div className="secHead">
+          <h3 className="secTitle">Interior Painting</h3>
+          <label className="ml-3">
+            <input type="checkbox" className="hideSec" /> Hide from customer
+          </label>
         </div>
-        <div className="secDesc" contentEditable suppressContentEditableWarning>
-          Walls, trim, doors and ceilings where specified. Includes light prep,
-          caulking and clean-up.
-        </div>
-      </div>
 
-      <div className="secTog secTog-top">
-        <button className="btn ghost addRoom">＋ Add Room</button>
-        <button className="btn ghost addLine">＋ Add line</button>
-        <button className="btn ghost clearSection">Clear section</button>
-        <label>
-          <input type="checkbox" className="hideSec" /> Hide from customer
-        </label>
-      </div>
-
-      <div className="tableWrap">
-        <table>
+        <table className="grid">
           <thead>
             <tr>
-              <th style={{ width: "46%" }}>Description</th>
-              <th style={{ width: "10%" }} className="num">
-                Qty
-              </th>
-              <th style={{ width: "12%" }}>Unit</th>
-              <th style={{ width: "14%" }} className="num col-rate">
-                Rate
-              </th>
-              <th style={{ width: "14%" }} className="num">
-                Amount
-              </th>
-              <th style={{ width: "4%" }}></th>
+              <th>Description</th>
+              <th className="num">Qty</th>
+              <th>Unit</th>
+              <th className="num">Rate</th>
+              <th className="num">Amount</th>
+              <th></th>
             </tr>
           </thead>
-          <tbody>{/* rows are added dynamically by JS */}</tbody>
+          <tbody id="tb-paint"></tbody>
         </table>
-      </div>
 
-      <div className="secHint">
-       \“＋ Add Room” 
+        {/* TOOLS UNDER SECTION */}
+        <div className="sectionControls">
+          <div className="left">
+            <button type="button" className="btn ghost addRoom">
+              ＋ Room
+            </button>
+          </div>
+          <div className="right">
+            <button type="button" className="btn ghost addLine">
+              ＋ Custom line
+            </button>
+            <button type="button" className="btn del clearSection">
+              Clear section
+            </button>
+          </div>
+        </div>
       </div>
     </section>
   );
