@@ -5,131 +5,12 @@ import Script from "next/script";
 import PopcornSection from "@/components/estimate/PopcornSection";
 import PaintingSection from "@/components/estimate/PaintingSection";
 import AdditionalServicesSection from "@/components/estimate/AdditionalServicesSection";
+import SERVICE_COST from "@/components/estimate/ServiceCost";
 
-/** ===== Service templates for the 3-dots picker ===== */
-const SERVICE_TEMPLATES = [
-  // POPCORN / CEILINGS
-  {
-    id: "popcorn-unpainted-sf",
-    section: "sec-popcorn",
-    name: "Popcorn removal + Level 5 (unpainted)",
-    desc: "Remove texture, Level 5 skim, HEPA sand, prime & paint-ready.",
-    unit: "sf",
-    rate: 6.5,
-    defaultQty: null,
-  },
-  {
-    id: "popcorn-painted-sf",
-    section: "sec-popcorn",
-    name: "Popcorn removal + Level 5 (painted)",
-    desc: "Remove painted texture, repair joints, Level 5 finish.",
-    unit: "sf",
-    rate: 7.5,
-    defaultQty: null,
-  },
-  {
-    id: "popcorn-stairwell-job",
-    section: "sec-popcorn",
-    name: "Stairwell / high ceiling popcorn removal",
-    desc: "Includes scaffold / ladders, full containment & cleanup.",
-    unit: "job",
-    rate: 2200,
-    defaultQty: 1,
-  },
-  // PAINT
-  {
-    id: "walls-standard-room",
-    section: "sec-paint",
-    name: "Interior walls — standard bedroom",
-    desc: "2 coats on walls, light prep, low-VOC pro paint.",
-    unit: "room",
-    rate: 450,
-    defaultQty: 1,
-  },
-  {
-    id: "walls-large-room",
-    section: "sec-paint",
-    name: "Interior walls — large room",
-    desc: "Family/Living room, 2 coats, basic repairs.",
-    unit: "room",
-    rate: 650,
-    defaultQty: 1,
-  },
-  {
-    id: "ceiling-room",
-    section: "sec-paint",
-    name: "Ceiling paint — room",
-    desc: "Prime as needed + 2 coats ceiling white.",
-    unit: "room",
-    rate: 220,
-    defaultQty: 1,
-  },
-  {
-    id: "door-frame",
-    section: "sec-paint",
-    name: "Door & frame (per door)",
-    desc: "Spot-sand, caulk, 2 coats semi-gloss.",
-    unit: "door",
-    rate: 90,
-    defaultQty: 1,
-  },
-  {
-    id: "trim-baseboards",
-    section: "sec-paint",
-    name: "Baseboards / trim",
-    desc: "Caulk joints, light sand, 2 coats semi-gloss.",
-    unit: "lf",
-    rate: 5,
-    defaultQty: null,
-  },
-  // DRYWALL / EXTRA
-  {
-    id: "drywall-small-patch",
-    section: "sec-add",
-    name: "Drywall repair — small patch",
-    desc: "Fill small hole/crack, sand & prime ready for paint.",
-    unit: "ea",
-    rate: 120,
-    defaultQty: 1,
-  },
-  {
-    id: "drywall-large-patch",
-    section: "sec-add",
-    name: "Drywall repair — large / multiple patches",
-    desc: "Cut out damaged board, re-board, tape, mud & sand.",
-    unit: "ea",
-    rate: 220,
-    defaultQty: 1,
-  },
-  {
-    id: "corner-bead",
-    section: "sec-add",
-    name: "Corner bead supply & install",
-    desc: "Metal/vinyl beads, mud, sand, straighten corners.",
-    unit: "lf",
-    rate: 12,
-    defaultQty: null,
-  },
-  {
-    id: "debris-disposal",
-    section: "sec-add",
-    name: "Debris disposal",
-    desc: "Bag & remove site waste / popcorn debris.",
-    unit: "job",
-    rate: 120,
-    defaultQty: 1,
-  },
-  // GENERIC
-  {
-    id: "site-protection",
-    section: "any",
-    name: "Site protection & masking",
-    desc: "Floors, stairs & key furniture protection (poly/RamBoard).",
-    unit: "job",
-    rate: 180,
-    defaultQty: 1,
-  },
-];
+
+const SERVICE_TEMPLATES = SERVICE_COST
+
+
 
 /** ===== Default short details under each service line ===== */
 const SERVICE_DETAILS = {
@@ -260,8 +141,8 @@ function EstimateClientJobBlock() {
           <input id="site" type="text" placeholder="[Street, City]" />
         </div>
 
-        {/* Google Place ID (optional) */}
-        <div className="kv">
+        {/* Google Place ID (optional) — INTERNAL ONLY */}
+        <div className="kv internalOnly">
           <label>Google Place ID (optional)</label>
           <div className="row" style={{ gap: 8 }}>
             <input
@@ -401,7 +282,11 @@ export default function EstimateBuilderPage() {
     if (!data || typeof window === "undefined") return;
     const now = new Date().toISOString();
     const id = "inv-" + Date.now().toString(36);
-    const invoice = { ...data, id, createdAt: now, updatedAt: now };
+
+    // OMIT internal-only data from invoice payload
+    const { gPlaceId, ...safe } = data;
+
+    const invoice = { ...safe, id, createdAt: now, updatedAt: now };
     let list = [];
     try {
       const raw = localStorage.getItem("epf.invoices");
@@ -584,7 +469,7 @@ export default function EstimateBuilderPage() {
       });
 
       updateMapsLink();
-      attachSectionControls(); // ensure per-section controls exist (below each section)
+      attachSectionControls(); // ensure per-section controls exist + totals
     }
 
     // autosave (JSON snapshot)
@@ -633,47 +518,64 @@ export default function EstimateBuilderPage() {
           </table>
         </div>`;
       page.insertBefore(sec, sum || null);
-      // add the per-section controls under the section
+      // add totals and per-section controls under the section
       appendControlsForSection(sec);
       return sec;
     }
 
-    // === Per-section controls (appended BELOW each section) ===
+    // === Per-section totals + controls (appended BELOW each section) ===
     function appendControlsForSection(sec) {
       if (!sec) return;
-      if (sec.querySelector(".sectionControls")) return; // already appended
-      const controls = document.createElement("div");
-      controls.className = "sectionControls";
-      const isPop = sec.id === "sec-popcorn";
-      const isPaint = sec.id === "sec-paint";
-      const isCore =
-        sec.id === "sec-popcorn" ||
-        sec.id === "sec-paint" ||
-        sec.id === "sec-add";
 
-      controls.innerHTML = `
-        <div class="card">
-          <div class="right">
-            ${
-              isPop
-                ? `<button type="button" class="btn ghost addRoomPop">＋ Add Popcorn Room</button>`
-                : ""
-            }
-            ${
-              isPaint
-                ? `<button type="button" class="btn ghost addRoom">＋ Add Paint Room</button>`
-                : ""
-            }
-            <button type="button" class="btn ghost addLine">＋ Custom line</button>
-            <button type="button" class="btn del clearSection">Clear section</button>
-            ${
-              !isCore
-                ? `<button type="button" class="btn del removeSection">Remove section</button>`
-                : ""
-            }
+      // 1) Section Total Card (pretty & print-friendly)
+      if (!sec.querySelector(".secTotalCard")) {
+        const totalCard = document.createElement("div");
+        totalCard.className = "secTotalCard card";
+        totalCard.innerHTML = `
+          <div class="secTotalRow">
+            <span class="lbl">Section total</span>
+            <span class="val">$0</span>
           </div>
-        </div>`;
-      sec.appendChild(controls);
+          <small class="hint">Labour only — materials/discount/tax are calculated globally below.</small>
+        `;
+        sec.appendChild(totalCard);
+      }
+
+      // 2) Controls Card (unchanged buttons)
+      if (!sec.querySelector(".sectionControls")) {
+        const controls = document.createElement("div");
+        controls.className = "sectionControls";
+        const isPop = sec.id === "sec-popcorn";
+        const isPaint = sec.id === "sec-paint";
+        const isCore =
+          sec.id === "sec-popcorn" ||
+          sec.id === "sec-paint" ||
+          sec.id === "sec-add";
+
+        controls.innerHTML = `
+          <div class="card">
+            <div class="right">
+              ${
+                isPop
+                  ? `<button type="button" class="btn ghost addRoomPop">＋ Add Popcorn Room</button>`
+                  : ""
+              }
+              ${
+                isPaint
+                  ? `<button type="button" class="btn ghost addRoom">＋ Add Paint Room</button>`
+                  : ""
+              }
+              <button type="button" class="btn ghost addLine">＋ Custom line</button>
+              <button type="button" class="btn del clearSection">Clear section</button>
+              ${
+                !isCore
+                  ? `<button type="button" class="btn del removeSection">Remove section</button>`
+                  : ""
+              }
+            </div>
+          </div>`;
+        sec.appendChild(controls);
+      }
     }
 
     function attachSectionControls() {
@@ -730,9 +632,7 @@ export default function EstimateBuilderPage() {
       const descHTML = o.descHTML ?? renderDescWithDetails(o.desc, detailsArr);
 
       tr.innerHTML = `
-        <td contenteditable="true">
-          ${descHTML}
-        </td>
+        <td contenteditable="true">${descHTML}</td>
         <td class="num qtyCell">
           <div class="qtyWrap">
             <input class="qty" type="number" step="0.01" inputmode="decimal" value="${
@@ -885,25 +785,46 @@ export default function EstimateBuilderPage() {
       addPopRoom("Main areas", "unpainted");
     }
 
-    /** ========= Recalc totals ========= */
+    /** ========= Recalc totals (now includes per-section totals) ========= */
     function recalc() {
-      let labour = 0;
-      $$(".sec[data-enabled='1']").forEach((sec) => {
+      let grandLabour = 0;
+
+      $$(".sec").forEach((sec) => {
+        // If section disabled, clear its total and skip row math
+        if (sec.getAttribute("data-enabled") !== "1") {
+          const st = sec.querySelector(".secTotalCard .val");
+          if (st) st.textContent = "$0";
+          return;
+        }
+
         const isPop = sec.id === "sec-popcorn";
         const heightFactor = isPop ? parseFloat(sec.dataset.height || "1") : 1;
+        let sectionLabour = 0;
+
         $$("tbody tr", sec).forEach((tr) => {
           const qtyEl = tr.querySelector(".qty");
           const rateEl = tr.querySelector(".rate");
           const amtEl = tr.querySelector(".amt");
           if (!qtyEl || !rateEl || !amtEl) return;
+
           let qty = parseFloat(qtyEl.value || "0");
           const rate = parseFloat(rateEl.value || "0");
           const unit = (tr.querySelector(".unit")?.value || "").toLowerCase();
+
+          // Popcorn height multiplier applies to sf rows
           if (isPop && unit === "sf") qty = qty * (heightFactor || 1);
+
           const amount = qty * rate;
           amtEl.value = amount ? amount.toFixed(2) : "";
-          labour += amount;
+          sectionLabour += amount;
         });
+
+        // Update section total display
+        const st = sec.querySelector(".secTotalCard .val");
+        if (st)
+          st.textContent = "$" + Math.round(sectionLabour).toLocaleString();
+
+        grandLabour += sectionLabour;
       });
 
       const mat_fixed = parseFloat($("#mat_fixed")?.value || "0");
@@ -912,9 +833,9 @@ export default function EstimateBuilderPage() {
       const base_tax_rate = parseFloat($("#tax_rate")?.value || "13");
       const calcTax = $("#cbTaxNow")?.checked ?? false;
 
-      const materials = mat_fixed + labour * (mat_pct / 100);
-      const discount = (labour + materials) * (disc_pct / 100);
-      const subtotal = labour + materials - discount;
+      const materials = mat_fixed + grandLabour * (mat_pct / 100);
+      const discount = (grandLabour + materials) * (disc_pct / 100);
+      const subtotal = grandLabour + materials - discount;
       const effectiveTaxRate = calcTax ? base_tax_rate : 0;
       const tax = subtotal * (effectiveTaxRate / 100);
       const total = subtotal + tax;
@@ -923,7 +844,7 @@ export default function EstimateBuilderPage() {
         const el = $(sel);
         if (el) el.textContent = text;
       };
-      setText("#s_labour", "$" + Math.round(labour).toLocaleString());
+      setText("#s_labour", "$" + Math.round(grandLabour).toLocaleString());
       setText("#s_mat", "$" + Math.round(materials).toLocaleString());
       setText(
         "#s_disc",
@@ -960,7 +881,7 @@ export default function EstimateBuilderPage() {
             <button class="eqp-close">Close</button>
           </div>
           <div class="eqp-body">
-            <select class="eqp-wheel" size="8" aria-label="Quantity"></select>
+            <select class="eqp-wheel" size="6" aria-label="Quantity"></select>
             <div class="eqp-actions">
               <button class="btn ghost eqp-minus">−</button>
               <input class="eqp-direct" type="number" step="0.01" inputmode="decimal" />
@@ -1029,15 +950,8 @@ export default function EstimateBuilderPage() {
         direct.value = e.target.value;
       }
     });
-    document.addEventListener("focusin", (e) => {
-      const t = e.target;
-      if (t instanceof HTMLInputElement && t.classList.contains("qty")) {
-        if (window.innerWidth < 700) {
-          t.blur();
-          openQtyPicker(t);
-        }
-      }
-    });
+    // Allow manual typing on mobile — no auto-open on focus
+    document.addEventListener("focusin", () => {});
 
     /** ========= UI bindings ========= */
     $("#toggleCustomer")?.addEventListener("click", () => {
@@ -1240,25 +1154,19 @@ export default function EstimateBuilderPage() {
       const t = e.target;
       if (t instanceof HTMLInputElement) {
         if (t.matches(".qty,.rate,#mat_fixed,#mat_pct,#disc_pct,#tax_rate")) {
-          // link SF inside popcorn group
+          // Link SF across ENTIRE popcorn section when linkSF is ON
           if (t.classList.contains("qty")) {
-            const tr = t.closest("tr");
             const sec = t.closest(".sec");
-            if (sec && sec.id === "sec-popcorn") {
-              const linkOn = sec.dataset.linksf === "1";
-              const role = tr?.dataset.role || "";
-              const group = tr?.dataset.group || "";
-              if (linkOn && role === "base" && group) {
-                $$("#sec-popcorn tbody tr").forEach((row) => {
-                  if (row.dataset.group === group) {
-                    const rRole = row.dataset.role || "";
-                    if (["floor", "skim", "prime", "paint"].includes(rRole)) {
-                      const q = row.querySelector(".qty");
-                      if (q) q.value = t.value;
-                    }
-                  }
+            if (sec && sec.id === "sec-popcorn" && sec.dataset.linksf === "1") {
+              const newVal = t.value;
+              document
+                .querySelectorAll("#sec-popcorn tbody tr")
+                .forEach((row) => {
+                  const unitSel = row.querySelector(".unit");
+                  const q = row.querySelector(".qty");
+                  if (unitSel && q && unitSel.value.toLowerCase() === "sf")
+                    q.value = newVal;
                 });
-              }
             }
           }
           window.__EPF_RECALC__?.();
@@ -1389,7 +1297,7 @@ export default function EstimateBuilderPage() {
       } else {
         // first-time defaults
         initPopcornDefaults();
-        attachSectionControls(); // add controls under built-in sections
+        attachSectionControls(); // add totals + controls under built-in sections
       }
     } catch {
       initPopcornDefaults();
@@ -1426,13 +1334,9 @@ export default function EstimateBuilderPage() {
       autocomplete.addListener("place_changed", () => {
         const place = autocomplete.getPlace();
         if (!place) return;
-        if (place.formatted_address) {
-          input.value = place.formatted_address;
-        }
+        if (place.formatted_address) input.value = place.formatted_address;
         const pidInput = document.getElementById("g_place_id");
-        if (pidInput && place.place_id) {
-          pidInput.value = place.place_id;
-        }
+        if (pidInput && place.place_id) pidInput.value = place.place_id;
         updateMapsLink();
       });
     }
@@ -1465,7 +1369,7 @@ export default function EstimateBuilderPage() {
         }}
       />
 
-      {/* tiny bullet style + customer/print privacy */}
+      {/* tiny bullet style + customer/print privacy + section totals styles */}
       <style jsx global>{`
         .epf td .small::before {
           content: "• ";
@@ -1474,13 +1378,48 @@ export default function EstimateBuilderPage() {
           margin-top: 8px;
         }
 
+        /* Section Total card styling */
+        .secTotalCard.card {
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+          margin-top: 8px;
+          margin-bottom: 6px;
+          border: 1px solid #e2e8f0;
+          background: #f8fafc;
+          border-radius: 12px;
+          padding: 10px 14px;
+          break-inside: avoid;
+        }
+        .secTotalCard .secTotalRow {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+        .secTotalCard .lbl {
+          font-size: 11px;
+          letter-spacing: 0.04em;
+          text-transform: uppercase;
+          color: #64748b; /* slate-500 */
+        }
+        .secTotalCard .val {
+          font-weight: 700;
+          font-size: 18px;
+        }
+        .secTotalCard .hint {
+          font-size: 11px;
+          color: #94a3b8; /* slate-400 */
+        }
+
         /* Hide sections marked as "hide from customer" in customer view + print */
         body.customer .sec[data-hide-customer="1"] {
           display: none !important;
         }
         @media print {
-          .sec[data-hide-customer="1"] {
+          .sec[data-hide-customer="1"],
+          .sec[data-hide-customer="1"] * {
             display: none !important;
+            visibility: hidden !important;
           }
         }
 
@@ -1489,8 +1428,10 @@ export default function EstimateBuilderPage() {
           display: none !important;
         }
         @media print {
-          .sec tr.private {
+          .sec tr.private,
+          .sec tr.private * {
             display: none !important;
+            visibility: hidden !important;
           }
         }
 
@@ -1503,6 +1444,54 @@ export default function EstimateBuilderPage() {
           .sec .col-rate,
           .sec thead th:nth-child(4) {
             display: none !important;
+          }
+        }
+
+        /* INTERNAL ONLY blocks (e.g., Google Place ID) hidden for customers and in print */
+        body.customer .internalOnly {
+          display: none !important;
+        }
+        @media print {
+          .internalOnly,
+          .internalOnly * {
+            display: none !important;
+          }
+        }
+
+        /* Smaller qty picker on mobile */
+        .epf-qty-picker .eqp-panel {
+          max-width: 320px;
+          width: 92vw;
+        }
+        .epf-qty-picker .eqp-header {
+          padding: 8px 12px;
+        }
+        .epf-qty-picker .eqp-body {
+          padding: 8px 12px;
+        }
+        .epf-qty-picker .eqp-wheel {
+          font-size: 14px;
+          max-height: 160px;
+        }
+        .epf-qty-picker .eqp-actions .eqp-direct {
+          width: 84px;
+          font-size: 14px;
+        }
+
+        /* Print: keep section totals, hide control buttons */
+        @media print {
+          .sectionControls .btn,
+          .sectionControls .right {
+            display: none !important;
+          }
+          .secTotalCard.card {
+            background: transparent;
+            border: none;
+            padding: 0;
+            margin-top: 4px;
+          }
+          .secTotalCard .val {
+            font-size: 16px;
           }
         }
       `}</style>

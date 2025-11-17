@@ -10,7 +10,7 @@ export default function PaintingSection() {
         <div className="secHead">
           <h3 className="secTitle">Interior Painting</h3>
           <label className="ml-3">
-            <input type="checkbox" className="hideSec" /> Hide from customer
+            <input type="checkbox" className="hideSec" /> Hi
           </label>
         </div>
 

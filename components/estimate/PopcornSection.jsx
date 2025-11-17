@@ -27,7 +27,7 @@ export default function PopcornSection() {
               SF inside room
             </label>
             <label className="ml-3">
-              <input type="checkbox" className="hideSec" /> Hide from customer
+              <input type="checkbox" className="hideSec" /> Hi
             </label>
             <button type="button" className="btn mini resetPop ml-3">
               Reset defaults
