@@ -35,19 +35,21 @@ export default function PopcornSection() {
           </div>
         </div>
 
-        <table className="grid">
-          <thead>
-            <tr>
-              <th>Description</th>
-              <th className="num">Qty</th>
-              <th>Unit</th>
-              <th className="num">Rate</th>
-              <th className="num">Amount</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody id="tb-popcorn"></tbody>
-        </table>
+        <div className="tableWrap">
+          <table className="grid">
+            <thead>
+              <tr>
+                <th>Description</th>
+                <th className="num">Qty</th>
+                <th>Unit</th>
+                <th className="num">Rate</th>
+                <th className="num">Amount</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="tb-popcorn"></tbody>
+          </table>
+        </div>
 
         {/* TOOLS UNDER SECTION */}
         <div className="sectionControls">

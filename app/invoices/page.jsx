@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { startTransition, useEffect, useState } from "react";
 import Link from "next/link";
 
 export default function InvoicesListPage() {
@@ -12,7 +12,11 @@ export default function InvoicesListPage() {
       const raw = localStorage.getItem("epf.invoices");
       if (!raw) return;
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) setInvoices(parsed);
+      if (Array.isArray(parsed)) {
+        startTransition(() => {
+          setInvoices(parsed);
+        });
+      }
     } catch (e) {
       console.error("Failed to load invoices", e);
     }

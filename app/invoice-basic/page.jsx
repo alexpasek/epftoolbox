@@ -1,7 +1,6 @@
 "use client";
 
-import { Suspense } from "react";
-import { useEffect, useState } from "react";
+import { Suspense, startTransition, useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 
 function recalcTotals(inv) {
@@ -65,11 +64,15 @@ function InvoiceBasicPageInner() {
       }
 
       loaded.totals = recalcTotals(loaded);
-      setInvoice(loaded);
-      setStatus("ready");
+      startTransition(() => {
+        setInvoice(loaded);
+        setStatus("ready");
+      });
     } catch (e) {
       console.error(e);
-      setStatus("error");
+      startTransition(() => {
+        setStatus("error");
+      });
     }
   }, [invoiceId]);
 
@@ -179,7 +182,6 @@ function InvoiceBasicPageInner() {
 
     localStorage.setItem("epf.invoices", JSON.stringify(list));
     localStorage.setItem("epf.invoiceDraft", JSON.stringify(toSave));
-    // eslint-disable-next-line no-alert
     alert("Invoice saved.");
   };
 

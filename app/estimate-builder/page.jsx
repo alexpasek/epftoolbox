@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import Image from "next/image";
 import Script from "next/script";
 import PopcornSection from "@/components/estimate/PopcornSection";
 import PaintingSection from "@/components/estimate/PaintingSection";
@@ -8,60 +9,94 @@ import AdditionalServicesSection from "@/components/estimate/AdditionalServicesS
 import SERVICE_COST from "@/components/estimate/ServiceCost";
 
 
-const SERVICE_TEMPLATES = SERVICE_COST
-
 
 
 /** ===== Default short details under each service line ===== */
 const SERVICE_DETAILS = {
   "popcorn-unpainted-sf": [
     "Dust-controlled scrape of texture",
-    "HEPA sand to smooth",
-    "Prime & paint-ready",
+    "HEPA sand to smooth + check seams",
+    "Prime entire ceiling paint-ready",
+    "Floors, fixtures, vents masked tight",
+    "Crew hauls debris + vacuums daily",
   ],
   "popcorn-painted-sf": [
-    "Remove painted texture",
-    "Repair joints & seams",
-    "HEPA sand, Level 5 finish",
+    "Remove painted texture with wet scrape",
+    "Repair joints & seams to Level 5",
+    "HEPA sand, primer + ready for finishing",
+    "Containment to protect walls + flooring",
+    "Daily cleanup and final vacuuming",
   ],
   "popcorn-stairwell-job": [
-    "Scaffold/ladders set safely",
-    "Full containment & masking",
-    "Daily cleanup included",
+    "Scaffold/ladders set safely with tie-offs",
+    "Full containment & masking of walls",
+    "Texture removal + Level 5 skim + prime",
+    "Stair treads protected / slip resistant",
+    "Crew handles all cleanup + disposal",
   ],
   "walls-standard-room": [
-    "Fill holes & caulk gaps",
-    "Light sand & dust off",
-    "2 finish coats on walls",
+    "Fill holes, caulk trim + sand smooth",
+    "Dust control + wipe before coating",
+    "2 finish coats on walls w/ pro sprayer or roll",
+    "Minor colour adjustments included",
+    "Client walkthrough for touch-ups",
   ],
   "walls-large-room": [
-    "Basic repairs & light sand",
-    "Cut-in clean lines",
-    "2 finish coats",
+    "Patch drywall seams / nail pops",
+    "Cut-in clean lines at ceilings + trim",
+    "2–3 coats for full, even coverage",
+    "Furniture moved/covered + returned",
+    "Final punch with client before demob",
   ],
   "ceiling-room": [
-    "Prime where needed",
-    "2 coats ceiling white",
-    "Clean cut-lines",
+    "Mask fixtures + cover flooring",
+    "Prime where needed for adhesion",
+    "2 coats ceiling white, rolled smooth",
+    "Edges cut clean to walls",
+    "Area cleaned + airflow restored",
   ],
-  "door-frame": ["Degloss / spot sand", "Caulk joints", "2 coats semi-gloss"],
-  "trim-baseboards": ["Clean & light sand", "Caulk joints", "2 coats enamel"],
-  "drywall-small-patch": ["Fill hole/crack", "Sand smooth", "Spot-prime"],
-  "drywall-large-patch": ["Cut & re-board", "Tape + compound", "Sand & prime"],
+  "door-frame": [
+    "Degloss / spot sand & clean",
+    "Caulk joints + repair dents",
+    "2 coats semi-gloss sprayed/rolled",
+    "Hardware removed, reinstalled",
+  ],
+  "trim-baseboards": [
+    "Clean + scuff sand for adhesion",
+    "Caulk joints + fill nail holes",
+    "2 coats durable enamel",
+    "Final wipe + floors vacuumed",
+  ],
+  "drywall-small-patch": [
+    "Cut back to solid gypsum",
+    "Install backing + fill hole/crack",
+    "Sand smooth, feather edges",
+    "Spot-prime + ready for paint",
+  ],
+  "drywall-large-patch": [
+    "Cut & re-board area with screws",
+    "Tape, 2–3 coats compound, feathered",
+    "Sand smooth + HEPA vacuum",
+    "Prime and blend to surrounding",
+    "Includes minor texture matching",
+  ],
   "corner-bead": [
-    "Set metal/vinyl bead true",
-    "Mud & straighten edge",
-    "Sand smooth",
+    "Set metal/vinyl bead true & plumb",
+    "Fasten securely, mud to straight edge",
+    "Sand smooth + check with straightedge",
+    "Prime-ready finish, crisp corners",
   ],
   "debris-disposal": [
     "Bag & remove site waste/popcorn",
-    "Load-out & haul",
-    "Disposal handled off-site",
+    "Load-out & haul with dump fees included",
+    "Work area swept + damp mopped",
+    "Disposal documented for homeowner",
   ],
   "site-protection": [
     "Cover floors (RamBoard / poly)",
-    "Mask casings & cabinets",
-    "Seal returns/vents",
+    "Mask casings, cabinets, fixtures",
+    "Seal returns/vents and isolate dust",
+    "Daily tidy + photos of setup",
   ],
 };
 
@@ -71,32 +106,104 @@ const ROLE_DETAILS = {
     "Dust-controlled texture removal",
     "HEPA sand ceilings smooth",
     "Edges kept crisp",
+    "Floors & openings sealed off",
   ],
-  floor: ["RamBoard / poly protection", "Tape baseboards & stairs"],
-  skim: ["2–3 passes joint compound", "Feather to edges", "Final HEPA sand"],
-  prime: ["Prime repairs/stains", "Ensure even coverage"],
-  paint: ["2 coats ceiling finish", "Clean cut lines"],
-  cleanup: ["HEPA vacuum surfaces", "Bag debris", "Daily tidy"],
+  floor: [
+    "RamBoard / poly protection",
+    "Tape baseboards & stairs",
+    "Remove + reset coverings per day",
+  ],
+  skim: [
+    "2–3 passes joint compound",
+    "Feather to edges + inspect with light",
+    "Final HEPA sand + dust removal",
+  ],
+  prime: [
+    "Prime repairs/stains for uniformity",
+    "Back-roll for even coverage",
+    "Check for touch-ups before paint",
+  ],
+  paint: [
+    "2 coats ceiling finish",
+    "Clean cut lines + even texture",
+    "Low-VOC coatings for occupied homes",
+  ],
+  cleanup: [
+    "HEPA vacuum surfaces & vents",
+    "Bag debris + wipe touch points",
+    "Daily tidy + final walkthrough",
+  ],
+};
+
+const WALL_HEIGHT_FT = 8;
+const SERVICE_SECTION_ORDER = {
+  "sec-paint": 0,
+  "sec-popcorn": 1,
+  "sec-add": 2,
 };
 
 // Name-based heuristics (fallback)
 function heuristicDetails(desc = "") {
   const s = desc.toLowerCase();
   if (s.includes("walls"))
-    return ["Fill & caulk", "Light sand", "2 coats finish"];
+    return [
+      "Fill dents + caulk trim",
+      "Light sand & dust control",
+      "2 coats finish paint",
+      "Furniture carefully reset",
+    ];
   if (s.includes("ceiling paint"))
-    return ["Prime where needed", "2 coats ceiling white"];
+    return [
+      "Prime stains / repairs",
+      "2 coats ceiling white",
+      "Fixtures masked & cleaned",
+    ];
   if (s.includes("door"))
-    return ["Degloss/sand", "Caulk joints", "2 coats semi-gloss"];
-  if (s.includes("window")) return ["Mask glass/trim", "2 coats enamel"];
-  if (s.includes("closet")) return ["Walls + shelf/rod", "2 coats"];
+    return [
+      "Degloss/sand + clean",
+      "Caulk joints, fill dents",
+      "2 coats semi-gloss",
+      "Hardware removed/reinstalled",
+    ];
+  if (s.includes("window"))
+    return [
+      "Mask glass & hardware",
+      "Prep casing + stool",
+      "2 coats enamel finish",
+      "Clean glass after painting",
+    ];
+  if (s.includes("closet"))
+    return [
+      "Walls + shelf/rod coated",
+      "Clean straight cut-ins",
+      "2 coats finish colour",
+      "Floors protected + vacuumed",
+    ];
   if (s.includes("trim") || s.includes("baseboard"))
-    return ["Clean & sand", "2 coats enamel"];
+    return [
+      "Clean & sand for adhesion",
+      "Caulk + fill nail holes",
+      "2 coats enamel finish",
+      "Final dust + wipe down",
+    ];
   if (s.includes("drywall") && s.includes("patch"))
-    return ["Repair & sand", "Spot-prime"];
+    return [
+      "Repair cut back to solid",
+      "Feather compound smooth",
+      "Sand + spot-prime",
+      "Ready for paint",
+    ];
   if (s.includes("debris") || s.includes("disposal"))
-    return ["Bag & remove waste", "Haul away"];
-  return ["Details / area"];
+    return [
+      "Bag & remove waste",
+      "Transport + dump fees included",
+      "Site swept / vacuumed",
+    ];
+  return [
+    "Crews perform prep + protection",
+    "Scope includes labour + materials noted",
+    "Daily cleanup + communication",
+  ];
 }
 
 function detailsFor({ tmplId, role, desc }) {
@@ -194,124 +301,122 @@ function EstimateClientJobBlock() {
   );
 }
 
-export default function EstimateBuilderPage() {
-  /** ---------- Save to list helper ---------- */
-  function saveInvoiceRecord(data) {
-    if (typeof window === "undefined") return data;
-    const cleanQuoteId = (data.quoteId || "").toString().trim();
-    const record = {
-      ...data,
-      id: cleanQuoteId || "INV-" + Date.now(),
-      savedAt: new Date().toISOString(),
-    };
-    let list = [];
-    try {
-      const raw = window.localStorage.getItem("epf.invoices");
-      list = raw ? JSON.parse(raw) || [] : [];
-    } catch {}
-    list = list.filter((inv) => inv.id !== record.id);
-    list.push(record);
-    try {
-      window.localStorage.setItem("epf.invoices", JSON.stringify(list));
-      window.localStorage.setItem("epf.invoiceDraft", JSON.stringify(record));
-    } catch {}
-    return record;
-  }
+/** ---------- Save invoice helpers (DOM + localStorage operations) ---------- */
+function saveInvoiceRecord(data) {
+  if (typeof window === "undefined") return data;
+  const cleanQuoteId = (data.quoteId || "").toString().trim();
+  const record = {
+    ...data,
+    id: cleanQuoteId || "INV-" + Date.now(),
+    savedAt: new Date().toISOString(),
+  };
+  let list = [];
+  try {
+    const raw = window.localStorage.getItem("epf.invoices");
+    list = raw ? JSON.parse(raw) || [] : [];
+  } catch {}
+  list = list.filter((inv) => inv.id !== record.id);
+  list.push(record);
+  try {
+    window.localStorage.setItem("epf.invoices", JSON.stringify(list));
+    window.localStorage.setItem("epf.invoiceDraft", JSON.stringify(record));
+  } catch {}
+  return record;
+}
 
-  /** ---------- Scrape current estimate (for invoice / quick-save) ---------- */
-  function scrapeEstimateFromDom() {
-    if (typeof window === "undefined") return null;
-    const $ = (s, r = document) => r.querySelector(s);
-    const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
-    const val = (sel) => {
-      const el = $(sel);
-      if (!el) return "";
-      if ("value" in el && el.value != null) return String(el.value).trim();
-      return (el.textContent || "").trim();
-    };
-    const base = {
-      client: val("#client"),
-      site: val("#site"),
-      gPlaceId: val("#g_place_id"),
-      date: $("#date")?.value || new Date().toISOString().slice(0, 10),
-      quoteId: val("#qid") || "EPF-QUOTE",
-      taxRate: parseFloat($("#tax_rate")?.value || "13"),
-      matFixed: parseFloat($("#mat_fixed")?.value || "0"),
-      matPct: parseFloat($("#mat_pct")?.value || "0"),
-      items: [],
-      notes:
-        "Thank you for the opportunity. Please review and let us know if you’d like to proceed.",
-    };
+function scrapeEstimateFromDom() {
+  if (typeof window === "undefined") return null;
+  const $ = (s, r = document) => r.querySelector(s);
+  const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+  const val = (sel) => {
+    const el = $(sel);
+    if (!el) return "";
+    if ("value" in el && el.value != null) return String(el.value).trim();
+    return (el.textContent || "").trim();
+  };
+  const base = {
+    client: val("#client"),
+    site: val("#site"),
+    gPlaceId: val("#g_place_id"),
+    date: $("#date")?.value || new Date().toISOString().slice(0, 10),
+    quoteId: val("#qid") || "EPF-QUOTE",
+    taxRate: parseFloat($("#tax_rate")?.value || "13"),
+    matFixed: parseFloat($("#mat_fixed")?.value || "0"),
+    matPct: parseFloat($("#mat_pct")?.value || "0"),
+    items: [],
+    notes:
+      "Thank you for the opportunity. Please review and let us know if you’d like to proceed.",
+  };
 
-    $$(".sec[data-enabled='1']").forEach((sec) => {
-      if (sec.dataset.hideCustomer === "1") return;
-      const rows = $$("tbody tr", sec).filter(
-        (tr) =>
-          !tr.classList.contains("private") &&
-          !tr.classList.contains("roomHeader")
-      );
-      rows.forEach((tr) => {
-        const descCell = tr.querySelector("td");
-        const qty = parseFloat(tr.querySelector(".qty")?.value || "0") || 0;
-        const rate = parseFloat(tr.querySelector(".rate")?.value || "0") || 0;
-        const amt =
-          parseFloat(tr.querySelector(".amt")?.value || "0") ||
-          (qty && rate ? qty * rate : 0);
-        base.items.push({
-          description: (descCell?.textContent || "").trim(),
-          qty,
-          unit: tr.querySelector(".unit")?.value || "",
-          rate,
-          amount: amt,
-        });
+  $$(".sec[data-enabled='1']").forEach((sec) => {
+    if (sec.dataset.hideCustomer === "1") return;
+    const rows = $$("tbody tr", sec).filter(
+      (tr) =>
+        !tr.classList.contains("private") &&
+        !tr.classList.contains("roomHeader")
+    );
+    rows.forEach((tr) => {
+      const descCell = tr.querySelector("td");
+      const qty = parseFloat(tr.querySelector(".qty")?.value || "0") || 0;
+      const rate = parseFloat(tr.querySelector(".rate")?.value || "0") || 0;
+      const amt =
+        parseFloat(tr.querySelector(".amt")?.value || "0") ||
+        (qty && rate ? qty * rate : 0);
+      base.items.push({
+        description: (descCell?.textContent || "").trim(),
+        qty,
+        unit: tr.querySelector(".unit")?.value || "",
+        rate,
+        amount: amt,
       });
     });
+  });
 
-    const labour = base.items.reduce((s, r) => s + (r.amount || 0), 0);
-    const materials = base.matFixed + labour * (base.matPct / 100);
-    const subtotal = labour + materials;
-    const taxNow = document.getElementById("cbTaxNow")?.checked ?? false;
-    const tax = subtotal * (taxNow ? base.taxRate / 100 : 0);
-    const total = subtotal + tax;
-    return { ...base, totals: { labour, materials, subtotal, tax, total } };
-  }
+  const labour = base.items.reduce((s, r) => s + (r.amount || 0), 0);
+  const materials = base.matFixed + labour * (base.matPct / 100);
+  const subtotal = labour + materials;
+  const taxNow = document.getElementById("cbTaxNow")?.checked ?? false;
+  const tax = subtotal * (taxNow ? base.taxRate / 100 : 0);
+  const total = subtotal + tax;
+  return { ...base, totals: { labour, materials, subtotal, tax, total } };
+}
 
-  /** ---------- Create/Save invoice ---------- */
-  function saveAsInvoice() {
-    const data = scrapeEstimateFromDom();
-    if (!data || typeof window === "undefined") return;
-    const now = new Date().toISOString();
-    const id = "inv-" + Date.now().toString(36);
+function saveAsInvoice() {
+  const data = scrapeEstimateFromDom();
+  if (!data || typeof window === "undefined") return;
+  const now = new Date().toISOString();
+  const id = "inv-" + Date.now().toString(36);
 
-    // OMIT internal-only data from invoice payload
-    const { gPlaceId, ...safe } = data;
+  // OMIT internal-only data from invoice payload
+  const { gPlaceId, ...safe } = data;
 
-    const invoice = { ...safe, id, createdAt: now, updatedAt: now };
-    let list = [];
-    try {
-      const raw = localStorage.getItem("epf.invoices");
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) list = parsed;
-      }
-    } catch {}
-    list.unshift(invoice);
-    localStorage.setItem("epf.invoices", JSON.stringify(list));
-    localStorage.setItem("epf.invoiceDraft", JSON.stringify(invoice));
-    window.location.href = `/invoice-basic?id=${encodeURIComponent(id)}`;
-  }
-
-  function saveEstimateForLater() {
-    const data = scrapeEstimateFromDom();
-    if (!data) return;
-    const record = saveInvoiceRecord(data);
-    if (typeof window !== "undefined") {
-      window.alert(
-        `Estimate saved as invoice "${record.id}".\n\nLater open /invoice-basic?id=${record.id} to view/print.`
-      );
+  const invoice = { ...safe, id, createdAt: now, updatedAt: now };
+  let list = [];
+  try {
+    const raw = localStorage.getItem("epf.invoices");
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) list = parsed;
     }
-  }
+  } catch {}
+  list.unshift(invoice);
+  localStorage.setItem("epf.invoices", JSON.stringify(list));
+  localStorage.setItem("epf.invoiceDraft", JSON.stringify(invoice));
+  window.location.href = `/invoice-basic?id=${encodeURIComponent(id)}`;
+}
 
+function saveEstimateForLater() {
+  const data = scrapeEstimateFromDom();
+  if (!data) return;
+  const record = saveInvoiceRecord(data);
+  if (typeof window !== "undefined") {
+    window.alert(
+      `Estimate saved as invoice "${record.id}".\n\nLater open /invoice-basic?id=${record.id} to view/print.`
+    );
+  }
+}
+
+export default function EstimateBuilderPage() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (window.__EPF_ESTIMATE_INITED__) return;
@@ -380,6 +485,8 @@ export default function EstimateBuilderPage() {
         tax_rate: $("#tax_rate")?.value || "13",
         tax_now: $("#cbTaxNow")?.checked ? 1 : 0,
         g_place_id: $("#g_place_id")?.value || "",
+        paint_dim_width: $("#paint_dim_width")?.value || "",
+        paint_dim_depth: $("#paint_dim_depth")?.value || "",
       };
       return { sections, meta };
     }
@@ -415,6 +522,12 @@ export default function EstimateBuilderPage() {
       if (cb) cb.checked = !!meta.tax_now;
       const gpid = document.querySelector("#g_place_id");
       if (gpid && "value" in gpid) gpid.value = meta.g_place_id || "";
+      const dimWidth = document.getElementById("paint_dim_width");
+      if (dimWidth && "value" in dimWidth)
+        dimWidth.value = meta.paint_dim_width || "";
+      const dimDepth = document.getElementById("paint_dim_depth");
+      if (dimDepth && "value" in dimDepth)
+        dimDepth.value = meta.paint_dim_depth || "";
 
       // sections
       Object.entries(sections || {}).forEach(([id, spec]) => {
@@ -438,6 +551,7 @@ export default function EstimateBuilderPage() {
             const hdr = document.createElement("tr");
             hdr.className = "roomHeader";
             hdr.dataset.group = it.group || "";
+            hdr.dataset.roomName = it.roomName || "Room";
             hdr.innerHTML = `
               <td colspan="6">
                 <span class="roomName" contenteditable="true">${
@@ -674,9 +788,23 @@ export default function EstimateBuilderPage() {
         </td>
       `;
       tb?.appendChild(tr);
+      return tr;
     }
 
-    function addPopRoom(roomLabel, type) {
+    function setPopcornGroupSF(groupId, sf) {
+      const numericSF = Number(sf);
+      if (!groupId || Number.isNaN(numericSF)) return;
+      const baseRow = document.querySelector(
+        `#sec-popcorn tbody tr[data-group="${groupId}"][data-role="base"]`
+      );
+      const qtyInput = baseRow?.querySelector(".qty");
+      if (qtyInput) {
+        qtyInput.value = String(numericSF);
+        qtyInput.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+    }
+
+    function addPopRoom(roomLabel, type, opts = {}) {
       const tb = $("#tb-popcorn");
       const group =
         "g" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
@@ -761,25 +889,191 @@ export default function EstimateBuilderPage() {
         });
       }
       scheduleDraftSave();
+      if (opts.initialSF != null) {
+        setPopcornGroupSF(group, opts.initialSF);
+      }
+      return group;
     }
 
-    function addPaintRoom(roomLabel) {
+    function addPaintRoom(roomLabel, opts = {}) {
       const sec = $("#sec-paint");
       if (!sec) return;
       const tb = sec.querySelector("tbody");
       if (!tb) return;
 
+      const group =
+        opts.group ||
+        "paint-" + Date.now().toString(36) + Math.random().toString(36).slice(2);
+
       const hdr = document.createElement("tr");
       hdr.className = "roomHeader";
-      hdr.innerHTML = `<td colspan="6">${roomLabel}</td>`;
+      hdr.dataset.group = group;
+      hdr.dataset.roomName = roomLabel || "Room";
+      hdr.innerHTML = `<td colspan="6"><span class="roomName">${roomLabel}</span></td>`;
       tb.appendChild(hdr);
 
-      addRow(sec, { desc: "Walls paint", unit: "ea", rate: 750 });
-      addRow(sec, { desc: "Door frame", unit: "door", rate: 80 });
-      addRow(sec, { desc: "Window", unit: "ea", rate: 80 });
-      addRow(sec, { desc: "Closet", unit: "ea", rate: 120 });
+      const addPaintLine = (lineOpts) =>
+        addRow(sec, {
+          ...lineOpts,
+          group,
+        });
+
+      const wallsRow = addPaintLine({
+        desc: "Walls paint",
+        unit: "ea",
+        rate: 750,
+        role: "walls",
+      });
+      addPaintLine({ desc: "Door frame", unit: "door", rate: 80 });
+      addPaintLine({ desc: "Window", unit: "ea", rate: 80 });
+      addPaintLine({ desc: "Closet", unit: "ea", rate: 120 });
       scheduleDraftSave();
+
+      const width = Number(opts.width) || 0;
+      const depth = Number(opts.depth) || 0;
+      if (width > 0 && depth > 0 && wallsRow) {
+        const wallsSF = Math.round(2 * (width + depth) * WALL_HEIGHT_FT);
+        const ceilingSF = Math.round(width * depth);
+        const qtyInput = wallsRow.querySelector(".qty");
+        const unitSel = wallsRow.querySelector(".unit");
+        if (qtyInput) qtyInput.value = String(wallsSF);
+        if (unitSel) unitSel.value = "sf";
+
+        if (
+          window.confirm(
+            "Also add this room to Popcorn removal with these dimensions?"
+          )
+        ) {
+          createPopcornRoomFromDims(roomLabel, ceilingSF);
+        }
+      }
     }
+
+    function createPopcornRoomFromDims(roomName, ceilingSF) {
+      if (!ceilingSF) return;
+      let label = roomName?.trim();
+      if (!label) {
+        label = window.prompt("Popcorn room name?", "New room")?.trim() || "";
+      }
+      if (!label) return;
+      const type = window
+        .prompt(
+          `Ceiling type for "${label}"? Enter "unpainted" or "painted".`,
+          "unpainted"
+        )
+        ?.toLowerCase();
+      const addedGroup = addPopRoom(label, type || "unpainted", {
+        initialSF: ceilingSF,
+      });
+      if (addedGroup) {
+        setPopcornGroupSF(addedGroup, ceilingSF);
+      }
+    }
+
+    function getPaintRoomMetaForRow(row) {
+      if (!row) return null;
+      const group = row.dataset.group;
+      const lookupHeader = (grp) =>
+        grp
+          ? document.querySelector(
+              `#sec-paint .roomHeader[data-group="${grp}"]`
+            )
+          : null;
+      if (group) {
+        const header = lookupHeader(group);
+        if (header) {
+          const name =
+            header.dataset.roomName ||
+            header.querySelector(".roomName")?.textContent?.trim() ||
+            header.textContent?.trim() ||
+            "";
+          return { group, header, name };
+        }
+      }
+      let cursor = row.previousElementSibling;
+      while (cursor) {
+        if (cursor.classList?.contains("roomHeader")) {
+          const name =
+            cursor.dataset?.roomName ||
+            cursor.querySelector(".roomName")?.textContent?.trim() ||
+            cursor.textContent?.trim() ||
+            "";
+          return { group: cursor.dataset?.group || "", header: cursor, name };
+        }
+        cursor = cursor.previousElementSibling;
+      }
+      return null;
+    }
+
+  function applyPaintDimensions(options = {}) {
+    const { promptPopcorn = false } = options;
+    const widthInput = document.getElementById("paint_dim_width");
+    const depthInput = document.getElementById("paint_dim_depth");
+    const width = parseFloat(widthInput?.value || "0");
+    const depth = parseFloat(depthInput?.value || "0");
+    if (!width || !depth) {
+      window.alert("Enter both wall width and depth (in feet) before applying.");
+      return;
+    }
+    const wallsSF = Math.max(
+      0,
+      Math.round(2 * (width + depth) * WALL_HEIGHT_FT)
+    );
+    const ceilingSF = Math.max(0, Math.round(width * depth));
+
+    const paintSec = document.getElementById("sec-paint");
+    let roomNameForPrompt = "";
+    if (paintSec) {
+      let targetRow =
+        paintSec.querySelector('tbody tr[data-role="walls"]') || null;
+      if (!targetRow) {
+        targetRow = addRow(paintSec, {
+          desc: "Walls paint (calc)",
+          unit: "sf",
+          role: "walls",
+        });
+      }
+      const roomMeta = getPaintRoomMetaForRow(targetRow);
+      roomNameForPrompt = roomMeta?.name || "";
+      const qtyInput = targetRow?.querySelector(".qty");
+      if (qtyInput) qtyInput.value = String(wallsSF);
+      const unitSel = targetRow?.querySelector(".unit");
+      if (unitSel) unitSel.value = "sf";
+    }
+
+    const popSec = document.getElementById("sec-popcorn");
+    if (popSec) {
+      const ceilingRow =
+        popSec.querySelector('tbody tr[data-role="base"]') ||
+        popSec.querySelector("#tb-popcorn tr");
+      const groupId = ceilingRow?.dataset.group;
+      if (groupId) {
+        setPopcornGroupSF(groupId, ceilingSF);
+      } else {
+        const qtyInput = ceilingRow?.querySelector(".qty");
+        if (qtyInput) {
+          qtyInput.value = String(ceilingSF);
+          qtyInput.dispatchEvent(new Event("input", { bubbles: true }));
+        }
+      }
+    }
+
+    if (promptPopcorn && ceilingSF > 0) {
+      const defaultName = roomNameForPrompt || "Room";
+      const addPop = window.confirm(
+        `Add popcorn/stucco removal for "${defaultName}" using ${ceilingSF} sf ceiling?`
+      );
+      if (addPop) {
+        const customName =
+          window.prompt("Popcorn room name?", defaultName)?.trim() ||
+          defaultName;
+        createPopcornRoomFromDims(customName, ceilingSF);
+      }
+    }
+
+    scheduleDraftSave();
+    window.__EPF_RECALC__?.();
+  }
 
     function initPopcornDefaults() {
       addPopRoom("Main areas", "unpainted");
@@ -1118,8 +1412,26 @@ export default function EstimateBuilderPage() {
       if (t.classList.contains("addRoom")) {
         const room = window.prompt("Room name (e.g., Primary Bedroom)?");
         if (!room) return;
-        addPaintRoom(room);
+        const widthStr = window.prompt(
+          "Room width in feet? (optional)",
+          document.getElementById("paint_dim_width")?.value || ""
+        );
+        const depthStr = window.prompt(
+          "Room depth in feet? (optional)",
+          document.getElementById("paint_dim_depth")?.value || ""
+        );
+        const widthVal = parseFloat(widthStr || "0") || 0;
+        const depthVal = parseFloat(depthStr || "0") || 0;
+        addPaintRoom(room, { width: widthVal, depth: depthVal });
         window.__EPF_RECALC__?.();
+      }
+      if (t.classList.contains("calcWallsFromDims")) {
+        applyPaintDimensions();
+        return;
+      }
+      if (t.classList.contains("calcWallsAndPop")) {
+        applyPaintDimensions({ promptPopcorn: true });
+        return;
       }
     });
 
@@ -1229,7 +1541,7 @@ export default function EstimateBuilderPage() {
       if (!pickerList) return;
       pickerList.innerHTML = "";
       const q = (query || "").trim().toLowerCase();
-      const allowed = SERVICE_TEMPLATES.filter((t) => {
+      const allowed = SERVICE_COST.filter((t) => {
         if (!pickerSectionId) return true;
         if (t.section === "any") return true;
         return t.section === pickerSectionId;
@@ -1246,7 +1558,14 @@ export default function EstimateBuilderPage() {
         pickerList.appendChild(empty);
         return;
       }
-      allowed.forEach((tmpl) => {
+      const rankFor = (section) =>
+        SERVICE_SECTION_ORDER[section] ?? SERVICE_SECTION_ORDER["sec-add"] ?? 10;
+      const sorted = [...allowed].sort((a, b) => {
+        const rankDiff = rankFor(a.section) - rankFor(b.section);
+        if (rankDiff !== 0) return rankDiff;
+        return a.name.localeCompare(b.name);
+      });
+      sorted.forEach((tmpl) => {
         const btn = document.createElement("button");
         btn.type = "button";
         btn.className = "esp-item";
@@ -1502,7 +1821,13 @@ export default function EstimateBuilderPage() {
           <div className="header">
             <div className="brand">
               <div className="logo">
-                <img src="/logo/image.png" alt="EPF logo" />
+                <Image
+                  src="/logo/image.png"
+                  alt="EPF logo"
+                  width={264}
+                  height={240}
+                  priority
+                />
               </div>
               <div>
                 <div
@@ -1556,19 +1881,19 @@ export default function EstimateBuilderPage() {
                 <input
                   type="checkbox"
                   className="svc"
-                  data-target="#sec-popcorn"
+                  data-target="#sec-paint"
                   defaultChecked
                 />{" "}
-                Popcorn / Stucco Removal
+                Interior Painting (optional)
               </label>
               <label>
                 <input
                   type="checkbox"
                   className="svc"
-                  data-target="#sec-paint"
+                  data-target="#sec-popcorn"
                   defaultChecked
                 />{" "}
-                Interior Painting (optional)
+                Popcorn / Stucco Removal
               </label>
               <label>
                 <input
@@ -1587,13 +1912,20 @@ export default function EstimateBuilderPage() {
           </div>
 
           {/* SECTIONS */}
-          <PopcornSection />
           <PaintingSection />
+          <PopcornSection />
           <AdditionalServicesSection />
 
           {/* GLOBAL CONTROLS (below sections) */}
           <div className="controls">
-            <button className="btn primary" id="btnPrint">
+            <button
+              type="button"
+              className="btn primary"
+              id="btnPrint"
+              onClick={() => {
+                if (typeof window !== "undefined") window.print();
+              }}
+            >
               Print / Save PDF (Customer)
             </button>
             <button className="btn" id="toggleCustomer">

@@ -241,15 +241,40 @@
     font-size: 11px;
 }
 
+.epf .paintCalc {
+    padding: 0 14px 12px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: flex-end;
+}
+
+.epf .paintCalc .dimInput {
+    flex: 1 1 140px;
+    font-size: 12px;
+    color: var(--muted);
+}
+
+.epf .paintCalc .dimInput input {
+    margin-top: 4px;
+}
+
+.epf .paintCalc .dimActions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
 
 /* Sections */
 
 .epf .sec {
-    border: 1px solid var(--line);
+    border: 1px solid #dbe4f3;
     border-radius: 14px;
     margin: 12px 18px;
-    background: #fff;
+    background: #fdfdff;
     overflow: hidden;
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
 }
 
 .epf .secHead {
@@ -302,6 +327,7 @@
 .epf .tableWrap {
     padding: 0 14px 12px;
     overflow-x: auto;
+    scrollbar-color: #cbd5f5 transparent;
 }
 
 .epf table {
@@ -426,6 +452,119 @@
     }
 }
 
+@media (max-width: 640px) {
+    .epf {
+        font-size: 15px;
+        line-height: 1.65;
+    }
+    .epf .page {
+        margin: 0;
+        border-radius: 0;
+        border: none;
+        box-shadow: none;
+    }
+    .epf .header {
+        grid-template-columns: 1fr;
+        text-align: left;
+        gap: 6px;
+    }
+    .epf .badge {
+        justify-self: flex-start;
+    }
+    .epf .services,
+    .epf .sec,
+    .epf .controls,
+    .epf .sum {
+        margin-left: 12px;
+        margin-right: 12px;
+    }
+    .epf .sec {
+        margin-top: 10px;
+        margin-bottom: 10px;
+        border-radius: 12px;
+    }
+    .epf .secHead {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 6px;
+    }
+    .epf .secHead label,
+    .epf .services .card label {
+        font-size: 14px;
+    }
+    .epf table {
+        min-width: 580px;
+    }
+    .epf th,
+    .epf td {
+        font-size: 14px;
+        padding: 12px 12px;
+    }
+    .epf .btn {
+        min-height: 44px;
+        font-size: 14px;
+        padding: 10px 16px;
+    }
+    .epf .btn.del,
+    .epf .btn.mini {
+        min-height: 38px;
+        font-size: 13px;
+    }
+    .epf .controls {
+        flex-direction: column;
+        gap: 10px;
+    }
+    .epf .controls .btn {
+        width: 100%;
+        justify-content: center;
+    }
+    .epf .qtyWrap {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .epf .qtyWrap .btn.mini {
+        width: 100%;
+        text-align: center;
+    }
+    .epf .kv input,
+    .epf input.qty,
+    .epf input.rate,
+    .epf select.unit {
+        font-size: 15px;
+        padding: 8px 10px;
+    }
+    .epf .sectionControls .card {
+        background: #f8fafc;
+    }
+    .epf .paintCalc {
+        padding-left: 0;
+        padding-right: 0;
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .epf .paintCalc .dimActions {
+        width: 100%;
+        flex-direction: column;
+    }
+    .epf .paintCalc .dimActions .btn {
+        width: 100%;
+    }
+    .epf .tableWrap {
+        padding-left: 0;
+        padding-right: 0;
+        margin-top: 4px;
+        -webkit-overflow-scrolling: touch;
+    }
+    .epf .tableWrap::after {
+        content: "Swipe → for rate/amount";
+        display: block;
+        font-size: 11px;
+        color: var(--muted);
+        padding: 6px 0 0;
+        text-align: right;
+    }
+}
+
 .epf .sumBox {
     border: 2px solid var(--brand);
     border-radius: 14px;
@@ -492,78 +631,78 @@ body.customer .epf .sec .roomHeader {
 /* POPCORN — deep blue */
 
 .epf #sec-popcorn {
-    border-color: #1d4ed8 !important;
-    background: #eff6ff !important;
+    border-color: #aac6ff !important;
+    background: #f6f9ff !important;
 }
 
 .epf #sec-popcorn .secHead {
-    background: #dbeafe !important;
+    background: #e4edff !important;
 }
 
 .epf #sec-popcorn .secDesc,
 .epf #sec-popcorn .tableWrap {
-    background: #eff6ff !important;
+    background: #f6f9ff !important;
 }
 
 .epf #sec-popcorn .roomHeader td {
-    background: #c7d2fe !important;
+    background: #eaf1ff !important;
 }
 
 .epf #sec-popcorn .btn.ghost {
-    border-color: #1d4ed8;
+    border-color: #3b82f6;
     color: #1d4ed8;
 }
 
 
-/* PAINT — orange */
+/* PAINT — warm sand */
 
 .epf #sec-paint {
-    border-color: #ea580c !important;
-    background: #fff7ed !important;
+    border-color: #ffc9a4 !important;
+    background: #fffdf8 !important;
 }
 
 .epf #sec-paint .secHead {
-    background: #fed7aa !important;
+    background: #ffe7d2 !important;
 }
 
 .epf #sec-paint .secDesc,
 .epf #sec-paint .tableWrap {
-    background: #fff7ed !important;
+    background: #fffdf8 !important;
 }
 
 .epf #sec-paint .roomHeader td {
-    background: #fed7aa !important;
+    background: #ffe7d2 !important;
 }
 
 .epf #sec-paint .btn.ghost {
-    border-color: #ea580c;
-    color: #ea580c;
+    border-color: #f97316;
+    color: #c2410c;
 }
 
 
-/* ADDITIONAL — green */
+/* ADDITIONAL — soft teal */
 
 .epf #sec-add {
-    border-color: #15803d !important;
-    background: #f0fdf4 !important;
+    border-color: #9ddae9 !important;
+    background: #f4fdff !important;
 }
 
 .epf #sec-add .secHead {
-    background: #bbf7d0 !important;
+    background: #e3faff !important;
 }
 
 .epf #sec-add .secDesc,
 .epf #sec-add .tableWrap {
-    background: #f0fdf4 !important;
+    background: #f4fdff !important;
 }
 
 .epf #sec-add .roomHeader td {
-    background: #bbf7d0 !important;
+    background: #ddf6fb !important;
 }
 
 .epf #sec-add .btn.ghost {
-    border-color: #15803d;
-    color: #15803d;
+    border-color: #0891b2;
+    color: #036672;
 }
 
 
@@ -754,6 +893,13 @@ body.customer .epf .sec .roomHeader {
 @media print {
     body {
         background: #fff;
+        margin: 0;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+    .epf {
+        font: 12pt/1.55 "Helvetica Neue", Arial, sans-serif;
+        color: #0f172a;
     }
     .epf .page {
         border: 0;
@@ -761,6 +907,20 @@ body.customer .epf .sec .roomHeader {
         margin: 0;
         max-width: none;
         box-shadow: none;
+        padding: 0 6mm;
+    }
+    .epf .sec {
+        border: 1px solid #d8e1ef !important;
+        box-shadow: none;
+        background: #fff !important;
+        margin: 6mm 0;
+    }
+    .epf .header,
+    .epf .reviewBar,
+    .epf .footer,
+    .epf .sum {
+        padding-left: 0;
+        padding-right: 0;
     }
     .epf .services,
     .epf .controls,
@@ -768,9 +928,95 @@ body.customer .epf .sec .roomHeader {
     .epf .btn {
         display: none !important;
     }
+    .epf .paintCalc,
+    .epf .sectionControls,
+    .epf .qtyWrap .btn,
+    .epf .tableWrap::after {
+        display: none !important;
+    }
+    .epf #sec-popcorn,
+    .epf #sec-paint,
+    .epf #sec-add {
+        background: #fff !important;
+        border-color: #cbd5f5 !important;
+    }
+    .epf .secHead {
+        background: #eef2ff !important;
+        border-bottom-color: #cbd5f5;
+    }
+    .epf .secHead label,
+    .epf .secHead button {
+        display: none !important;
+    }
+    .epf table {
+        min-width: 100% !important;
+        table-layout: fixed;
+        border: 1px solid #d7dfeb;
+        border-radius: 8px;
+        background: #fff;
+        margin-bottom: 4mm;
+    }
+    .epf th,
+    .epf td {
+        font-size: 11pt;
+        padding: 6pt 5pt;
+        word-break: break-word;
+    }
+    .epf thead th {
+        background: #f1f5f9 !important;
+        color: #0f172a;
+        border-bottom: 1px solid #d4dbe8;
+    }
+    .epf .tableWrap {
+        overflow: visible !important;
+        padding: 0 !important;
+    }
+    .epf tbody tr:nth-child(even) {
+        background: #fcfdff;
+    }
+    .epf input,
+    .epf select,
+    .epf textarea {
+        border: none !important;
+        background: transparent !important;
+        padding: 0 !important;
+        box-shadow: none !important;
+        font: inherit;
+        color: inherit;
+        -webkit-appearance: none;
+        appearance: none;
+    }
+    .epf .kv label {
+        font-size: 10pt;
+        color: #475569;
+    }
+    .epf .roomHeader td {
+        background: #eef2ff !important;
+    }
+    .epf th:last-child,
+    .epf td:last-child {
+        display: none !important;
+    }
+    .epf th:nth-child(4),
+    .epf td:nth-child(4) {
+        display: none !important;
+    }
+    .epf .qtyWrap {
+        justify-content: flex-start;
+    }
+    .epf td .small {
+        font-size: 9pt;
+        color: #475569;
+    }
+    .epf .secTotalCard.card {
+        border-color: #d8e1ef !important;
+        background: #fafbfd !important;
+        box-shadow: none;
+    }
     body.keep-sections .epf .sec {
         break-inside: avoid;
         page-break-inside: avoid;
+        margin-bottom: 6mm;
     }
     .epf .sum,
     .epf .sumBox,
@@ -780,7 +1026,7 @@ body.customer .epf .sec .roomHeader {
     }
     @page {
         size: Letter;
-        margin: 18mm 12mm 14mm;
+        margin: 12mm 12mm 16mm;
     }
     .epf .sec+.sec::before {
         content: "";
