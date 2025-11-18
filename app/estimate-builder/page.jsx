@@ -718,6 +718,31 @@ export default function EstimateBuilderPage() {
     });
 
     /** ========= Helpers ========= */
+    const PERIMETER_MATCHERS = ["baseboard", "crown", "crown moulding", "crown molding", "casing"];
+
+    function isPerimeterRow(tr) {
+      if (!tr) return false;
+      if (tr.dataset.linear === "perimeter") return true;
+      const unitSel = tr.querySelector(".unit");
+      const unitVal = unitSel?.value?.toLowerCase();
+      if (unitVal !== "lf") return false;
+      const descCell = tr.querySelector("td");
+      const descText = (descCell?.textContent || "").toLowerCase();
+      return PERIMETER_MATCHERS.some((matcher) => descText.includes(matcher));
+    }
+
+    function applyPerimeterValueToRow(tr, perimeter) {
+      if (!perimeter || perimeter <= 0 || !isPerimeterRow(tr)) return;
+      const qtyInput = tr.querySelector(".qty");
+      if (qtyInput) qtyInput.value = String(perimeter);
+    }
+
+    function updateAllPerimeterRows(perimeter) {
+      if (!perimeter || perimeter <= 0) return;
+      document
+        .querySelectorAll(".sec tbody tr")
+        .forEach((row) => applyPerimeterValueToRow(row, perimeter));
+    }
     function addRow(sec, opts) {
       const tb = sec.querySelector("tbody");
       const o = Object.assign(
@@ -732,6 +757,7 @@ export default function EstimateBuilderPage() {
           role: "",
           tmplId: null,
           details: null,
+          linear: null,
         },
         opts || {}
       );
@@ -739,6 +765,7 @@ export default function EstimateBuilderPage() {
       if (o.privateRow) tr.classList.add("private");
       if (o.group) tr.dataset.group = o.group;
       if (o.role) tr.dataset.role = o.role;
+      if (o.linear) tr.dataset.linear = o.linear;
 
       const detailsArr =
         o.details ??
@@ -788,6 +815,9 @@ export default function EstimateBuilderPage() {
         </td>
       `;
       tb?.appendChild(tr);
+      if (typeof window !== "undefined" && window.__EPF_LAST_PERIM__) {
+        applyPerimeterValueToRow(tr, window.__EPF_LAST_PERIM__);
+      }
       return tr;
     }
 
@@ -934,10 +964,16 @@ export default function EstimateBuilderPage() {
       if (width > 0 && depth > 0 && wallsRow) {
         const wallsSF = Math.round(2 * (width + depth) * WALL_HEIGHT_FT);
         const ceilingSF = Math.round(width * depth);
+        const perimeterLF = Math.round(2 * (width + depth));
         const qtyInput = wallsRow.querySelector(".qty");
         const unitSel = wallsRow.querySelector(".unit");
         if (qtyInput) qtyInput.value = String(wallsSF);
         if (unitSel) unitSel.value = "sf";
+        if (perimeterLF > 0) {
+          if (typeof window !== "undefined")
+            window.__EPF_LAST_PERIM__ = perimeterLF;
+          updateAllPerimeterRows(perimeterLF);
+        }
 
         if (
           window.confirm(
@@ -1020,6 +1056,7 @@ export default function EstimateBuilderPage() {
       Math.round(2 * (width + depth) * WALL_HEIGHT_FT)
     );
     const ceilingSF = Math.max(0, Math.round(width * depth));
+    const perimeterLF = Math.max(0, Math.round(2 * (width + depth)));
 
     const paintSec = document.getElementById("sec-paint");
     let roomNameForPrompt = "";
@@ -1056,6 +1093,11 @@ export default function EstimateBuilderPage() {
           qtyInput.dispatchEvent(new Event("input", { bubbles: true }));
         }
       }
+    }
+
+    if (perimeterLF > 0) {
+      if (typeof window !== "undefined") window.__EPF_LAST_PERIM__ = perimeterLF;
+      updateAllPerimeterRows(perimeterLF);
     }
 
     if (promptPopcorn && ceilingSF > 0) {
