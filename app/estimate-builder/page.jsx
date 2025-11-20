@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import Image from "next/image";
 import Script from "next/script";
 import PopcornSection from "@/components/estimate/PopcornSection";
 import PaintingSection from "@/components/estimate/PaintingSection";
 import AdditionalServicesSection from "@/components/estimate/AdditionalServicesSection";
 import SERVICE_COST from "@/components/estimate/ServiceCost";
+import PrintLayout from "@/components/estimate/PrintLayout";
 
 
 
@@ -334,27 +335,46 @@ function scrapeEstimateFromDom() {
     if ("value" in el && el.value != null) return String(el.value).trim();
     return (el.textContent || "").trim();
   };
+  const ensureQuoteId = () => {
+    const existing = val("#qid");
+    if (existing) return existing;
+    const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+    const generated = `EPF-${randomSuffix}`;
+    const qidEl = document.querySelector("#qid");
+    if (qidEl) qidEl.textContent = generated;
+    return generated;
+  };
+
+  const defaultNotes =
+    "Dust-controlled removal, masking, HEPA sanding, and daily cleanup. Smooth finish ready for paint.";
+
   const base = {
     client: val("#client"),
+    contact: val("#clientContact"),
     site: val("#site"),
+    preparedBy: val("#preparedBy"),
+    startWindow: val("#startWindow"),
     gPlaceId: val("#g_place_id"),
     date: $("#date")?.value || new Date().toISOString().slice(0, 10),
-    quoteId: val("#qid") || "EPF-QUOTE",
+    quoteId: ensureQuoteId(),
     taxRate: parseFloat($("#tax_rate")?.value || "13"),
     matFixed: parseFloat($("#mat_fixed")?.value || "0"),
     matPct: parseFloat($("#mat_pct")?.value || "0"),
     items: [],
-    notes:
-      "Thank you for the opportunity. Please review and let us know if you’d like to proceed.",
+    notes: val("#scope_notes") || defaultNotes,
   };
 
-  $$(".sec[data-enabled='1']").forEach((sec) => {
+  const sections = [];
+  $$(".sec").forEach((sec) => {
     if (sec.dataset.hideCustomer === "1") return;
+    if (sec.getAttribute("data-enabled") !== "1") return;
+    const secTitle = sec.querySelector(".secTitle")?.textContent?.trim() || "";
     const rows = $$("tbody tr", sec).filter(
       (tr) =>
         !tr.classList.contains("private") &&
         !tr.classList.contains("roomHeader")
     );
+    const sectionItems = [];
     rows.forEach((tr) => {
       const descCell = tr.querySelector("td");
       const qty = parseFloat(tr.querySelector(".qty")?.value || "0") || 0;
@@ -362,15 +382,24 @@ function scrapeEstimateFromDom() {
       const amt =
         parseFloat(tr.querySelector(".amt")?.value || "0") ||
         (qty && rate ? qty * rate : 0);
-      base.items.push({
-        description: (descCell?.textContent || "").trim(),
+      const item = {
+        description: (descCell?.innerText || "").trim(),
         qty,
         unit: tr.querySelector(".unit")?.value || "",
         rate,
         amount: amt,
-      });
+      };
+      base.items.push(item);
+      sectionItems.push(item);
     });
+    if (sectionItems.length) {
+      sections.push({
+        title: secTitle,
+        items: sectionItems,
+      });
+    }
   });
+  base.sections = sections;
 
   const labour = base.items.reduce((s, r) => s + (r.amount || 0), 0);
   const materials = base.matFixed + labour * (base.matPct / 100);
@@ -417,6 +446,9 @@ function saveEstimateForLater() {
 }
 
 export default function EstimateBuilderPage() {
+  const [printSnapshot, setPrintSnapshot] = useState(null);
+  const [previewVisible, setPreviewVisible] = useState(false);
+  const [isPrinting, setIsPrinting] = useState(false);
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (window.__EPF_ESTIMATE_INITED__) return;
@@ -1715,6 +1747,30 @@ export default function EstimateBuilderPage() {
     }
   }, []);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const afterPrint = () => setIsPrinting(false);
+    window.addEventListener("afterprint", afterPrint);
+    return () => window.removeEventListener("afterprint", afterPrint);
+  }, []);
+
+  function capturePrintSnapshot() {
+    const snapshot = scrapeEstimateFromDom();
+    if (snapshot) setPrintSnapshot(snapshot);
+    return snapshot;
+  }
+
+  function triggerPrint() {
+    if (isPrinting) return;
+    const snapshot = capturePrintSnapshot();
+    if (!snapshot) return;
+    setPreviewVisible(false);
+    setIsPrinting(true);
+    setTimeout(() => {
+      if (typeof window !== "undefined") window.print();
+    }, 50);
+  }
+
   return (
     <main className="min-h-screen bg-slate-100 py-4 px-2 md:px-4">
       {/* Google Maps script for address autocomplete */}
@@ -1857,7 +1913,7 @@ export default function EstimateBuilderPage() {
         }
       `}</style>
 
-      <div className="epf">
+      <div className="epf interactive-estimate">
         <div className="page" id="page">
           {/* HEADER */}
           <div className="header">
@@ -1964,11 +2020,19 @@ export default function EstimateBuilderPage() {
               type="button"
               className="btn primary"
               id="btnPrint"
-              onClick={() => {
-                if (typeof window !== "undefined") window.print();
-              }}
+              onClick={triggerPrint}
             >
               Print / Save PDF (Customer)
+            </button>
+            <button
+              type="button"
+              className="btn ghost"
+              onClick={() => {
+                const snap = capturePrintSnapshot();
+                if (snap) setPreviewVisible(true);
+              }}
+            >
+              Preview print layout
             </button>
             <button className="btn" id="toggleCustomer">
               Toggle Customer View
@@ -1993,14 +2057,17 @@ export default function EstimateBuilderPage() {
 
           {/* TOTALS */}
           <div className="sum">
-            <div
-              className="card"
-              contentEditable
-              suppressContentEditableWarning
-            >
-              <strong>Scope notes for the client:</strong> Dust-controlled
-              removal, masking, HEPA sanding, and daily cleanup. Smooth finish
-              ready for paint.
+            <div className="card">
+              <strong>Scope notes for the client:</strong>
+              <div
+                id="scope_notes"
+                contentEditable
+                suppressContentEditableWarning
+                className="mt-1"
+              >
+                Dust-controlled removal, masking, HEPA sanding, and daily cleanup.
+                Smooth finish ready for paint.
+              </div>
               <br />
               <em id="taxNotice">HST will be added at end of project</em>.
               Excludes asbestos testing/removal, electrical, structural work,
@@ -2081,6 +2148,11 @@ export default function EstimateBuilderPage() {
           </div>
         </div>
       </div>
+      <PrintLayout
+        snapshot={printSnapshot}
+        previewVisible={previewVisible}
+        onClosePreview={() => setPreviewVisible(false)}
+      />
     </main>
   );
 }

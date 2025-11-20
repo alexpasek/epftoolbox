@@ -69,6 +69,253 @@
     object-fit: contain;
 }
 
+.print-estimate {
+    display: none;
+}
+
+.print-estimate.show {
+    display: block;
+    margin: 40px auto;
+}
+
+.print-estimate .print-page {
+    width: 100%;
+    max-width: 960px;
+    margin: 0 auto;
+    font-family: "Helvetica Neue", Arial, sans-serif;
+    color: #0f172a;
+    background: #fff;
+    border: 1px solid #dfe6f5;
+    border-radius: 22px;
+    padding: 32px;
+    box-shadow: 0 18px 55px rgba(15, 23, 42, 0.16);
+    position: relative;
+}
+
+.print-estimate .preview-close {
+    display: none;
+}
+
+.print-estimate.show .preview-close {
+    display: inline-flex;
+    margin-left: auto;
+    margin-bottom: 18px;
+    border: 1px solid #cbd5f5;
+    background: #f0f4ff;
+    color: #1d3a8a;
+    padding: 6px 14px;
+    border-radius: 999px;
+}
+
+.print-estimate .print-hero {
+    border-radius: 20px;
+    padding: 18px 22px;
+    background: radial-gradient(circle at top left, #ffeede, #f0f6ff);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+}
+
+.print-estimate .hero-brand {
+    display: flex;
+    gap: 14px;
+    align-items: center;
+}
+
+.print-estimate .hero-brand .logo-wrap {
+    width: 60px;
+    height: 60px;
+    border-radius: 16px;
+    border: 2px solid #f97316;
+    background: #fff;
+    display: grid;
+    place-items: center;
+    padding: 8px;
+}
+
+.print-estimate .hero-brand img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.print-estimate .hero-text h1 {
+    margin: 0;
+    font-size: 22px;
+}
+
+.print-estimate .hero-text p {
+    margin: 2px 0;
+    color: #475569;
+}
+
+.print-estimate .hero-text span {
+    font-size: 12px;
+    color: #64748b;
+}
+
+.print-estimate .hero-summary {
+    text-align: right;
+}
+
+.print-estimate .hero-summary span {
+    text-transform: uppercase;
+    font-size: 11px;
+    letter-spacing: 0.7px;
+    color: #475569;
+}
+
+.print-estimate .hero-summary strong {
+    display: block;
+    font-size: 32px;
+    margin: 4px 0;
+}
+
+.print-estimate .hero-summary small {
+    color: #475569;
+}
+
+.print-estimate .print-info-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 16px;
+    margin-bottom: 24px;
+}
+
+.print-estimate .print-info-grid article {
+    border: 1px solid #dfe6f5;
+    border-radius: 16px;
+    padding: 12px 16px;
+    background: #f9fbff;
+}
+
+.print-estimate .print-info-grid span {
+    text-transform: uppercase;
+    font-size: 11px;
+    color: #94a3b8;
+    letter-spacing: 0.5px;
+}
+
+.print-estimate .print-info-grid strong {
+    display: block;
+    margin-top: 4px;
+    font-size: 16px;
+}
+
+.print-estimate .print-info-grid p {
+    margin: 6px 0 0;
+    color: #475569;
+    font-size: 12px;
+}
+
+.print-estimate .scope-table h3 {
+    margin: 12px 0;
+    font-size: 14px;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+    color: #64748b;
+}
+
+.print-estimate .scope-table table {
+    width: 100%;
+    border-collapse: collapse;
+    border-radius: 16px;
+    overflow: hidden;
+    border: 1px solid #dfe6f5;
+}
+
+.print-estimate .scope-table tr:nth-child(even) {
+    background: #f9fbff;
+}
+
+.print-estimate .scope-table td {
+    padding: 14px;
+    vertical-align: top;
+}
+
+.print-estimate .scope-table .line-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: #0f172a;
+}
+
+.print-estimate .scope-table ul {
+    margin: 6px 0 0;
+    padding-left: 18px;
+    color: #475569;
+    font-size: 12px;
+}
+
+.print-estimate .scope-table .line-amount {
+    text-align: right;
+    font-size: 18px;
+    font-weight: 700;
+    color: #0f172a;
+    white-space: nowrap;
+}
+
+.print-estimate .print-totals {
+    margin-top: 20px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+}
+
+.print-estimate .print-totals article {
+    border: 1px solid #d7dfeb;
+    padding: 12px 16px;
+    border-radius: 12px;
+    background: #f8fafc;
+}
+
+.print-estimate .print-totals article span {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #475569;
+}
+
+.print-estimate .print-totals article strong {
+    display: block;
+    margin-top: 8px;
+    font-size: 18px;
+}
+
+.print-estimate .print-totals .grand {
+    background: linear-gradient(120deg, #0f172a, #1e293b);
+    color: #fff;
+}
+
+.print-estimate .print-notes {
+    margin-top: 18px;
+    padding: 14px 18px;
+    border: 1px dashed #cbd5f5;
+    border-radius: 14px;
+    background: #f9fbff;
+}
+
+.print-estimate .print-notes h4 {
+    margin: 0 0 6px;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: #475569;
+}
+
+.print-estimate .print-notes p {
+    margin: 0;
+    color: #334155;
+    line-height: 1.5;
+}
+
+.print-estimate .print-footer {
+    margin-top: 22px;
+    text-align: center;
+    color: #64748b;
+    font-size: 12px;
+}
+
 .epf .title {
     text-align: center;
 }
@@ -921,6 +1168,13 @@ body.customer .epf .sec .roomHeader {
     .epf .sum {
         padding-left: 0;
         padding-right: 0;
+    }
+    .interactive-estimate {
+        display: none !important;
+    }
+    .print-estimate {
+        display: block !important;
+        page-break-after: auto;
     }
     .epf .services,
     .epf .controls,
