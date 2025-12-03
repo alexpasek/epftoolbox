@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="90" viewBox="0 0 320 90" role="img" aria-labelledby="title desc">
+<title id="title">Popcorn Ceiling Removal Calgary</title>
+<desc id="desc">Wordmark placeholder for Popcorn Ceiling Removal Calgary operated by Alpha Drywall Finishing.</desc>
+<defs>
+  <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="0%">
+    <stop offset="0%" stop-color="#f97316"/>
+    <stop offset="100%" stop-color="#fdba74"/>
+  </linearGradient>
+</defs>
+<rect width="320" height="90" rx="16" fill="url(#grad)" />
+<circle cx="52" cy="45" r="32" fill="#fff6ed" />
+<circle cx="46" cy="35" r="10" fill="#fb923c" />
+<circle cx="62" cy="52" r="14" fill="#fdba74" />
+<circle cx="40" cy="56" r="9" fill="#fed7aa" />
+<path d="M72 24c10 3 15 11 16 22" stroke="#fb923c" stroke-width="4" stroke-linecap="round" fill="none"/>
+<text x="96" y="44" fill="#fff" font-family="Inter, system-ui, sans-serif" font-size="22" font-weight="700" letter-spacing="0.4">
+  Popcorn Ceiling
+</text>
+<text x="96" y="66" fill="#1f2937" font-family="Inter, system-ui, sans-serif" font-size="16" font-weight="600" letter-spacing="0.2">
+  Removal Calgary
+</text>
+</svg>

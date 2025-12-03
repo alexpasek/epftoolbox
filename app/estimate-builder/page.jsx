@@ -9,6 +9,41 @@ import AdditionalServicesSection from "@/components/estimate/AdditionalServicesS
 import SERVICE_COST from "@/components/estimate/ServiceCost";
 import PrintLayout from "@/components/estimate/PrintLayout";
 
+const STATE_KEY = "epf.estimateState.v2";
+
+const BRAND_PROFILES = {
+  epf: {
+    name: "EPF Pro Services",
+    tagline: "Popcorn ceiling & interior finishing specialists",
+    contactLine: "info@epfproservices.com • 647-923-6784 • epfproservices.com",
+    logoSrc: "/logo/image.png",
+    logoAlt: "EPF logo",
+    legalLine: "",
+    footerLines: [
+      "EPF Pro Services • 647-923-6784 • info@epfproservices.com • epfproservices.com",
+      "WSIB + Liability Insured • Workmanship warranty against application defects (1 year)",
+    ],
+    preparedBy: "Alex — EPF Pro Services",
+    brandColor: "#e11d48",
+  },
+  popcornCalgary: {
+    name: "Popcorn Ceiling Removal Calgary",
+    tagline: "Smooth ceilings & finishing specialists — Calgary & area",
+    contactLine: "(825) 365-3770 • info@popcornceilingremoval.com",
+    logoSrc: "/logo/popcorn-calgary.jpg",
+    logoAlt: "Popcorn Ceiling Removal Calgary logo",
+    legalLine: "Operated under legal name Alpha Drywall Finishing",
+    footerLines: [
+      "Operated under legal name Alpha Drywall Finishing",
+      "Popcorn Ceiling Removal Calgary • Serving Calgary, AB",
+      "Hours: Mon–Sat 8am–6pm • 220 Southpoint Greenway SW, Airdrie, AB T4B 5P4",
+      "CALL (825) 365-3770 • info@popcornceilingremoval.com",
+    ],
+    preparedBy: "Alex — Popcorn Ceiling Removal Calgary",
+    brandColor: "#f97316",
+  },
+};
+
 
 
 
@@ -223,7 +258,7 @@ function renderDescWithDetails(name, detailsArr) {
 }
 
 /** ===== Split-out client/job block (IDs kept the same) ===== */
-function EstimateClientJobBlock() {
+function EstimateClientJobBlock({ defaultPreparedBy }) {
   return (
     <div className="block grid2">
       <div className="card">
@@ -287,8 +322,13 @@ function EstimateClientJobBlock() {
         </div>
         <div className="kv">
           <label>Prepared by</label>
-          <div id="preparedBy" contentEditable suppressContentEditableWarning>
-            Alex — EPF Pro Services
+          <div
+            id="preparedBy"
+            key={defaultPreparedBy}
+            contentEditable
+            suppressContentEditableWarning
+          >
+            {defaultPreparedBy || "Alex — EPF Pro Services"}
           </div>
         </div>
         <div className="kv">
@@ -347,6 +387,8 @@ function scrapeEstimateFromDom() {
 
   const defaultNotes =
     "Dust-controlled removal, masking, HEPA sanding, and daily cleanup. Smooth finish ready for paint.";
+  const brandKey =
+    typeof window !== "undefined" ? window.__EPF_BRAND__ || "epf" : "epf";
 
   const base = {
     client: val("#client"),
@@ -362,6 +404,7 @@ function scrapeEstimateFromDom() {
     matPct: parseFloat($("#mat_pct")?.value || "0"),
     items: [],
     notes: val("#scope_notes") || defaultNotes,
+    brandKey,
   };
 
   const sections = [];
@@ -446,9 +489,27 @@ function saveEstimateForLater() {
 }
 
 export default function EstimateBuilderPage() {
+  const [brandKey, setBrandKey] = useState("epf");
   const [printSnapshot, setPrintSnapshot] = useState(null);
   const [previewVisible, setPreviewVisible] = useState(false);
   const [isPrinting, setIsPrinting] = useState(false);
+  const activeBrand = BRAND_PROFILES[brandKey] || BRAND_PROFILES.epf;
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.__EPF_BRAND__ = brandKey;
+    try {
+      const raw = window.localStorage.getItem(STATE_KEY);
+      const state = raw ? JSON.parse(raw) || {} : {};
+      if (raw) {
+        const next = {
+          ...state,
+          meta: { ...(state.meta || {}), brand: brandKey },
+        };
+        window.localStorage.setItem(STATE_KEY, JSON.stringify(next));
+      }
+    } catch {}
+  }, [brandKey]);
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (window.__EPF_ESTIMATE_INITED__) return;
@@ -458,8 +519,6 @@ export default function EstimateBuilderPage() {
     const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
 
     /** ========= STATE SNAPSHOT (JSON) ========= */
-    const STATE_KEY = "epf.estimateState.v2";
-
     function snapshotEstimate() {
       const sections = {};
       document.querySelectorAll(".sec").forEach((sec) => {
@@ -508,6 +567,7 @@ export default function EstimateBuilderPage() {
         client: ($("#client")?.textContent || "").trim(),
         contact: ($("#clientContact")?.textContent || "").trim(),
         site: $("#site")?.value || ($("#site")?.textContent || "").trim(),
+        brand: typeof window !== "undefined" ? window.__EPF_BRAND__ || "epf" : "epf",
         qid: ($("#qid")?.textContent || "").trim(),
         preparedBy: ($("#preparedBy")?.textContent || "").trim(),
         startWindow: ($("#startWindow")?.textContent || "").trim(),
@@ -535,6 +595,12 @@ export default function EstimateBuilderPage() {
           el.value = value ?? el.value;
         else el.textContent = value ?? el.textContent;
       };
+      const restoredBrand = meta?.brand || "epf";
+      if (typeof window !== "undefined")
+        window.__EPF_BRAND__ = restoredBrand;
+      setBrandKey(restoredBrand);
+      const brandProfile =
+        BRAND_PROFILES[restoredBrand] || BRAND_PROFILES.epf;
       if (meta.date) setVal("#date", meta.date);
       setVal("#client", meta.client || "[Full name]");
       setVal("#clientContact", meta.contact || "[Phone] • [Email]");
@@ -544,7 +610,10 @@ export default function EstimateBuilderPage() {
         else siteEl.textContent = meta.site || "";
       }
       setVal("#qid", meta.qid || "EPF-QUOTE");
-      setVal("#preparedBy", meta.preparedBy || "Alex — EPF Pro Services");
+      setVal(
+        "#preparedBy",
+        meta.preparedBy || brandProfile.preparedBy || "Alex — EPF Pro Services"
+      );
       setVal("#startWindow", meta.startWindow || "[TBD]");
       setVal("#mat_fixed", meta.mat_fixed || "0");
       setVal("#mat_pct", meta.mat_pct || "0");
@@ -1402,10 +1471,6 @@ export default function EstimateBuilderPage() {
       if (!(t instanceof HTMLElement)) return;
 
       // global core
-      if (t.id === "btnPrint") {
-        window.print();
-        return;
-      }
       if (t.id === "btnSaveEstimate") {
         saveEstimateForLater();
         return;
@@ -1754,15 +1819,22 @@ export default function EstimateBuilderPage() {
     return () => window.removeEventListener("afterprint", afterPrint);
   }, []);
 
-  function capturePrintSnapshot() {
+  function capturePrintSnapshot(nextBrandKey = brandKey) {
+    const key = nextBrandKey || brandKey || "epf";
+    if (typeof window !== "undefined") window.__EPF_BRAND__ = key;
+    setBrandKey(key);
     const snapshot = scrapeEstimateFromDom();
-    if (snapshot) setPrintSnapshot(snapshot);
+    if (snapshot) {
+      const withBrand = { ...snapshot, brandKey: key };
+      setPrintSnapshot(withBrand);
+      return withBrand;
+    }
     return snapshot;
   }
 
-  function triggerPrint() {
+  function triggerPrint(nextBrandKey) {
     if (isPrinting) return;
-    const snapshot = capturePrintSnapshot();
+    const snapshot = capturePrintSnapshot(nextBrandKey);
     if (!snapshot) return;
     setPreviewVisible(false);
     setIsPrinting(true);
@@ -1913,35 +1985,43 @@ export default function EstimateBuilderPage() {
         }
       `}</style>
 
-      <div className="epf interactive-estimate">
+      <div
+        className="epf interactive-estimate"
+        style={{ "--brand": activeBrand.brandColor || "#e11d48" }}
+      >
         <div className="page" id="page">
           {/* HEADER */}
           <div className="header">
             <div className="brand">
               <div className="logo">
                 <Image
-                  src="/logo/image.png"
-                  alt="EPF logo"
+                  src={activeBrand.logoSrc || "/logo/image.png"}
+                  alt={activeBrand.logoAlt || "EPF logo"}
                   width={264}
                   height={240}
                   priority
                 />
               </div>
-              <div>
+              <div key={brandKey}>
                 <div
                   contentEditable
                   suppressContentEditableWarning
                   className="font-semibold"
                 >
-                  EPF Pro Services
+                  {activeBrand.name}
                 </div>
                 <div
                   contentEditable
                   suppressContentEditableWarning
                   className="text-xs text-slate-500"
                 >
-                  info@epfproservices.com • 647-923-6784 • epfproservices.com
+                  {activeBrand.contactLine}
                 </div>
+                {activeBrand.legalLine ? (
+                  <div className="text-xs text-slate-400">
+                    {activeBrand.legalLine}
+                  </div>
+                ) : null}
               </div>
             </div>
             <div className="title">
@@ -1969,7 +2049,7 @@ export default function EstimateBuilderPage() {
           </div>
 
           {/* CLIENT / JOB */}
-          <EstimateClientJobBlock />
+          <EstimateClientJobBlock defaultPreparedBy={activeBrand.preparedBy} />
 
           {/* SERVICE SELECTOR */}
           <div className="services">
@@ -2016,6 +2096,24 @@ export default function EstimateBuilderPage() {
 
           {/* GLOBAL CONTROLS (below sections) */}
           <div className="controls">
+            <div className="brandSwitch" role="group" aria-label="Brand selection">
+              <span className="text-xs text-slate-500">Brand:</span>
+              <button
+                type="button"
+                className={`btn ${brandKey === "epf" ? "primary" : "ghost"}`}
+                onClick={() => setBrandKey("epf")}
+              >
+                EPF Pro Services
+              </button>
+              <button
+                type="button"
+                id="btnBrandCalgary"
+                className={`btn ${brandKey === "popcornCalgary" ? "primary" : "ghost"}`}
+                onClick={() => setBrandKey("popcornCalgary")}
+              >
+                Popcorn Ceiling Removal Calgary
+              </button>
+            </div>
             <button
               type="button"
               className="btn primary"
@@ -2023,6 +2121,14 @@ export default function EstimateBuilderPage() {
               onClick={triggerPrint}
             >
               Print / Save PDF (Customer)
+            </button>
+            <button
+              type="button"
+              className="btn"
+              id="btnPrintCalgary"
+              onClick={() => triggerPrint("popcornCalgary")}
+            >
+              Print / Save PDF — Calgary brand
             </button>
             <button
               type="button"
@@ -2140,11 +2246,9 @@ export default function EstimateBuilderPage() {
           </div>
 
           <div className="footer">
-            <div>
-              WSIB + Liability Insured • Workmanship warranty against
-              application defects (1 year)
-            </div>
-            <div>EPF Pro Services • Popcorn ceiling removal • 647-923-6784</div>
+            {(activeBrand.footerLines || []).map((line, idx) => (
+              <div key={idx}>{line}</div>
+            ))}
           </div>
         </div>
       </div>
@@ -2152,6 +2256,10 @@ export default function EstimateBuilderPage() {
         snapshot={printSnapshot}
         previewVisible={previewVisible}
         onClosePreview={() => setPreviewVisible(false)}
+        brandProfile={
+          BRAND_PROFILES[printSnapshot?.brandKey || brandKey] ||
+          BRAND_PROFILES.epf
+        }
       />
     </main>
   );

@@ -15,6 +15,19 @@ function splitDescription(desc = "") {
   return { title, bullets };
 }
 
+const DEFAULT_BRAND = {
+  name: "EPF Pro Services",
+  tagline: "Popcorn ceiling & interior finishing specialists",
+  contactLine: "info@epfproservices.com • 647-923-6784 • epfproservices.com",
+  logoSrc: "/logo/image.png",
+  logoAlt: "EPF logo",
+  legalLine: "",
+  brandColor: "#f97316",
+  footerLines: [
+    "EPF Pro Services • 647-923-6784 • info@epfproservices.com • epfproservices.com",
+  ],
+};
+
 const currency = (val) =>
   `$${Math.round(Number(val || 0)).toLocaleString("en-CA")}`;
 
@@ -22,6 +35,7 @@ export default function PrintLayout({
   snapshot,
   previewVisible,
   onClosePreview,
+  brandProfile,
 }) {
   if (!snapshot) return null;
 
@@ -39,6 +53,7 @@ export default function PrintLayout({
     totals = {},
   } = snapshot;
 
+  const brand = brandProfile || DEFAULT_BRAND;
   const className = `print-estimate${previewVisible ? " show" : ""}`;
   const infoCards = [
     {
@@ -52,7 +67,7 @@ export default function PrintLayout({
     },
     {
       label: "Prepared By",
-      value: preparedBy || "EPF Pro Services",
+      value: preparedBy || brand.name,
       helper: startWindow ? `Start window: ${startWindow}` : "Start window TBD",
     },
   ];
@@ -71,19 +86,29 @@ export default function PrintLayout({
         ) : null}
         <header className="print-hero">
           <div className="hero-brand">
-            <div className="logo-wrap">
+            <div
+              className="logo-wrap"
+              style={
+                brand.brandColor
+                  ? { borderColor: brand.brandColor }
+                  : undefined
+              }
+            >
               <Image
-                src="/logo/image.png"
-                alt="EPF logo"
+                src={brand.logoSrc || DEFAULT_BRAND.logoSrc}
+                alt={brand.logoAlt || DEFAULT_BRAND.logoAlt}
                 width={60}
                 height={60}
                 priority={false}
               />
             </div>
             <div className="hero-text">
-              <h1>EPF Pro Services</h1>
-              <p>Popcorn ceiling & interior finishing specialists</p>
-              <span>info@epfproservices.com • 647-923-6784</span>
+              <h1>{brand.name || DEFAULT_BRAND.name}</h1>
+              <p>{brand.tagline || DEFAULT_BRAND.tagline}</p>
+              <span>{brand.contactLine || DEFAULT_BRAND.contactLine}</span>
+              {brand.legalLine ? (
+                <small className="brand-legal">{brand.legalLine}</small>
+              ) : null}
             </div>
           </div>
           <div className="hero-summary">
@@ -206,10 +231,11 @@ export default function PrintLayout({
         </section>
 
         <footer className="print-footer">
-          <p>
-            EPF Pro Services • 647-923-6784 • info@epfproservices.com •
-            epfproservices.com
-          </p>
+          {Array.isArray(brand.footerLines) && brand.footerLines.length
+            ? brand.footerLines.map((line, idx) => <p key={idx}>{line}</p>)
+            : DEFAULT_BRAND.footerLines.map((line, idx) => (
+                <p key={idx}>{line}</p>
+              ))}
         </footer>
       </div>
     </div>
