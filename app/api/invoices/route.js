@@ -4,62 +4,48 @@ import { NextResponse } from "next/server";
 export const runtime = "edge";
 export const dynamic = "force-dynamic";
 
-const KV_KEY = "invoices";
-// Try multiple binding names to accommodate dashboard config.
-const BINDINGS = ["invoice2", "invoice", "invoices"];
-let warnedNoKv = false;
+const R2_KEY = "invoices.json";
 
-function kvDetails() {
-  for (const binding of BINDINGS) {
-    const url =
-      process.env[`${binding.toUpperCase()}_REST_API_URL`] ||
-      process.env.KV_REST_API_URL;
-    const token =
-      process.env[`${binding.toUpperCase()}_REST_API_TOKEN`] ||
-      process.env.KV_REST_API_TOKEN;
-    if (url && token) return { url, token, binding };
+async function getR2Binding() {
+  if (typeof globalThis.INVOICES_BUCKET !== "undefined") {
+    return globalThis.INVOICES_BUCKET;
   }
-  if (!warnedNoKv) {
-    console.warn("KV invoices: no REST API env found, using memory fallback");
-    warnedNoKv = true;
+  try {
+    // Edge runtime exposes env via process.env bindings in Cloudflare Pages.
+    // For R2, the binding should be INVOICES_BUCKET per user's setting.
+    const binding = process.env.INVOICES_BUCKET;
+    if (binding) return binding;
+  } catch (err) {
+    console.warn("R2 binding lookup failed", err);
   }
   return null;
 }
 
 async function readAll() {
-  const kv = kvDetails();
-  if (!kv) return null;
+  const bucket = await getR2Binding();
+  if (!bucket) return null;
   try {
-    const res = await fetch(`${kv.url}/values/${KV_KEY}`, {
-      headers: { Authorization: `Bearer ${kv.token}` },
-      cache: "no-store",
-    });
-    if (!res.ok) return null;
-    const txt = await res.text();
-    if (!txt) return [];
+    const obj = await bucket.get(R2_KEY);
+    if (!obj) return [];
+    const txt = await obj.text();
     const parsed = JSON.parse(txt);
     return Array.isArray(parsed) ? parsed : [];
   } catch (err) {
-    console.warn("KV read failed", err);
+    console.warn("R2 read failed", err);
     return null;
   }
 }
 
 async function writeAll(list) {
-  const kv = kvDetails();
-  if (!kv) return false;
+  const bucket = await getR2Binding();
+  if (!bucket) return false;
   try {
-    await fetch(`${kv.url}/values/${KV_KEY}`, {
-      method: "PUT",
-      headers: {
-        Authorization: `Bearer ${kv.token}`,
-        "Content-Type": "text/plain",
-      },
-      body: JSON.stringify(list),
+    await bucket.put(R2_KEY, JSON.stringify(list), {
+      httpMetadata: { contentType: "application/json" },
     });
     return true;
   } catch (err) {
-    console.warn("KV write failed", err);
+    console.warn("R2 write failed", err);
     return false;
   }
 }
@@ -71,7 +57,7 @@ export async function GET(req) {
   const all = await readAll();
   if (!all) {
     return NextResponse.json(
-      { error: "KV not configured; add binding invoice2/invoice/invoices to Pages project." },
+      { error: "Storage not configured; add binding INVOICES_BUCKET (R2) to Pages project." },
       { status: 500 }
     );
   }
@@ -103,7 +89,7 @@ export async function POST(req) {
   const all = await readAll();
   if (!all) {
     return NextResponse.json(
-      { error: "KV not configured; add binding invoice2/invoice/invoices to Pages project." },
+      { error: "Storage not configured; add binding INVOICES_BUCKET (R2) to Pages project." },
       { status: 500 }
     );
   }
