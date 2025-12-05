@@ -4,8 +4,8 @@ export const runtime = "edge";
 export const dynamic = "force-dynamic";
 
 const KV_KEY = "invoices";
-// Try both binding names to accommodate dashboard config.
-const BINDINGS = ["invoice", "invoices"];
+// Try multiple binding names to accommodate dashboard config.
+const BINDINGS = ["invoice2", "invoice", "invoices"];
 let warnedNoKv = false;
 
 function memoryStore() {
