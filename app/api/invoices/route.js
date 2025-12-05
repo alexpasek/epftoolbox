@@ -4,6 +4,7 @@ export const runtime = "edge";
 export const dynamic = "force-dynamic";
 
 const KV_KEY = "invoices";
+const BINDING = "invoices";
 
 function memoryStore() {
   if (!globalThis.__INVOICE_MEM__) globalThis.__INVOICE_MEM__ = [];
@@ -11,8 +12,12 @@ function memoryStore() {
 }
 
 function kvDetails() {
-  const url = process.env.KV_REST_API_URL;
-  const token = process.env.KV_REST_API_TOKEN;
+  const url =
+    process.env[`${BINDING.toUpperCase()}_REST_API_URL`] ||
+    process.env.KV_REST_API_URL;
+  const token =
+    process.env[`${BINDING.toUpperCase()}_REST_API_TOKEN`] ||
+    process.env.KV_REST_API_TOKEN;
   return url && token ? { url, token } : null;
 }
 
