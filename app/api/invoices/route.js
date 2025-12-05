@@ -77,6 +77,7 @@ export async function GET(req) {
   const id = url.searchParams.get("id");
 
   const all = await readAll();
+  console.log("KV invoices GET", { id, count: all.length });
   if (id) {
     const found = all.find((item) => String(item.id) === String(id));
     if (!found) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -90,11 +91,13 @@ export async function POST(req) {
   try {
     payload = await req.json();
   } catch (err) {
+    console.warn("KV invoices POST invalid JSON", err);
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
   const record = payload?.record || payload;
   if (!record || !record.id) {
+    console.warn("KV invoices POST missing id");
     return NextResponse.json({ error: "Missing invoice id" }, { status: 400 });
   }
 
@@ -110,5 +113,10 @@ export async function POST(req) {
   }
 
   await writeAll(all);
+  console.log("KV invoices POST saved", {
+    id: merged.id,
+    listSize: all.length,
+    brandKey: merged.brandKey,
+  });
   return NextResponse.json({ ok: true, record: merged });
 }
