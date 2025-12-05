@@ -3,6 +3,21 @@
 import { Suspense, startTransition, useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 
+const BRAND_PROFILES = {
+  epf: {
+    name: "EPF Pro Services",
+    contactLine: "info@epfproservices.com • 647-923-6784",
+  },
+  popcornCalgary: {
+    name: "Popcorn Ceiling Removal Calgary",
+    contactLine: "info@popcornceilingremoval.com • (825) 365-3770",
+  },
+  alphaDrywall: {
+    name: "Alpha Drywall Finishing",
+    contactLine: "Mon–Sat 8am–6pm • (825) 365-3770",
+  },
+};
+
 function recalcTotals(inv) {
   const labour = (inv.items || []).reduce(
     (s, r) => s + (Number(r.amount) || 0),
@@ -10,10 +25,12 @@ function recalcTotals(inv) {
   );
   const materials =
     Number(inv.matFixed || 0) + labour * (Number(inv.matPct || 0) / 100);
-  const subtotal = labour + materials;
-  const tax = subtotal * (Number(inv.taxRate || 0) / 100);
+  const discount = (labour + materials) * (Number(inv.discPct || 0) / 100);
+  const subtotal = labour + materials - discount;
+  const effectiveTaxRate = inv.taxNow ? Number(inv.taxRate || 0) : 0;
+  const tax = subtotal * (effectiveTaxRate / 100);
   const total = subtotal + tax;
-  return { labour, materials, subtotal, tax, total };
+  return { labour, materials, discount, subtotal, tax, total };
 }
 
 // 🔹 Inner component that actually uses useSearchParams / useRouter
@@ -33,12 +50,22 @@ function InvoiceBasicPageInner() {
 
       if (invoiceId) {
         const raw = localStorage.getItem("epf.invoices");
-        if (raw) {
-          const list = JSON.parse(raw);
-          if (Array.isArray(list)) {
-            loaded = list.find((inv) => inv.id === invoiceId) || null;
-          }
-        }
+        const rawEs = localStorage.getItem("epf.eslist");
+        const parseList = (rawStr) => {
+          if (!rawStr) return [];
+          try {
+            const parsed = JSON.parse(rawStr);
+            if (Array.isArray(parsed)) return parsed;
+            if (parsed && typeof parsed === "object") return [parsed];
+          } catch {}
+          return [];
+        };
+        const list = parseList(raw);
+        const esList = parseList(rawEs);
+        loaded =
+          list.find((inv) => inv.id === invoiceId) ||
+          esList.find((inv) => inv.id === invoiceId) ||
+          null;
       }
 
       if (!loaded) {
@@ -63,7 +90,7 @@ function InvoiceBasicPageInner() {
         };
       }
 
-      loaded.totals = recalcTotals(loaded);
+      loaded.totals = loaded.totals || recalcTotals(loaded);
       startTransition(() => {
         setInvoice(loaded);
         setStatus("ready");
@@ -190,6 +217,7 @@ function InvoiceBasicPageInner() {
   };
 
   const t = invoice.totals || recalcTotals(invoice);
+  const brand = BRAND_PROFILES[invoice.brandKey] || BRAND_PROFILES.epf;
 
   return (
     <main className="min-h-screen bg-slate-100 px-4 py-6">
@@ -198,10 +226,10 @@ function InvoiceBasicPageInner() {
         <header className="flex items-start justify-between gap-4 mb-4">
           <div>
             <div className="text-xs font-semibold text-brand">
-              EPF Pro Services
+              {brand.name}
             </div>
             <div className="text-[11px] text-slate-500">
-              info@epfproservices.com • 647-923-6784
+              {brand.contactLine}
             </div>
           </div>
           <div className="text-right">

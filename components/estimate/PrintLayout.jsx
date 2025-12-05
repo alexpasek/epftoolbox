@@ -22,7 +22,7 @@ const DEFAULT_BRAND = {
   logoSrc: "/logo/image.png",
   logoAlt: "EPF logo",
   legalLine: "",
-  brandColor: "#f97316",
+  brandColor: "#e11d48",
   footerLines: [
     "EPF Pro Services • 647-923-6784 • info@epfproservices.com • epfproservices.com",
   ],
@@ -99,7 +99,7 @@ export default function PrintLayout({
                 alt={brand.logoAlt || DEFAULT_BRAND.logoAlt}
                 width={60}
                 height={60}
-                priority={false}
+                priority
               />
             </div>
             <div className="hero-text">
@@ -132,15 +132,16 @@ export default function PrintLayout({
         <section className="scope-table">
           {sections.length ? (
             sections.map((section, sIdx) => (
-              <article key={`${section.title}-${sIdx}`} className="scope-card">
+                <article key={`${section.title}-${sIdx}`} className="scope-card">
                 <header>
                   <h3>{section.title || "Service Section"}</h3>
                   <span>
                     {currency(
-                      section.items.reduce(
-                        (sum, item) => sum + (item.amount || 0),
-                        0
-                      )
+                      section.total ??
+                        section.items.reduce(
+                          (sum, item) => sum + (item.amount || 0),
+                          0
+                        )
                     )}
                   </span>
                 </header>

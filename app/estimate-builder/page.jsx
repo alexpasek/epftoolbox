@@ -3,13 +3,14 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import Script from "next/script";
+import Link from "next/link";
 import PopcornSection from "@/components/estimate/PopcornSection";
 import PaintingSection from "@/components/estimate/PaintingSection";
 import AdditionalServicesSection from "@/components/estimate/AdditionalServicesSection";
 import SERVICE_COST from "@/components/estimate/ServiceCost";
 import PrintLayout from "@/components/estimate/PrintLayout";
-
 const STATE_KEY = "epf.estimateState.v2";
+const ES_LIST_KEY = "epf.eslist";
 
 const BRAND_PROFILES = {
   epf: {
@@ -41,6 +42,23 @@ const BRAND_PROFILES = {
     ],
     preparedBy: "Alex — Popcorn Ceiling Removal Calgary",
     brandColor: "#f97316",
+  },
+  alphaDrywall: {
+    name: "Alpha Drywall Finishing",
+    tagline: "Serving Calgary, AB",
+    contactLine: "Mon–Sat 8am–6pm • (825) 365-3770",
+    logoSrc: "/logo/alpha-drywall.png",
+    logoAlt: "Alpha Drywall Finishing logo",
+    legalLine: "",
+    footerLines: [
+      "Alpha Drywall Finishing",
+      "Serving Calgary, AB",
+      "Hours: Mon–Sat 8am–6pm",
+      "220 Southpoint Greenway SW, Airdrie, AB T4B 5P4",
+      "CALL (825) 365-3770",
+    ],
+    preparedBy: "Yehor — Alpha Drywall Finishing",
+    brandColor: "#0ea5e9",
   },
 };
 
@@ -345,10 +363,12 @@ function EstimateClientJobBlock({ defaultPreparedBy }) {
 /** ---------- Save invoice helpers (DOM + localStorage operations) ---------- */
 function saveInvoiceRecord(data) {
   if (typeof window === "undefined") return data;
-  const cleanQuoteId = (data.quoteId || "").toString().trim();
+  const primaryId =
+    (data.id || data.quoteId || "").toString().trim() ||
+    "INV-" + Date.now();
   const record = {
     ...data,
-    id: cleanQuoteId || "INV-" + Date.now(),
+    id: primaryId,
     savedAt: new Date().toISOString(),
   };
   let list = [];
@@ -357,11 +377,55 @@ function saveInvoiceRecord(data) {
     list = raw ? JSON.parse(raw) || [] : [];
   } catch {}
   list = list.filter((inv) => inv.id !== record.id);
-  list.push(record);
+  list.unshift(record);
   try {
     window.localStorage.setItem("epf.invoices", JSON.stringify(list));
     window.localStorage.setItem("epf.invoiceDraft", JSON.stringify(record));
+    console.debug("Saved quote/invoice", {
+      id: record.id,
+      quoteId: record.quoteId,
+      brandKey: record.brandKey,
+      totals: record.totals,
+      listSize: list.length,
+    });
+  } catch (err) {
+    console.error("Failed to save quote/invoice", err);
+  }
+  return record;
+}
+
+// Separate ES list storage (Alpha audit)
+function saveEsRecord(data) {
+  if (typeof window === "undefined") return data;
+  const primaryId =
+    (data.id || data.quoteId || "").toString().trim() ||
+    "ES-" + Date.now();
+  const record = {
+    ...data,
+    id: primaryId,
+    savedAt: new Date().toISOString(),
+  };
+  let list = [];
+  try {
+    const raw = window.localStorage.getItem(ES_LIST_KEY);
+    list = raw ? JSON.parse(raw) || [] : [];
   } catch {}
+  list = list.filter((inv) => inv.id !== record.id);
+    list.unshift(record);
+    try {
+      window.localStorage.setItem(ES_LIST_KEY, JSON.stringify(list));
+      console.debug("Saved to ES list", {
+        id: record.id,
+        quoteId: record.quoteId,
+        brandKey: record.brandKey,
+        listSize: list.length,
+        stored: list,
+      });
+      // Also mirror into main invoices list so it appears in the quotes list
+      saveInvoiceRecord(record);
+    } catch (err) {
+      console.error("Failed to save ES record", err);
+  }
   return record;
 }
 
@@ -402,22 +466,23 @@ function scrapeEstimateFromDom() {
     taxRate: parseFloat($("#tax_rate")?.value || "13"),
     matFixed: parseFloat($("#mat_fixed")?.value || "0"),
     matPct: parseFloat($("#mat_pct")?.value || "0"),
+    discPct: parseFloat($("#disc_pct")?.value || "0"),
     items: [],
     notes: val("#scope_notes") || defaultNotes,
     brandKey,
   };
 
   const sections = [];
+  let labourTotal = 0;
   $$(".sec").forEach((sec) => {
     if (sec.dataset.hideCustomer === "1") return;
     if (sec.getAttribute("data-enabled") !== "1") return;
     const secTitle = sec.querySelector(".secTitle")?.textContent?.trim() || "";
     const rows = $$("tbody tr", sec).filter(
-      (tr) =>
-        !tr.classList.contains("private") &&
-        !tr.classList.contains("roomHeader")
+      (tr) => !tr.classList.contains("roomHeader")
     );
     const sectionItems = [];
+    let sectionTotal = 0;
     rows.forEach((tr) => {
       const descCell = tr.querySelector("td");
       const qty = parseFloat(tr.querySelector(".qty")?.value || "0") || 0;
@@ -425,32 +490,44 @@ function scrapeEstimateFromDom() {
       const amt =
         parseFloat(tr.querySelector(".amt")?.value || "0") ||
         (qty && rate ? qty * rate : 0);
-      const item = {
-        description: (descCell?.innerText || "").trim(),
-        qty,
-        unit: tr.querySelector(".unit")?.value || "",
-        rate,
-        amount: amt,
-      };
-      base.items.push(item);
-      sectionItems.push(item);
+      const isPrivate = tr.classList.contains("private");
+      sectionTotal += amt;
+      labourTotal += amt;
+      if (!isPrivate) {
+        const item = {
+          description: (descCell?.innerText || "").trim(),
+          qty,
+          unit: tr.querySelector(".unit")?.value || "",
+          rate,
+          amount: amt,
+        };
+        base.items.push(item);
+        sectionItems.push(item);
+      }
     });
     if (sectionItems.length) {
       sections.push({
         title: secTitle,
         items: sectionItems,
+        total: sectionTotal,
       });
     }
   });
   base.sections = sections;
 
-  const labour = base.items.reduce((s, r) => s + (r.amount || 0), 0);
+  const labour = labourTotal;
   const materials = base.matFixed + labour * (base.matPct / 100);
-  const subtotal = labour + materials;
+  const discount = (labour + materials) * (base.discPct / 100);
+  const subtotal = labour + materials - discount;
   const taxNow = document.getElementById("cbTaxNow")?.checked ?? false;
-  const tax = subtotal * (taxNow ? base.taxRate / 100 : 0);
+  const effectiveTaxRate = taxNow ? base.taxRate : 0;
+  const tax = subtotal * (effectiveTaxRate / 100);
   const total = subtotal + tax;
-  return { ...base, totals: { labour, materials, subtotal, tax, total } };
+  return {
+    ...base,
+    taxNow,
+    totals: { labour, materials, discount, subtotal, tax, total },
+  };
 }
 
 function saveAsInvoice() {
@@ -480,8 +557,11 @@ function saveAsInvoice() {
 function saveEstimateForLater() {
   const data = scrapeEstimateFromDom();
   if (!data) return;
-  const record = saveInvoiceRecord(data);
-  if (typeof window !== "undefined") {
+  const record =
+    data.brandKey === "alphaDrywall"
+      ? saveEsRecord(data)
+      : saveInvoiceRecord(data);
+  if (record && typeof window !== "undefined") {
     window.alert(
       `Estimate saved as invoice "${record.id}".\n\nLater open /invoice-basic?id=${record.id} to view/print.`
     );
@@ -489,6 +569,8 @@ function saveEstimateForLater() {
 }
 
 export default function EstimateBuilderPage() {
+  const [accessMode, setAccessMode] = useState(null); // null | "full" | "alphaOnly"
+  const [passInput, setPassInput] = useState("");
   const [brandKey, setBrandKey] = useState("epf");
   const [printSnapshot, setPrintSnapshot] = useState(null);
   const [previewVisible, setPreviewVisible] = useState(false);
@@ -497,6 +579,38 @@ export default function EstimateBuilderPage() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    const storedAccess = window.localStorage.getItem("epf.accessMode");
+    if (storedAccess === "alphaOnly") {
+      setAccessMode("alphaOnly");
+      setBrandKey("alphaDrywall");
+    } else if (storedAccess === "full") {
+      setAccessMode("full");
+    } else {
+      setAccessMode(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (accessMode === "alphaOnly" && brandKey !== "alphaDrywall") {
+      setBrandKey("alphaDrywall");
+    }
+  }, [accessMode, brandKey]);
+
+  // Prevent navigating away via back button when locked to Alpha-only
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (accessMode !== "alphaOnly") return;
+    const handler = () => {
+      window.history.pushState(null, "", window.location.href);
+    };
+    window.history.pushState(null, "", window.location.href);
+    window.addEventListener("popstate", handler);
+    return () => window.removeEventListener("popstate", handler);
+  }, [accessMode]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (accessMode === null) return;
     window.__EPF_BRAND__ = brandKey;
     try {
       const raw = window.localStorage.getItem(STATE_KEY);
@@ -510,8 +624,15 @@ export default function EstimateBuilderPage() {
       }
     } catch {}
   }, [brandKey]);
+
+  // Brand-specific layout toggles (currently none; keep hook for future)
+  useEffect(() => {}, [brandKey]);
   useEffect(() => {
     if (typeof window === "undefined") return;
+    if (accessMode === null) {
+      window.__EPF_ESTIMATE_INITED__ = false;
+      return;
+    }
     if (window.__EPF_ESTIMATE_INITED__) return;
     window.__EPF_ESTIMATE_INITED__ = true;
 
@@ -1472,6 +1593,7 @@ export default function EstimateBuilderPage() {
 
       // global core
       if (t.id === "btnSaveEstimate") {
+        console.debug("btnSaveEstimate clicked");
         saveEstimateForLater();
         return;
       }
@@ -1680,16 +1802,20 @@ export default function EstimateBuilderPage() {
       if (!pickerList) return;
       pickerList.innerHTML = "";
       const q = (query || "").trim().toLowerCase();
+      const activeBrand =
+        (typeof window !== "undefined" && window.__EPF_BRAND__) || "epf";
       const allowed = SERVICE_COST.filter((t) => {
         if (!pickerSectionId) return true;
         if (t.section === "any") return true;
         return t.section === pickerSectionId;
-      }).filter(
-        (t) =>
-          !q ||
-          t.name.toLowerCase().includes(q) ||
-          t.desc.toLowerCase().includes(q)
-      );
+      })
+        .filter((t) => !t.brand || t.brand === activeBrand)
+        .filter(
+          (t) =>
+            !q ||
+            t.name.toLowerCase().includes(q) ||
+            t.desc.toLowerCase().includes(q)
+        );
       if (!allowed.length) {
         const empty = document.createElement("div");
         empty.className = "esp-empty";
@@ -1810,7 +1936,7 @@ export default function EstimateBuilderPage() {
     } else {
       window.initEPFPlaces = initAddressAutocomplete;
     }
-  }, []);
+  }, [accessMode]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1836,11 +1962,80 @@ export default function EstimateBuilderPage() {
     if (isPrinting) return;
     const snapshot = capturePrintSnapshot(nextBrandKey);
     if (!snapshot) return;
+    const saved =
+      snapshot.brandKey === "alphaDrywall"
+        ? saveEsRecord(snapshot)
+        : saveInvoiceRecord(snapshot);
+    console.debug("Print save", {
+      savedId: saved?.id,
+      brand: snapshot.brandKey,
+      esList:
+        typeof window !== "undefined"
+          ? window.localStorage.getItem(ES_LIST_KEY)
+          : "n/a",
+      invoices:
+        typeof window !== "undefined"
+          ? window.localStorage.getItem("epf.invoices")
+          : "n/a",
+    });
     setPreviewVisible(false);
     setIsPrinting(true);
+    // Give the print layout a moment to render images (logo) before invoking print
     setTimeout(() => {
       if (typeof window !== "undefined") window.print();
-    }, 50);
+    }, 200);
+  }
+
+  const locked = accessMode === null;
+
+  if (locked) {
+    return (
+      <main className="min-h-screen bg-slate-100 flex items-center justify-center px-4">
+        <div className="max-w-md w-full bg-white border border-slate-200 rounded-xl shadow-sm p-5 space-y-3">
+          <h1 className="text-lg font-semibold text-slate-900">
+            Enter access code
+          </h1>
+          <p className="text-sm text-slate-600">
+            Access is required to open the estimate builder.
+          </p>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              const trimmed = (passInput || "").trim().toLowerCase();
+              if (trimmed === "0320") {
+                setAccessMode("full");
+                if (typeof window !== "undefined")
+                  window.localStorage.setItem("epf.accessMode", "full");
+              } else if (trimmed === "yehor") {
+                setAccessMode("alphaOnly");
+                setBrandKey("alphaDrywall");
+                if (typeof window !== "undefined") {
+                  window.localStorage.setItem("epf.accessMode", "alphaOnly");
+                }
+              } else {
+                alert("Incorrect password");
+              }
+            }}
+            className="space-y-3"
+          >
+            <input
+              type="password"
+              value={passInput}
+              onChange={(e) => setPassInput(e.target.value)}
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand/40"
+              placeholder="Password"
+              autoFocus
+            />
+            <button
+              type="submit"
+              className="w-full rounded-lg bg-brand text-white px-3 py-2 text-sm font-semibold hover:opacity-90"
+            >
+              Unlock
+            </button>
+          </form>
+        </div>
+      </main>
+    );
   }
 
   return (
@@ -2098,43 +2293,84 @@ export default function EstimateBuilderPage() {
           <div className="controls">
             <div className="brandSwitch" role="group" aria-label="Brand selection">
               <span className="text-xs text-slate-500">Brand:</span>
-              <button
-                type="button"
-                className={`btn ${brandKey === "epf" ? "primary" : "ghost"}`}
-                onClick={() => setBrandKey("epf")}
-              >
-                EPF Pro Services
-              </button>
-              <button
-                type="button"
-                id="btnBrandCalgary"
-                className={`btn ${brandKey === "popcornCalgary" ? "primary" : "ghost"}`}
-                onClick={() => setBrandKey("popcornCalgary")}
-              >
-                Popcorn Ceiling Removal Calgary
-              </button>
+              {accessMode !== "alphaOnly" ? (
+                <>
+                  <button
+                    type="button"
+                    className={`btn ${brandKey === "epf" ? "primary" : "ghost"}`}
+                    onClick={() => setBrandKey("epf")}
+                  >
+                    EPF Pro Services
+                  </button>
+                  <button
+                    type="button"
+                    id="btnBrandCalgary"
+                    className={`btn ${brandKey === "popcornCalgary" ? "primary" : "ghost"}`}
+                    onClick={() => setBrandKey("popcornCalgary")}
+                  >
+                    Popcorn Ceiling Removal Calgary
+                  </button>
+                  <button
+                    type="button"
+                    id="btnBrandAlpha"
+                    className={`btn ${brandKey === "alphaDrywall" ? "primary" : "ghost"}`}
+                    onClick={() => setBrandKey("alphaDrywall")}
+                  >
+                    Alpha Drywall Finishing
+                  </button>
+                </>
+              ) : (
+                <span className="text-xs text-slate-600">
+                  Alpha Drywall (locked)
+                </span>
+              )}
             </div>
-            <button
-              type="button"
-              className="btn primary"
-              id="btnPrint"
-              onClick={triggerPrint}
-            >
-              Print / Save PDF (Customer)
-            </button>
-            <button
-              type="button"
-              className="btn"
-              id="btnPrintCalgary"
-              onClick={() => triggerPrint("popcornCalgary")}
-            >
-              Print / Save PDF — Calgary brand
-            </button>
+            {accessMode === "full" ? (
+              <Link href="/invoices" className="btn ghost" id="btnQuotes">
+                Quotes / ES list
+              </Link>
+            ) : null}
+            {brandKey === "alphaDrywall" ? (
+              <button
+                type="button"
+                className="btn primary"
+                id="btnPrintAlpha"
+                onClick={() => {
+                  console.debug("btnPrintAlpha pressed");
+                  triggerPrint("alphaDrywall");
+                }}
+              >
+                Print / Save PDF — Alpha Drywall
+              </button>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  className="btn primary"
+                  id="btnPrint"
+                  onClick={() => {
+                    console.debug("btnPrint pressed");
+                    triggerPrint();
+                  }}
+                >
+                  Print / Save PDF (Customer)
+                </button>
+                <button
+                  type="button"
+                  className="btn"
+                  id="btnPrintCalgary"
+                  onClick={() => triggerPrint("popcornCalgary")}
+                >
+                  Print / Save PDF — Calgary brand
+                </button>
+              </>
+            )}
             <button
               type="button"
               className="btn ghost"
               onClick={() => {
-                const snap = capturePrintSnapshot();
+    const snap = capturePrintSnapshot();
+    console.debug("btnPrintAlpha clicked", { snap });
                 if (snap) setPreviewVisible(true);
               }}
             >
