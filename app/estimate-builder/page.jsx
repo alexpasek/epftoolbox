@@ -197,6 +197,19 @@ const SERVICE_SECTION_ORDER = {
   "sec-add": 2,
 };
 
+async function persistInvoiceRemote(record) {
+  if (typeof window === "undefined" || !record?.id) return;
+  try {
+    await fetch("/api/invoices", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ record }),
+    });
+  } catch (err) {
+    console.warn("Failed to sync invoice to server", err);
+  }
+}
+
 // Name-based heuristics (fallback)
 function heuristicDetails(desc = "") {
   const s = desc.toLowerCase();
@@ -409,6 +422,7 @@ function saveInvoiceRecord(data) {
     console.error("Failed to save invoice record", err);
   }
 
+  void persistInvoiceRemote(record);
   return record;
 }
 
@@ -477,6 +491,7 @@ function saveEsRecord(data) {
     console.error("Failed to save ES record", err);
   }
 
+  void persistInvoiceRemote(record);
   return record;
 }
 

@@ -1,0 +1,248 @@
+[
+  {
+    "client": "sdvdef23e",
+    "contact": "66757778",
+    "site": "250 Adelaide St W, Toronto, ON M5H 1X6, Canada",
+    "preparedBy": "Yehor — Alpha Drywall Finishing",
+    "startWindow": "[TBD]",
+    "gPlaceId": "ChIJf7YOzH01K4gR-rC2HTa_dJo",
+    "date": "2025-12-05",
+    "quoteId": "EPF-QUOTE",
+    "taxRate": 13,
+    "matFixed": 0,
+    "matPct": 0,
+    "discPct": 0,
+    "items": [
+      {
+        "description": "Popcorn ceiling removal — painted\nDust-controlled texture removal\nHEPA sand ceilings smooth\nEdges kept crisp\nFloors & openings sealed off",
+        "qty": 0,
+        "unit": "sf",
+        "rate": 2.5,
+        "amount": 0
+      },
+      {
+        "description": "Floor protection & masking\nRamBoard / poly protection\nTape baseboards & stairs\nRemove + reset coverings per day",
+        "qty": 0,
+        "unit": "sf",
+        "rate": 0.4,
+        "amount": 0
+      },
+      {
+        "description": "Level 5 skim coat\n2–3 passes joint compound\nFeather to edges + inspect with light\nFinal HEPA sand + dust removal",
+        "qty": 0,
+        "unit": "sf",
+        "rate": 2.25,
+        "amount": 0
+      },
+      {
+        "description": "Ceiling priming\nPrime repairs/stains for uniformity\nBack-roll for even coverage\nCheck for touch-ups before paint",
+        "qty": 0,
+        "unit": "sf",
+        "rate": 1,
+        "amount": 0
+      },
+      {
+        "description": "Ceiling paint (2 coats)\n2 coats ceiling finish\nClean cut lines + even texture\nLow-VOC coatings for occupied homes",
+        "qty": 0,
+        "unit": "sf",
+        "rate": 2,
+        "amount": 0
+      },
+      {
+        "description": "Cleanup — HEPA vacuum & site cleaning (included)\nHEPA vacuum surfaces & vents\nBag debris + wipe touch points\nDaily tidy + final walkthrough",
+        "qty": 1,
+        "unit": "job",
+        "rate": 0,
+        "amount": 0
+      }
+    ],
+    "notes": "Dust-controlled removal, masking, HEPA sanding, and daily cleanup. Smooth finish ready for paint.",
+    "brandKey": "alphaDrywall",
+    "sections": [
+      {
+        "title": "Popcorn / Stucco Removal",
+        "items": [
+          {
+            "description": "Popcorn ceiling removal — painted\nDust-controlled texture removal\nHEPA sand ceilings smooth\nEdges kept crisp\nFloors & openings sealed off",
+            "qty": 0,
+            "unit": "sf",
+            "rate": 2.5,
+            "amount": 0
+          },
+          {
+            "description": "Floor protection & masking\nRamBoard / poly protection\nTape baseboards & stairs\nRemove + reset coverings per day",
+            "qty": 0,
+            "unit": "sf",
+            "rate": 0.4,
+            "amount": 0
+          },
+          {
+            "description": "Level 5 skim coat\n2–3 passes joint compound\nFeather to edges + inspect with light\nFinal HEPA sand + dust removal",
+            "qty": 0,
+            "unit": "sf",
+            "rate": 2.25,
+            "amount": 0
+          },
+          {
+            "description": "Ceiling priming\nPrime repairs/stains for uniformity\nBack-roll for even coverage\nCheck for touch-ups before paint",
+            "qty": 0,
+            "unit": "sf",
+            "rate": 1,
+            "amount": 0
+          },
+          {
+            "description": "Ceiling paint (2 coats)\n2 coats ceiling finish\nClean cut lines + even texture\nLow-VOC coatings for occupied homes",
+            "qty": 0,
+            "unit": "sf",
+            "rate": 2,
+            "amount": 0
+          },
+          {
+            "description": "Cleanup — HEPA vacuum & site cleaning (included)\nHEPA vacuum surfaces & vents\nBag debris + wipe touch points\nDaily tidy + final walkthrough",
+            "qty": 1,
+            "unit": "job",
+            "rate": 0,
+            "amount": 0
+          }
+        ],
+        "total": 1800
+      }
+    ],
+    "taxNow": false,
+    "totals": {
+      "labour": 1800,
+      "materials": 0,
+      "discount": 0,
+      "subtotal": 1800,
+      "tax": 0,
+      "total": 1800
+    },
+    "id": "ES-alphaDrywall-0013",
+    "savedAt": "2025-12-05T16:26:57.215Z",
+    "updatedAt": "2025-12-05T16:26:57.215Z",
+    "createdAt": "2025-12-05T16:26:57.215Z"
+  },
+  {
+    "client": "sdvdef23e",
+    "contact": "547sdfsfsd",
+    "site": "250 Adelaide St W, Toronto, ON M5H 1X6, Canada",
+    "preparedBy": "Yehor — Alpha Drywall Finishing",
+    "startWindow": "[TBD]",
+    "gPlaceId": "ChIJf7YOzH01K4gR-rC2HTa_dJo",
+    "date": "2025-12-05",
+    "quoteId": "EPF-QUOTE",
+    "taxRate": 13,
+    "matFixed": 0,
+    "matPct": 0,
+    "discPct": 0,
+    "items": [
+      {
+        "description": "Popcorn ceiling removal — painted\nDust-controlled texture removal\nHEPA sand ceilings smooth\nEdges kept crisp\nFloors & openings sealed off",
+        "qty": 0,
+        "unit": "sf",
+        "rate": 2.5,
+        "amount": 0
+      },
+      {
+        "description": "Floor protection & masking\nRamBoard / poly protection\nTape baseboards & stairs\nRemove + reset coverings per day",
+        "qty": 0,
+        "unit": "sf",
+        "rate": 0.4,
+        "amount": 0
+      },
+      {
+        "description": "Level 5 skim coat\n2–3 passes joint compound\nFeather to edges + inspect with light\nFinal HEPA sand + dust removal",
+        "qty": 0,
+        "unit": "sf",
+        "rate": 2.25,
+        "amount": 0
+      },
+      {
+        "description": "Ceiling priming\nPrime repairs/stains for uniformity\nBack-roll for even coverage\nCheck for touch-ups before paint",
+        "qty": 0,
+        "unit": "sf",
+        "rate": 1,
+        "amount": 0
+      },
+      {
+        "description": "Ceiling paint (2 coats)\n2 coats ceiling finish\nClean cut lines + even texture\nLow-VOC coatings for occupied homes",
+        "qty": 0,
+        "unit": "sf",
+        "rate": 2,
+        "amount": 0
+      },
+      {
+        "description": "Cleanup — HEPA vacuum & site cleaning (included)\nHEPA vacuum surfaces & vents\nBag debris + wipe touch points\nDaily tidy + final walkthrough",
+        "qty": 1,
+        "unit": "job",
+        "rate": 0,
+        "amount": 0
+      }
+    ],
+    "notes": "Dust-controlled removal, masking, HEPA sanding, and daily cleanup. Smooth finish ready for paint.",
+    "brandKey": "alphaDrywall",
+    "sections": [
+      {
+        "title": "Popcorn / Stucco Removal",
+        "items": [
+          {
+            "description": "Popcorn ceiling removal — painted\nDust-controlled texture removal\nHEPA sand ceilings smooth\nEdges kept crisp\nFloors & openings sealed off",
+            "qty": 0,
+            "unit": "sf",
+            "rate": 2.5,
+            "amount": 0
+          },
+          {
+            "description": "Floor protection & masking\nRamBoard / poly protection\nTape baseboards & stairs\nRemove + reset coverings per day",
+            "qty": 0,
+            "unit": "sf",
+            "rate": 0.4,
+            "amount": 0
+          },
+          {
+            "description": "Level 5 skim coat\n2–3 passes joint compound\nFeather to edges + inspect with light\nFinal HEPA sand + dust removal",
+            "qty": 0,
+            "unit": "sf",
+            "rate": 2.25,
+            "amount": 0
+          },
+          {
+            "description": "Ceiling priming\nPrime repairs/stains for uniformity\nBack-roll for even coverage\nCheck for touch-ups before paint",
+            "qty": 0,
+            "unit": "sf",
+            "rate": 1,
+            "amount": 0
+          },
+          {
+            "description": "Ceiling paint (2 coats)\n2 coats ceiling finish\nClean cut lines + even texture\nLow-VOC coatings for occupied homes",
+            "qty": 0,
+            "unit": "sf",
+            "rate": 2,
+            "amount": 0
+          },
+          {
+            "description": "Cleanup — HEPA vacuum & site cleaning (included)\nHEPA vacuum surfaces & vents\nBag debris + wipe touch points\nDaily tidy + final walkthrough",
+            "qty": 1,
+            "unit": "job",
+            "rate": 0,
+            "amount": 0
+          }
+        ],
+        "total": 1800
+      }
+    ],
+    "taxNow": false,
+    "totals": {
+      "labour": 1800,
+      "materials": 0,
+      "discount": 0,
+      "subtotal": 1800,
+      "tax": 0,
+      "total": 1800
+    },
+    "id": "ES-alphaDrywall-0012",
+    "savedAt": "2025-12-05T16:24:03.720Z",
+    "updatedAt": "2025-12-05T16:24:03.721Z",
+    "createdAt": "2025-12-05T16:24:03.721Z"
+  }
+]

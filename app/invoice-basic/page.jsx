@@ -44,63 +44,88 @@ function InvoiceBasicPageInner() {
   // load invoice (by id or last draft)
   useEffect(() => {
     if (typeof window === "undefined") return;
+    let cancelled = false;
 
-    try {
-      let loaded = null;
+    const parseList = (rawStr) => {
+      if (!rawStr) return [];
+      try {
+        const parsed = JSON.parse(rawStr);
+        if (Array.isArray(parsed)) return parsed;
+        if (parsed && typeof parsed === "object") return [parsed];
+      } catch {}
+      return [];
+    };
 
-      if (invoiceId) {
-        const raw = localStorage.getItem("epf.invoices");
-        const rawEs = localStorage.getItem("epf.eslist");
-        const parseList = (rawStr) => {
-          if (!rawStr) return [];
-          try {
-            const parsed = JSON.parse(rawStr);
-            if (Array.isArray(parsed)) return parsed;
-            if (parsed && typeof parsed === "object") return [parsed];
-          } catch {}
-          return [];
-        };
-        const list = parseList(raw);
-        const esList = parseList(rawEs);
-        loaded =
-          list.find((inv) => inv.id === invoiceId) ||
-          esList.find((inv) => inv.id === invoiceId) ||
-          null;
-      }
+    async function load() {
+      try {
+        let loaded = null;
 
-      if (!loaded) {
-        const rawDraft = localStorage.getItem("epf.invoiceDraft");
-        if (rawDraft) {
-          loaded = JSON.parse(rawDraft);
+        if (invoiceId) {
+          const raw = localStorage.getItem("epf.invoices");
+          const rawEs = localStorage.getItem("epf.eslist");
+          const list = parseList(raw);
+          const esList = parseList(rawEs);
+          loaded =
+            list.find((inv) => inv.id === invoiceId) ||
+            esList.find((inv) => inv.id === invoiceId) ||
+            null;
+
+          if (!loaded) {
+            try {
+              const res = await fetch(
+                `/api/invoices?id=${encodeURIComponent(invoiceId)}`
+              );
+              if (res.ok) loaded = await res.json();
+            } catch (err) {
+              console.warn("Failed to fetch invoice from API", err);
+            }
+          }
+        }
+
+        if (!loaded) {
+          const rawDraft = localStorage.getItem("epf.invoiceDraft");
+          if (rawDraft) {
+            loaded = JSON.parse(rawDraft);
+          }
+        }
+
+        if (!loaded) {
+          loaded = {
+            id: null,
+            client: "",
+            contact: "",
+            site: "",
+            date: new Date().toISOString().slice(0, 10),
+            quoteId: "EPF-QUOTE",
+            taxRate: 13,
+            matFixed: 0,
+            matPct: 0,
+            items: [],
+            notes: "",
+          };
+        }
+
+        loaded.totals = loaded.totals || recalcTotals(loaded);
+        if (!cancelled) {
+          startTransition(() => {
+            setInvoice(loaded);
+            setStatus("ready");
+          });
+        }
+      } catch (e) {
+        console.error(e);
+        if (!cancelled) {
+          startTransition(() => {
+            setStatus("error");
+          });
         }
       }
-
-      if (!loaded) {
-        loaded = {
-          id: null,
-          client: "",
-          site: "",
-          date: new Date().toISOString().slice(0, 10),
-          quoteId: "EPF-QUOTE",
-          taxRate: 13,
-          matFixed: 0,
-          matPct: 0,
-          items: [],
-          notes: "",
-        };
-      }
-
-      loaded.totals = loaded.totals || recalcTotals(loaded);
-      startTransition(() => {
-        setInvoice(loaded);
-        setStatus("ready");
-      });
-    } catch (e) {
-      console.error(e);
-      startTransition(() => {
-        setStatus("error");
-      });
     }
+
+    load();
+    return () => {
+      cancelled = true;
+    };
   }, [invoiceId]);
 
   if (status === "loading" || !invoice) {
@@ -209,6 +234,11 @@ function InvoiceBasicPageInner() {
 
     localStorage.setItem("epf.invoices", JSON.stringify(list));
     localStorage.setItem("epf.invoiceDraft", JSON.stringify(toSave));
+    fetch("/api/invoices", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ record: toSave }),
+    }).catch((err) => console.warn("Failed to persist invoice to API", err));
     alert("Invoice saved.");
   };
 
@@ -255,6 +285,14 @@ function InvoiceBasicPageInner() {
                 className="w-full border border-slate-200 rounded-md px-2 py-1 text-sm"
                 value={invoice.client || ""}
                 onChange={(e) => updateField("client", e.target.value)}
+              />
+            </div>
+            <div>
+              <div className="text-xs text-slate-500">Phone / Email</div>
+              <input
+                className="w-full border border-slate-200 rounded-md px-2 py-1 text-sm"
+                value={invoice.contact || ""}
+                onChange={(e) => updateField("contact", e.target.value)}
               />
             </div>
             <div>

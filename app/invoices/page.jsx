@@ -27,51 +27,80 @@ export default function InvoicesPage() {
         (inv) => ({ ...inv, source: "es" })
       );
 
-      const timestamp = (inv) =>
-        new Date(
-          inv.updatedAt || inv.savedAt || inv.createdAt || inv.date || 0
-        ).getTime();
+      let remoteList = [];
+      fetch("/api/invoices")
+        .then((res) => (res.ok ? res.json() : null))
+        .then((payload) => {
+          const arr = Array.isArray(payload)
+            ? payload
+            : Array.isArray(payload?.items)
+            ? payload.items
+            : [];
+          remoteList = arr.map((inv) => ({
+            ...inv,
+            source: inv.source || (String(inv.id || "").startsWith("ES-") ? "es" : "invoice"),
+          }));
+        })
+        .catch((err) => console.warn("Failed to fetch remote invoices", err))
+        .finally(() => {
+          const timestamp = (inv) =>
+            new Date(
+              inv.updatedAt || inv.savedAt || inv.createdAt || inv.date || 0
+            ).getTime();
 
-      // Prefer ES record when duplicate ids exist (keeps alpha brand/source)
-      const mergedMap = new Map();
-      [...esList, ...mainList].forEach((inv) => {
-        if (!inv || !inv.id) return;
-        const existing = mergedMap.get(inv.id);
-        if (!existing || existing.source !== "es") {
-          mergedMap.set(inv.id, inv);
-        }
-      });
+          // Prefer ES record when duplicate ids exist (keeps alpha brand/source)
+          // Remote data wins over local copies.
+          const mergedMap = new Map();
+          const pushList = (list, priority) => {
+            list.forEach((inv) => {
+              if (!inv || !inv.id) return;
+              const existing = mergedMap.get(inv.id);
+              if (!existing || priority >= existing.priority) {
+                mergedMap.set(inv.id, { ...inv, priority });
+              }
+            });
+          };
 
-      // Ensure totals present
-      const withTotals = Array.from(mergedMap.values()).map((inv) => {
-        if (inv?.totals && typeof inv.totals.total === "number") return inv;
-        const labour = Array.isArray(inv?.items)
-          ? inv.items.reduce((s, r) => s + (Number(r?.amount) || 0), 0)
-          : 0;
-        const materials = Number(inv?.matFixed || 0);
-        const total = labour + materials;
-        return {
-          ...inv,
-          totals: {
-            labour,
-            materials,
-            subtotal: total,
-            tax: 0,
-            total,
-          },
-        };
-      });
+          pushList(remoteList, 3);
+          pushList(esList, 2);
+          pushList(mainList, 1);
 
-      const merged = withTotals.sort((a, b) => timestamp(b) - timestamp(a));
+          // Ensure totals present
+          const withTotals = Array.from(mergedMap.values()).map((inv) => {
+            if (inv?.totals && typeof inv.totals.total === "number") {
+              const { priority, ...rest } = inv;
+              return rest;
+            }
+            const labour = Array.isArray(inv?.items)
+              ? inv.items.reduce((s, r) => s + (Number(r?.amount) || 0), 0)
+              : 0;
+            const materials = Number(inv?.matFixed || 0);
+            const total = labour + materials;
+            const { priority, ...rest } = inv;
+            return {
+              ...rest,
+              totals: {
+                labour,
+                materials,
+                subtotal: total,
+                tax: 0,
+                total,
+              },
+            };
+          });
 
-      // Persist the merged list back to epf.invoices so both modes see everything
-      try {
-        window.localStorage.setItem("epf.invoices", JSON.stringify(merged));
-      } catch (err) {
-        console.warn("Failed to sync merged invoices to storage", err);
-      }
+          const merged = withTotals.sort((a, b) => timestamp(b) - timestamp(a));
 
-      startTransition(() => setInvoices(merged));
+          // Persist the merged list back to epf.invoices so both modes see everything
+          try {
+            window.localStorage.setItem("epf.invoices", JSON.stringify(merged));
+          } catch (err) {
+            console.warn("Failed to sync merged invoices to storage", err);
+          }
+
+          startTransition(() => setInvoices(merged));
+        });
+
     } catch (err) {
       console.error("Failed to load invoices list", err);
     }
