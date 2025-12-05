@@ -5,6 +5,7 @@ export const dynamic = "force-dynamic";
 
 const KV_KEY = "invoices";
 const BINDING = "invoices";
+let warnedNoKv = false;
 
 function memoryStore() {
   if (!globalThis.__INVOICE_MEM__) globalThis.__INVOICE_MEM__ = [];
@@ -18,7 +19,14 @@ function kvDetails() {
   const token =
     process.env[`${BINDING.toUpperCase()}_REST_API_TOKEN`] ||
     process.env.KV_REST_API_TOKEN;
-  return url && token ? { url, token } : null;
+  if (!url || !token) {
+    if (!warnedNoKv) {
+      console.warn("KV invoices: no REST API env found, using memory fallback");
+      warnedNoKv = true;
+    }
+    return null;
+  }
+  return { url, token };
 }
 
 async function readFromKv() {
@@ -62,14 +70,15 @@ async function writeToKv(list) {
 async function readAll() {
   const fromKv = await readFromKv();
   if (fromKv) return fromKv;
-  return memoryStore();
+  return null;
 }
 
 async function writeAll(list) {
   const ok = await writeToKv(list);
   if (!ok) {
-    globalThis.__INVOICE_MEM__ = list;
+    return false;
   }
+  return true;
 }
 
 export async function GET(req) {
@@ -77,6 +86,12 @@ export async function GET(req) {
   const id = url.searchParams.get("id");
 
   const all = await readAll();
+  if (!all) {
+    return NextResponse.json(
+      { error: "KV not configured; add binding 'invoices' to Pages project." },
+      { status: 500 }
+    );
+  }
   console.log("KV invoices GET", { id, count: all.length });
   if (id) {
     const found = all.find((item) => String(item.id) === String(id));
@@ -103,6 +118,12 @@ export async function POST(req) {
 
   const now = new Date().toISOString();
   const all = await readAll();
+  if (!all) {
+    return NextResponse.json(
+      { error: "KV not configured; add binding 'invoices' to Pages project." },
+      { status: 500 }
+    );
+  }
   const idx = all.findIndex((inv) => String(inv.id) === String(record.id));
   const merged = { ...all[idx], ...record, updatedAt: record.updatedAt || now };
 
@@ -112,7 +133,13 @@ export async function POST(req) {
     all.unshift(merged);
   }
 
-  await writeAll(all);
+  const ok = await writeAll(all);
+  if (!ok) {
+    return NextResponse.json(
+      { error: "Failed to persist to KV; check binding and tokens." },
+      { status: 500 }
+    );
+  }
   console.log("KV invoices POST saved", {
     id: merged.id,
     listSize: all.length,
