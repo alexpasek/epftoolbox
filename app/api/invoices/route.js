@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { getRequestContext } from "@cloudflare/next-on-pages";
 
 export const runtime = "edge";
 export const dynamic = "force-dynamic";
@@ -9,27 +8,33 @@ const KV_KEY = "invoices";
 const BINDINGS = ["invoice2", "invoice", "invoices"];
 let warnedNoKv = false;
 
-function getKvBinding() {
-  try {
-    const env = getRequestContext().env || {};
-    for (const name of BINDINGS) {
-      if (env[name]) return { kv: env[name], binding: name };
-    }
-  } catch (err) {
-    console.warn("KV invoices: failed to access request context", err);
+function kvDetails() {
+  for (const binding of BINDINGS) {
+    const url =
+      process.env[`${binding.toUpperCase()}_REST_API_URL`] ||
+      process.env.KV_REST_API_URL;
+    const token =
+      process.env[`${binding.toUpperCase()}_REST_API_TOKEN`] ||
+      process.env.KV_REST_API_TOKEN;
+    if (url && token) return { url, token, binding };
   }
   if (!warnedNoKv) {
-    console.warn("KV invoices: no KV binding found; configure binding invoice2/invoice/invoices");
+    console.warn("KV invoices: no REST API env found, using memory fallback");
     warnedNoKv = true;
   }
   return null;
 }
 
 async function readAll() {
-  const binding = getKvBinding();
-  if (!binding) return null;
+  const kv = kvDetails();
+  if (!kv) return null;
   try {
-    const txt = await binding.kv.get(KV_KEY, { type: "text" });
+    const res = await fetch(`${kv.url}/values/${KV_KEY}`, {
+      headers: { Authorization: `Bearer ${kv.token}` },
+      cache: "no-store",
+    });
+    if (!res.ok) return null;
+    const txt = await res.text();
     if (!txt) return [];
     const parsed = JSON.parse(txt);
     return Array.isArray(parsed) ? parsed : [];
@@ -40,10 +45,17 @@ async function readAll() {
 }
 
 async function writeAll(list) {
-  const binding = getKvBinding();
-  if (!binding) return false;
+  const kv = kvDetails();
+  if (!kv) return false;
   try {
-    await binding.kv.put(KV_KEY, JSON.stringify(list));
+    await fetch(`${kv.url}/values/${KV_KEY}`, {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${kv.token}`,
+        "Content-Type": "text/plain",
+      },
+      body: JSON.stringify(list),
+    });
     return true;
   } catch (err) {
     console.warn("KV write failed", err);
