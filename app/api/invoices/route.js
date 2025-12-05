@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
-export const runtime = "nodejs";
+// Cloudflare Pages requires edge runtime for Functions in Next-on-Pages
+export const runtime = "edge";
 export const dynamic = "force-dynamic";
 
 const KV_KEY = "invoices";
