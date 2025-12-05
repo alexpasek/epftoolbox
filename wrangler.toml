@@ -1,0 +1,10 @@
+# Cloudflare Pages/Workers configuration
+# Replace <YOUR_NAMESPACE_ID> with the KV namespace ID you create via
+# `npx wrangler kv namespace create invoices` or in the Cloudflare dashboard.
+name = "epf-toolbox"
+main = "index.js"
+compatibility_date = "2024-12-01"
+
+kv_namespaces = [
+  { binding = "KV", id = "<YOUR_NAMESPACE_ID>" }
+]
