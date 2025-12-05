@@ -70,15 +70,20 @@ function InvoiceBasicPageInner() {
             esList.find((inv) => inv.id === invoiceId) ||
             null;
 
-          if (!loaded) {
-            try {
-              const res = await fetch(
-                `/api/invoices?id=${encodeURIComponent(invoiceId)}`
-              );
-              if (res.ok) loaded = await res.json();
-            } catch (err) {
-              console.warn("Failed to fetch invoice from API", err);
+          // Always try API for freshest copy
+          try {
+            const res = await fetch(
+              `/api/invoices?id=${encodeURIComponent(invoiceId)}`,
+              { cache: "no-store" }
+            );
+            if (res.ok) {
+              const remote = await res.json();
+              if (remote?.id) {
+                loaded = remote;
+              }
             }
+          } catch (err) {
+            console.warn("Failed to fetch invoice from API", err);
           }
         }
 

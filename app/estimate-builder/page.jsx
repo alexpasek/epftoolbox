@@ -200,11 +200,14 @@ const SERVICE_SECTION_ORDER = {
 async function persistInvoiceRemote(record) {
   if (typeof window === "undefined" || !record?.id) return;
   try {
-    await fetch("/api/invoices", {
+    const res = await fetch("/api/invoices", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ record }),
     });
+    if (!res.ok) {
+      console.warn("Remote invoice save failed", res.status);
+    }
   } catch (err) {
     console.warn("Failed to sync invoice to server", err);
   }

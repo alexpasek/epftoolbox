@@ -9,101 +9,106 @@ export default function InvoicesPage() {
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    try {
-      const parseList = (rawStr) => {
-        if (!rawStr) return [];
+    const parseList = (rawStr) => {
+      if (!rawStr) return [];
+      try {
+        const parsed = JSON.parse(rawStr);
+        if (Array.isArray(parsed)) return parsed;
+        if (parsed && typeof parsed === "object") return [parsed];
+      } catch {}
+      return [];
+    };
+
+    const timestamp = (inv) =>
+      new Date(
+        inv.updatedAt || inv.savedAt || inv.createdAt || inv.date || 0
+      ).getTime();
+
+    async function load() {
+      try {
+        const mainList = parseList(window.localStorage.getItem("epf.invoices")).map(
+          (inv) => ({ ...inv, source: "invoice" })
+        );
+        const esList = parseList(window.localStorage.getItem("epf.eslist")).map(
+          (inv) => ({ ...inv, source: "es" })
+        );
+
+        let remoteList = [];
         try {
-          const parsed = JSON.parse(rawStr);
-          if (Array.isArray(parsed)) return parsed;
-          if (parsed && typeof parsed === "object") return [parsed];
-        } catch {}
-        return [];
-      };
-
-      const mainList = parseList(window.localStorage.getItem("epf.invoices")).map(
-        (inv) => ({ ...inv, source: "invoice" })
-      );
-      const esList = parseList(window.localStorage.getItem("epf.eslist")).map(
-        (inv) => ({ ...inv, source: "es" })
-      );
-
-      let remoteList = [];
-      fetch("/api/invoices")
-        .then((res) => (res.ok ? res.json() : null))
-        .then((payload) => {
-          const arr = Array.isArray(payload)
-            ? payload
-            : Array.isArray(payload?.items)
-            ? payload.items
-            : [];
-          remoteList = arr.map((inv) => ({
-            ...inv,
-            source: inv.source || (String(inv.id || "").startsWith("ES-") ? "es" : "invoice"),
-          }));
-        })
-        .catch((err) => console.warn("Failed to fetch remote invoices", err))
-        .finally(() => {
-          const timestamp = (inv) =>
-            new Date(
-              inv.updatedAt || inv.savedAt || inv.createdAt || inv.date || 0
-            ).getTime();
-
-          // Prefer ES record when duplicate ids exist (keeps alpha brand/source)
-          // Remote data wins over local copies.
-          const mergedMap = new Map();
-          const pushList = (list, priority) => {
-            list.forEach((inv) => {
-              if (!inv || !inv.id) return;
-              const existing = mergedMap.get(inv.id);
-              if (!existing || priority >= existing.priority) {
-                mergedMap.set(inv.id, { ...inv, priority });
-              }
-            });
-          };
-
-          pushList(remoteList, 3);
-          pushList(esList, 2);
-          pushList(mainList, 1);
-
-          // Ensure totals present
-          const withTotals = Array.from(mergedMap.values()).map((inv) => {
-            if (inv?.totals && typeof inv.totals.total === "number") {
-              const { priority, ...rest } = inv;
-              return rest;
-            }
-            const labour = Array.isArray(inv?.items)
-              ? inv.items.reduce((s, r) => s + (Number(r?.amount) || 0), 0)
-              : 0;
-            const materials = Number(inv?.matFixed || 0);
-            const total = labour + materials;
-            const { priority, ...rest } = inv;
-            return {
-              ...rest,
-              totals: {
-                labour,
-                materials,
-                subtotal: total,
-                tax: 0,
-                total,
-              },
-            };
-          });
-
-          const merged = withTotals.sort((a, b) => timestamp(b) - timestamp(a));
-
-          // Persist the merged list back to epf.invoices so both modes see everything
-          try {
-            window.localStorage.setItem("epf.invoices", JSON.stringify(merged));
-          } catch (err) {
-            console.warn("Failed to sync merged invoices to storage", err);
+          const res = await fetch("/api/invoices", { cache: "no-store" });
+          if (res.ok) {
+            const payload = await res.json();
+            const arr = Array.isArray(payload)
+              ? payload
+              : Array.isArray(payload?.items)
+              ? payload.items
+              : [];
+            remoteList = arr.map((inv) => ({
+              ...inv,
+              source:
+                inv.source ||
+                (String(inv.id || "").startsWith("ES-") ? "es" : "invoice"),
+            }));
+          } else {
+            console.warn("Remote invoices fetch failed", res.status);
           }
+        } catch (err) {
+          console.warn("Failed to fetch remote invoices", err);
+        }
 
-          startTransition(() => setInvoices(merged));
+        const mergedMap = new Map();
+        const pushList = (list, priority) => {
+          list.forEach((inv) => {
+            if (!inv || !inv.id) return;
+            const existing = mergedMap.get(inv.id);
+            if (!existing || priority >= existing.priority) {
+              mergedMap.set(inv.id, { ...inv, priority });
+            }
+          });
+        };
+
+        pushList(remoteList, 3);
+        pushList(esList, 2);
+        pushList(mainList, 1);
+
+        const withTotals = Array.from(mergedMap.values()).map((inv) => {
+          if (inv?.totals && typeof inv.totals.total === "number") {
+            const { priority, ...rest } = inv;
+            return rest;
+          }
+          const labour = Array.isArray(inv?.items)
+            ? inv.items.reduce((s, r) => s + (Number(r?.amount) || 0), 0)
+            : 0;
+          const materials = Number(inv?.matFixed || 0);
+          const total = labour + materials;
+          const { priority, ...rest } = inv;
+          return {
+            ...rest,
+            totals: {
+              labour,
+              materials,
+              subtotal: total,
+              tax: 0,
+              total,
+            },
+          };
         });
 
-    } catch (err) {
-      console.error("Failed to load invoices list", err);
+        const merged = withTotals.sort((a, b) => timestamp(b) - timestamp(a));
+
+        try {
+          window.localStorage.setItem("epf.invoices", JSON.stringify(merged));
+        } catch (err) {
+          console.warn("Failed to sync merged invoices to storage", err);
+        }
+
+        startTransition(() => setInvoices(merged));
+      } catch (err) {
+        console.error("Failed to load invoices list", err);
+      }
     }
+
+    load();
   }, []);
 
   return (
