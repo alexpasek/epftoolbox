@@ -4,7 +4,8 @@ export const runtime = "edge";
 export const dynamic = "force-dynamic";
 
 const KV_KEY = "invoices";
-const BINDING = "invoices";
+// Try both binding names to accommodate dashboard config.
+const BINDINGS = ["invoice", "invoices"];
 let warnedNoKv = false;
 
 function memoryStore() {
@@ -13,20 +14,20 @@ function memoryStore() {
 }
 
 function kvDetails() {
-  const url =
-    process.env[`${BINDING.toUpperCase()}_REST_API_URL`] ||
-    process.env.KV_REST_API_URL;
-  const token =
-    process.env[`${BINDING.toUpperCase()}_REST_API_TOKEN`] ||
-    process.env.KV_REST_API_TOKEN;
-  if (!url || !token) {
-    if (!warnedNoKv) {
-      console.warn("KV invoices: no REST API env found, using memory fallback");
-      warnedNoKv = true;
-    }
-    return null;
+  for (const binding of BINDINGS) {
+    const url =
+      process.env[`${binding.toUpperCase()}_REST_API_URL`] ||
+      process.env.KV_REST_API_URL;
+    const token =
+      process.env[`${binding.toUpperCase()}_REST_API_TOKEN`] ||
+      process.env.KV_REST_API_TOKEN;
+    if (url && token) return { url, token, binding };
   }
-  return { url, token };
+  if (!warnedNoKv) {
+    console.warn("KV invoices: no REST API env found, using memory fallback");
+    warnedNoKv = true;
+  }
+  return null;
 }
 
 async function readFromKv() {
