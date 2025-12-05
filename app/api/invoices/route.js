@@ -1,27 +1,70 @@
 import { NextResponse } from "next/server";
-import { promises as fs } from "fs";
-import path from "path";
 
-const DATA_DIR = path.join(process.cwd(), "data");
-const DATA_FILE = path.join(DATA_DIR, "invoices.json");
-
+export const runtime = "edge";
 export const dynamic = "force-dynamic";
 
-async function readAll() {
+const KV_KEY = "invoices";
+
+function memoryStore() {
+  if (!globalThis.__INVOICE_MEM__) globalThis.__INVOICE_MEM__ = [];
+  return globalThis.__INVOICE_MEM__;
+}
+
+function kvDetails() {
+  const url = process.env.KV_REST_API_URL;
+  const token = process.env.KV_REST_API_TOKEN;
+  return url && token ? { url, token } : null;
+}
+
+async function readFromKv() {
+  const kv = kvDetails();
+  if (!kv) return null;
   try {
-    const raw = await fs.readFile(DATA_FILE, "utf8");
-    const parsed = JSON.parse(raw);
+    const res = await fetch(`${kv.url}/values/${KV_KEY}`, {
+      headers: { Authorization: `Bearer ${kv.token}` },
+      cache: "no-store",
+    });
+    if (!res.ok) return null;
+    const txt = await res.text();
+    if (!txt) return [];
+    const parsed = JSON.parse(txt);
     return Array.isArray(parsed) ? parsed : [];
   } catch (err) {
-    if (err.code === "ENOENT") return [];
-    console.error("Failed reading invoices file", err);
-    return [];
+    console.warn("KV read failed", err);
+    return null;
   }
 }
 
+async function writeToKv(list) {
+  const kv = kvDetails();
+  if (!kv) return false;
+  try {
+    await fetch(`${kv.url}/values/${KV_KEY}`, {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${kv.token}`,
+        "Content-Type": "text/plain",
+      },
+      body: JSON.stringify(list),
+    });
+    return true;
+  } catch (err) {
+    console.warn("KV write failed", err);
+    return false;
+  }
+}
+
+async function readAll() {
+  const fromKv = await readFromKv();
+  if (fromKv) return fromKv;
+  return memoryStore();
+}
+
 async function writeAll(list) {
-  await fs.mkdir(DATA_DIR, { recursive: true });
-  await fs.writeFile(DATA_FILE, JSON.stringify(list, null, 2), "utf8");
+  const ok = await writeToKv(list);
+  if (!ok) {
+    globalThis.__INVOICE_MEM__ = list;
+  }
 }
 
 export async function GET(req) {
