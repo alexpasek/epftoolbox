@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 
 const tools = [
   {
@@ -42,6 +43,59 @@ const tools = [
 ];
 
 export default function HomePage() {
+  const [unlocked, setUnlocked] = useState(false);
+  const [pass, setPass] = useState("");
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("epf.home.access");
+      if (saved === "1") setUnlocked(true);
+    } catch {}
+  }, []);
+
+  const handleUnlock = (e) => {
+    e.preventDefault();
+    if ((pass || "").trim() === "0320") {
+      setUnlocked(true);
+      try {
+        localStorage.setItem("epf.home.access", "1");
+      } catch {}
+    } else {
+      alert("Incorrect password");
+    }
+  };
+
+  if (!unlocked) {
+    return (
+      <main className="min-h-screen bg-slate-100 flex items-center justify-center px-4">
+        <div className="max-w-md w-full bg-white border border-slate-200 rounded-xl shadow-sm p-5 space-y-3">
+          <h1 className="text-lg font-semibold text-slate-900">
+            Enter access code
+          </h1>
+          <p className="text-sm text-slate-600">
+            Access is required to open this page.
+          </p>
+          <form onSubmit={handleUnlock} className="space-y-3">
+            <input
+              type="password"
+              value={pass}
+              onChange={(e) => setPass(e.target.value)}
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand/40"
+              placeholder="Password"
+              autoFocus
+            />
+            <button
+              type="submit"
+              className="w-full rounded-lg bg-brand text-white px-3 py-2 text-sm font-semibold hover:opacity-90"
+            >
+              Unlock
+            </button>
+          </form>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-screen bg-[radial-gradient(90%_60%_at_50%_-10%,rgba(225,29,72,0.10),transparent_60%)]">
       {/* Top bar */}
