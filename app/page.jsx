@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 
 const tools = [
   {
@@ -11,6 +11,13 @@ const tools = [
     description:
       "Room-by-room popcorn removal quote with Level 5 finish, materials, tax and customer view.",
     highlight: true,
+  },
+  {
+    href: "/renovation-estimator",
+    label: "Renovation Estimator",
+    badge: "New",
+    description:
+      "Separate renovation quote builder with room templates, price sheet sync, quote library, and printable output.",
   },
   {
     href: "/invoice-basic",
@@ -43,20 +50,27 @@ const tools = [
 ];
 
 export default function HomePage() {
-  const [unlocked, setUnlocked] = useState(false);
+  const isHydrated = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false
+  );
+  const [sessionUnlocked, setSessionUnlocked] = useState(false);
   const [pass, setPass] = useState("");
-
-  useEffect(() => {
+  const unlocked = useMemo(() => {
+    if (sessionUnlocked) return true;
+    if (!isHydrated) return false;
     try {
-      const saved = localStorage.getItem("epf.home.access");
-      if (saved === "1") setUnlocked(true);
-    } catch {}
-  }, []);
+      return localStorage.getItem("epf.home.access") === "1";
+    } catch {
+      return false;
+    }
+  }, [isHydrated, sessionUnlocked]);
 
   const handleUnlock = (e) => {
     e.preventDefault();
     if ((pass || "").trim() === "0320") {
-      setUnlocked(true);
+      setSessionUnlocked(true);
       try {
         localStorage.setItem("epf.home.access", "1");
       } catch {}
