@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import Image from "next/image";
 
@@ -773,6 +773,27 @@ const ROOM_TEMPLATES = {
       add("permit-admin"),
     ],
   },
+  ensuite: {
+    label: "Ensuite",
+    description: "Ensuite bathroom template",
+    build: (add) => [
+      add("site-protection"),
+      add("selective-demo-sqft"),
+      { ...add("plumbing-roughin-fixture"), qty: 3 },
+      { ...add("plumbing-finish-fixture"), qty: 3 },
+      add("bath-fan-install"),
+      add("fan-ducting"),
+      add("waterproofing-sqft"),
+      add("backer-board-sqft"),
+      add("tile-floor-sqft"),
+      add("tile-wall-sqft"),
+      add("tile-supply-sqft"),
+      add("paint-room-full-sqft"),
+      add("final-cleanup"),
+      { ...add("permit-plumbing-fixture"), qty: 3 },
+      add("permit-admin"),
+    ],
+  },
   basement: {
     label: "Basement",
     description: "Basement general finishing",
@@ -829,6 +850,7 @@ const ROOM_TYPE_BENCHMARKS = {
   kitchen: { min: 180, max: 420 },
   powderRoom: { min: 220, max: 500 },
   fullBath: { min: 250, max: 600 },
+  ensuite: { min: 250, max: 600 },
   basement: { min: 85, max: 190 },
   basementBath: { min: 250, max: 600 },
   customRoom: { min: 60, max: 180 },
@@ -1017,7 +1039,7 @@ export default function RenovationEstimatorPage() {
   const [activeRoomId, setActiveRoomId] = useState(() => {
     const raw = typeof window !== "undefined" ? window.localStorage.getItem(LS_QUOTE_STATE_KEY) : null;
     const parsed = raw ? safeJsonParse(raw, null) : null;
-    return parsed?.activeRoomId || "";
+    return parsed?.activeRoomId || rooms[0]?.id || "";
   });
 
   const [expandedCategories, setExpandedCategories] = useState(() => {
@@ -1032,13 +1054,13 @@ export default function RenovationEstimatorPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [libraryPick, setLibraryPick] = useState({});
   const [showRoomScopePreview, setShowRoomScopePreview] = useState(true);
-  const [hasHydrated, setHasHydrated] = useState(false);
+  const hasHydrated = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false
+  );
 
   const fileInputRef = useRef(null);
-
-  useEffect(() => {
-    setHasHydrated(true);
-  }, []);
 
   // ---------- Price Sheet mapping ----------
   const priceSheetById = useMemo(() => {
@@ -1096,30 +1118,10 @@ export default function RenovationEstimatorPage() {
     return makeItemFromPriceSheet(libId);
   };
 
-  // ---------- Room selection ----------
-  useEffect(() => {
-    if (!activeRoomId && rooms[0]) setActiveRoomId(rooms[0].id);
-    if (activeRoomId && !rooms.find((r) => r.id === activeRoomId)) setActiveRoomId(rooms[0]?.id || "");
-  }, [rooms, activeRoomId]);
-
   const activeRoom = useMemo(
     () => rooms.find((r) => r.id === activeRoomId) || rooms[0] || null,
     [rooms, activeRoomId]
   );
-
-  // Seed template items for rooms missing items
-  useEffect(() => {
-    setRooms((prev) =>
-      prev.map((room) => {
-        if (Array.isArray(room.items) && room.items.length) return room;
-        const tpl = ROOM_TEMPLATES[room.type] || ROOM_TEMPLATES.customRoom;
-        const add = (libId) => makeItemFromPriceSheet(libId);
-        const seeded = tpl.build(add).filter(Boolean);
-        return { ...room, items: seeded };
-      })
-    );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [priceSheetById]);
 
   // ---------- Auto-save ----------
   useEffect(() => {
@@ -1143,6 +1145,7 @@ export default function RenovationEstimatorPage() {
   // ---------- Price Sheet -> Quote sync ----------
   useEffect(() => {
     if (project.priceMode === "locked") return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setRooms((prevRooms) => {
       let changed = false;
       const next = prevRooms.map((room) => {
@@ -1317,14 +1320,13 @@ export default function RenovationEstimatorPage() {
 
   const addRoom = (templateKey) => {
     const tpl = ROOM_TEMPLATES[templateKey] || ROOM_TEMPLATES.customRoom;
-    const add = (libId) => makeItemFromPriceSheet(libId);
     const room = {
       id: uid("room"),
       type: templateKey,
       name: tpl.label,
       notes: "",
       areaSqft: 0,
-      items: tpl.build(add).filter(Boolean),
+      items: [],
     };
     setRooms((prev) => [...prev, room]);
     setActiveRoomId(room.id);
@@ -1574,11 +1576,61 @@ export default function RenovationEstimatorPage() {
   // ---------- PDF/Print (robust) ----------
   const buildPrintableHtml = () => {
     const now = new Date().toISOString().slice(0, 10);
+    const roomsList = rooms.map((room) => room.name).join(", ");
+    const projectSummary = roomsList
+      ? `This proposal outlines renovation work for ${roomsList}, including demolition, trade coordination, waterproofing, finish installation, painting, and final detailing. The project is planned to deliver durable finishes with clean execution and code-conscious workmanship.`
+      : "This proposal outlines the renovation scope, pricing, allowances, and schedule for the requested work.";
 
-    const roomsHtml = rooms
+    const projectCategoryTotals = {};
+    rooms.forEach((room) => {
+      const t = roomTotals[room.id];
+      (t?.pricedItems || []).forEach((item) => {
+        if (!item.counts) return;
+        const key = item.category || "Custom";
+        projectCategoryTotals[key] = (projectCategoryTotals[key] || 0) + item.total;
+      });
+    });
+
+    const categoryRows = Object.entries(projectCategoryTotals)
+      .sort((a, b) => b[1] - a[1])
+      .map(
+        ([category, total]) => `
+          <tr>
+            <td>${escapeHtml(category)}</td>
+            <td style="text-align:right; font-weight:700;">${currency(total)}</td>
+          </tr>
+        `
+      )
+      .join("");
+
+    const categoryBreakdownHtml = categoryRows
+      ? `
+        <h3>Cost Breakdown</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>Category</th>
+              <th style="text-align:right;">Cost</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${categoryRows}
+          </tbody>
+        </table>
+      `
+      : "";
+
+    const printableRooms = rooms
       .map((room) => {
         const t = roomTotals[room.id];
         const items = t?.pricedItems || [];
+        const hasScopeLines = items.length > 0;
+        return { room, t, items, hasScopeLines };
+      })
+      .filter((x) => x.hasScopeLines);
+
+    const roomsHtml = printableRooms
+      .map(({ room, t, items }) => {
         const byCat = items.reduce((acc, it) => {
           const c = it.category || "Custom";
           if (!acc[c]) acc[c] = [];
@@ -1586,7 +1638,32 @@ export default function RenovationEstimatorPage() {
           return acc;
         }, {});
 
+        const roomRateParts = [];
+        if (t?.areaSqft > 0) {
+          roomRateParts.push(`Area: ${t.areaSqft} sf`);
+          roomRateParts.push(`Quote rate: ${ratePerSqft(t.costPerSqft)}`);
+        }
+        roomRateParts.push(
+          `Similar projects: ${ratePerSqft(t?.benchmark?.min)} - ${ratePerSqft(t?.benchmark?.max)}`
+        );
+        roomRateParts.push(`Status: ${t?.benchmarkStatus || "-"}`);
+
         const categories = Object.keys(byCat).sort((a, b) => a.localeCompare(b));
+
+        const catRows = categories
+          .map((cat) => {
+            const counted = (byCat[cat] || []).reduce(
+              (sum, it) => (it.counts ? sum + (Number(it.total) || 0) : sum),
+              0
+            );
+            return `
+              <tr>
+                <td>${escapeHtml(cat)}</td>
+                <td style="text-align:right; font-weight:700;">${currency(counted)}</td>
+              </tr>
+            `;
+          })
+          .join("");
 
         const catHtml = categories
           .map((cat) => {
@@ -1630,22 +1707,14 @@ export default function RenovationEstimatorPage() {
           .join("");
 
         return `
-          <section style="margin-top: 20px; page-break-inside: avoid;">
+          <section class="room-section" style="margin-top: 20px;">
             <div style="display:flex; justify-content:space-between; align-items:flex-end; gap:12px;">
               <div>
                 <div style="font-size:16px; font-weight:900;">${escapeHtml(room.name)}</div>
                 <div style="font-size:12px; color:#334155;">${escapeHtml(
                   ROOM_TEMPLATES[room.type]?.description || ""
                 )}</div>
-                <div style="font-size:12px; color:#334155;">
-                  ${escapeHtml(
-                    `Area: ${t?.areaSqft || 0} sf | Quote rate: ${ratePerSqft(
-                      t?.costPerSqft
-                    )} | Similar projects: ${ratePerSqft(t?.benchmark?.min)} - ${ratePerSqft(
-                      t?.benchmark?.max
-                    )}`
-                  )}
-                </div>
+                <div style="font-size:12px; color:#334155;">${escapeHtml(roomRateParts.join(" | "))}</div>
               </div>
               <div style="text-align:right;">
                 <div style="font-size:11px; font-weight:700; color:#0f172a;">Room total</div>
@@ -1659,6 +1728,19 @@ export default function RenovationEstimatorPage() {
               <div class="box"><div class="k">Before tax</div><div class="v">${currency(t?.beforeTax || 0)}</div></div>
             </div>
 
+            <h4 style="margin: 16px 0 8px; font-size: 13px;">Room Category Summary</h4>
+            <table>
+              <thead>
+                <tr>
+                  <th>Category</th>
+                  <th style="text-align:right;">Cost</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${catRows || `<tr><td colspan="2">No active priced lines</td></tr>`}
+              </tbody>
+            </table>
+
             <div style="margin-top:12px; font-size:12px; color:#0f172a;"><strong>Room notes:</strong> ${escapeHtml(
               room.notes || "-"
             )}</div>
@@ -1668,6 +1750,18 @@ export default function RenovationEstimatorPage() {
         `;
       })
       .join("");
+
+    const roomScopeSectionHtml = roomsHtml
+      ? `
+          <h3 style="margin-top:24px;">Room Scope Details</h3>
+          ${roomsHtml}
+        `
+      : `
+          <section class="section callout">
+            <h4>Room Scope Details</h4>
+            No room scope lines were added to this quote yet.
+          </section>
+        `;
 
     const signatureImg = signature.signatureDataUrl
       ? `<div style="margin-top:10px;"><div class="k">Signature</div><img src="${signature.signatureDataUrl}" style="max-height:90px; border:1px solid #0f172a; border-radius:8px; padding:6px;" /></div>`
@@ -1681,91 +1775,164 @@ export default function RenovationEstimatorPage() {
           <meta name="viewport" content="width=device-width, initial-scale=1" />
           <title>EPF Renovation Quote ${escapeHtml(now)}</title>
           <style>
-            body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial; margin: 32px; color:#0f172a; }
-            .header { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; }
-            .brand { font-size: 12px; letter-spacing: 2px; font-weight: 900; }
-            .title { font-size: 22px; font-weight: 900; margin-top: 6px; }
-            .meta { font-size: 12px; color:#334155; }
-            .totalBox { border: 2px solid #0f172a; border-radius: 12px; padding: 14px; margin-top: 14px; }
-            .totalValue { font-size: 28px; font-weight: 900; margin-top: 6px; }
-            .grid { display:grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 12px; }
-            .box { border: 1px solid #0f172a; border-radius: 10px; padding: 10px; }
+            body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial; margin: 28px; color:#0f172a; }
+            .hero { border: 2px solid #0f172a; border-radius: 14px; padding: 18px; background: linear-gradient(135deg, #f8fafc, #eef2ff); }
+            .hero h1 { margin: 0; font-size: 28px; font-weight: 900; }
+            .muted { color:#334155; font-size:12px; }
+            .grid2 { display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+            .grid4 { display:grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+            .box { border: 1px solid #0f172a; border-radius: 10px; padding: 10px; background: #fff; }
             .k { font-size: 11px; font-weight: 800; color:#334155; text-transform: uppercase; letter-spacing: .6px; }
             .v { font-size: 14px; font-weight: 900; margin-top: 4px; }
-            h3 { margin-top: 22px; font-size: 16px; font-weight: 900; }
+            .totalBox { border: 2px solid #0f172a; border-radius: 12px; padding: 14px; margin-top: 14px; background: #0f172a; color: #fff; }
+            .totalValue { font-size: 34px; font-weight: 900; margin-top: 6px; }
+            .section { margin-top: 18px; }
+            h3 { margin: 0 0 10px; font-size: 16px; font-weight: 900; }
+            h4 { margin: 0 0 8px; font-size: 14px; font-weight: 800; }
+            ul { margin: 0; padding-left: 18px; }
+            li { margin: 4px 0; font-size: 12px; }
+            .notes { white-space: pre-wrap; border: 1px solid #0f172a; border-radius: 10px; padding: 10px; font-size: 12px; margin-top: 8px; }
+            .callout { border: 1px solid #0f172a; border-radius: 10px; padding: 10px; background: #f8fafc; font-size: 12px; }
             table { width: 100%; border-collapse: collapse; border: 1px solid #0f172a; border-radius: 10px; overflow: hidden; }
             thead th { background:#0f172a; color:#fff; font-size: 11px; text-align: left; padding: 8px; }
             tbody td { border-top: 1px solid #0f172a; font-size: 11px; padding: 8px; vertical-align: top; }
-            .notes { white-space: pre-wrap; border: 1px solid #0f172a; border-radius: 10px; padding: 10px; font-size: 12px; margin-top: 10px; }
-            .terms { font-size: 12px; color:#0f172a; border: 1px solid #0f172a; border-radius: 10px; padding: 10px; margin-top: 10px; }
-            @media print { body { margin: 12mm; } }
+            .footer { margin-top: 20px; font-size: 11px; color:#334155; border-top: 1px solid #cbd5e1; padding-top: 10px; }
+            @media print {
+              body { margin: 10mm; }
+              .hero { page-break-inside: avoid; break-inside: avoid-page; }
+              h3, h4 { page-break-after: avoid; break-after: avoid-page; }
+              .room-section { page-break-inside: auto; break-inside: auto; }
+              table { page-break-inside: auto; break-inside: auto; }
+              tr { page-break-inside: avoid; break-inside: avoid; }
+              /* Avoid print engine column-fragment glitches that can create blank pages */
+              .grid2, .grid4 { display: block; }
+              .grid2 .box, .grid4 .box { margin-top: 8px; }
+            }
           </style>
         </head>
         <body>
-          <div class="header">
-            <div>
-              <div class="brand">EPF PRO SERVICES</div>
-              <div class="title">${escapeHtml(project.projectName)}</div>
-              <div class="meta"><strong>Client:</strong> ${escapeHtml(project.customerName || "-")}</div>
-              <div class="meta"><strong>Address:</strong> ${escapeHtml(project.address || "-")}</div>
+          <section class="hero">
+            <div style="display:flex; justify-content:space-between; gap:12px; align-items:flex-start;">
+              <div>
+                <h1>${escapeHtml(project.projectName || "Bathroom Renovation Proposal")}</h1>
+                <div class="muted" style="margin-top:8px;"><strong>Prepared for:</strong> ${escapeHtml(project.customerName || "Client Name")}</div>
+                <div class="muted"><strong>Property address:</strong> ${escapeHtml(project.address || "Property Address")}</div>
+                <div class="muted" style="margin-top:8px;"><strong>Prepared by:</strong> EPF Pro Services</div>
+                <div class="muted"><strong>Estimator:</strong> ${escapeHtml(project.estimator || "Alex")} | <strong>Date:</strong> ${escapeHtml(project.quoteDate || now)}</div>
+              </div>
+              <div class="muted" style="text-align:right;">
+                <div><strong>Quote #:</strong> ${escapeHtml(project.quoteNumber || "-")}</div>
+                <div><strong>Validity:</strong> ${escapeHtml(String(project.validDays || 14))} days</div>
+              </div>
             </div>
-            <div class="meta" style="text-align:right;">
-              <div><strong>Quote #:</strong> ${escapeHtml(project.quoteNumber || "-")}</div>
-              <div><strong>Date:</strong> ${escapeHtml(project.quoteDate || now)}</div>
-              <div><strong>Estimator:</strong> ${escapeHtml(project.estimator || "EPF Pro Services")}</div>
-              <div><strong>Price mode:</strong> ${escapeHtml(
-                project.priceMode === "locked" ? "LOCKED" : "LIVE"
-              )}</div>
+            <div class="section grid2">
+              <div class="box">
+                <h4>What You Get</h4>
+                <ul>
+                  <li>&check; Fully insured contractor</li>
+                  <li>&check; Dust-control setup</li>
+                  <li>&check; Professional renovation crew</li>
+                  <li>&check; 12-month workmanship warranty</li>
+                </ul>
+              </div>
+              <div class="box">
+                <h4>Project Summary</h4>
+                <div style="font-size:12px; color:#334155;">${escapeHtml(projectSummary)}</div>
+              </div>
             </div>
-          </div>
+          </section>
 
-          <div class="totalBox">
-            <div class="k">Client-facing total</div>
+          <section class="section totalBox">
+            <div class="k" style="color:#cbd5e1;">Project total</div>
             <div class="totalValue">${currency(projectTotals.grandTotal)}</div>
-            <div class="meta" style="margin-top:8px;">Includes <strong>Included</strong> + <strong>Allowance</strong> lines. <strong>Owner Supplied</strong> and <strong>Excluded</strong> do not add to total.</div>
-          </div>
+            <div style="font-size:12px; color:#cbd5e1; margin-top:6px;">
+              Includes labour, standard materials, site protection, and cleanup.
+            </div>
+          </section>
 
-          <div class="grid">
-            <div class="box"><div class="k">Included work</div><div class="v">${currency(
-              projectTotals.includedOnlyAmount
-            )}</div></div>
-            <div class="box"><div class="k">Allowances</div><div class="v">${currency(
-              projectTotals.allowanceOnlyAmount
-            )}</div></div>
-            <div class="box"><div class="k">Before tax</div><div class="v">${currency(
-              projectTotals.beforeTax
-            )}</div></div>
+          <section class="section grid4">
+            <div class="box"><div class="k">Included work</div><div class="v">${currency(projectTotals.includedOnlyAmount)}</div></div>
+            <div class="box"><div class="k">Allowances</div><div class="v">${currency(projectTotals.allowanceOnlyAmount)}</div></div>
+            <div class="box"><div class="k">Before tax</div><div class="v">${currency(projectTotals.beforeTax)}</div></div>
             <div class="box"><div class="k">HST</div><div class="v">${currency(projectTotals.tax)}</div></div>
-          </div>
+          </section>
 
-          <h3>Rooms</h3>
-          ${roomsHtml}
+          <section class="section callout">
+            <h4>Allowance Explanation</h4>
+            Allowances are budget placeholders for items selected later (for example tile, fixtures, fan). If selections exceed allowance values, only the difference is added. If selections are lower, you receive a credit.
+          </section>
 
-          <h3>Project Notes</h3>
-          <div class="notes">${escapeHtml(project.quoteNotes || "-")}</div>
+          ${categoryBreakdownHtml}
 
-          <h3>Allowance / Exclusion Notes</h3>
-          <div class="notes">${escapeHtml(project.exclusionsNotes || "-")}</div>
+          <section class="section grid2">
+            <div class="box">
+              <h4>Why Clients Choose EPF Pro Services</h4>
+              <ul>
+                <li>&check; Professional dust protection</li>
+                <li>&check; Experienced renovation crew</li>
+                <li>&check; Clear pricing with documented scope</li>
+                <li>&check; Respect for your home and schedule</li>
+              </ul>
+            </div>
+            <div class="box">
+              <h4>Typical Project Timeline</h4>
+              <div style="font-size:12px;">${escapeHtml(project.timeline || "Bathroom renovation: estimated 5-7 working days, subject to scope and material lead times.")}</div>
+              <h4 style="margin-top:12px;">Project Outcome</h4>
+              <ul>
+                <li>Fully waterproofed wet area</li>
+                <li>Professional tile and finish installation</li>
+                <li>Proper ventilation and plumbing functionality</li>
+                <li>Clean completed surfaces ready for use</li>
+              </ul>
+            </div>
+          </section>
 
-          <h3>Schedule & Payment</h3>
-          <div class="terms"><strong>Timeline:</strong> ${escapeHtml(project.timeline || "-")}<br/><strong>Payment schedule:</strong> ${escapeHtml(project.paymentSchedule || "-")}</div>
+          ${roomScopeSectionHtml}
 
-          <h3>Approval</h3>
-          <div class="notes">
-            Approved: ${escapeHtml(signature.approved ? "Yes" : "No")}\n\n
-            Name: ${escapeHtml(signature.signerName || "-")}\n\n
-            Email: ${escapeHtml(signature.signerEmail || "-")}\n\n
-            Date: ${escapeHtml(signature.signerDate || "-")}
-          </div>
-          ${signatureImg}
+          <section class="section grid2">
+            <div class="box">
+              <h4>Payment Schedule</h4>
+              <ul>
+                <li>Deposit to reserve project date - 30%</li>
+                <li>Mid-project progress payment - 40%</li>
+                <li>Final payment after completion - 30%</li>
+              </ul>
+              <div style="font-size:12px; margin-top:8px;"><strong>Custom note:</strong> ${escapeHtml(project.paymentSchedule || "-")}</div>
+            </div>
+            <div class="box">
+              <h4>Workmanship Warranty</h4>
+              <div style="font-size:12px;">EPF Pro Services provides a 12-month workmanship warranty on installation and labour. Materials are covered by manufacturer warranties.</div>
+            </div>
+          </section>
 
-          <h3>Terms (simple)</h3>
-          <div class="terms">
-            - Quote validity: ${escapeHtml(String(project.validDays || 14))} days from quote date.\n\n
-            - Changes: Any scope change is handled by a written change order.\n\n
-            - Hidden conditions: Water damage, mold, structural issues, asbestos/hazardous materials, and code upgrades are excluded unless listed as Included/Allowance.\n\n
-            - Allowances: Allowances are budget placeholders. Unless a line note says supply + install, an allowance usually covers product/material supply only. If selections exceed allowance, difference is extra; if below, credit applies.
-          </div>
+          <section class="section">
+            <h3>Project Approval</h3>
+            <div class="notes">
+              Client name: ${escapeHtml(signature.signerName || "________________________")}\n\n
+              Signature: ________________________\n\n
+              Date: ${escapeHtml(signature.signerDate || "________________________")}\n\n
+              Start date target: ________________________
+            </div>
+            ${signatureImg}
+          </section>
+
+          <section class="section">
+            <h3>Project Notes</h3>
+            <div class="notes">${escapeHtml(project.quoteNotes || "-")}</div>
+            <div class="notes" style="margin-top:8px;">${escapeHtml(project.exclusionsNotes || "-")}</div>
+          </section>
+
+          <section class="section">
+            <h3>Recent Bathroom Projects</h3>
+            <div class="grid2">
+              <div class="box" style="height:90px; display:flex; align-items:center; justify-content:center; color:#64748b;">Photo placeholder</div>
+              <div class="box" style="height:90px; display:flex; align-items:center; justify-content:center; color:#64748b;">Photo placeholder</div>
+            </div>
+          </section>
+
+          <footer class="footer">
+            EPF Pro Services | Bathroom Renovation Specialists | Phone: 647-923-6784 | Email: info@epfproservices.com | Website: epfproservices.com
+          </footer>
         </body>
       </html>
     `;
@@ -1833,22 +2000,22 @@ export default function RenovationEstimatorPage() {
                   Back To Toolbox
                 </Link>
                 <Button
-                  variant={mode === "estimate" ? "default" : "outline"}
+                  variant="outline"
                   className={`rounded-2xl ${
                     mode === "estimate"
-                      ? "bg-white text-slate-900 hover:bg-white"
-                      : "border-slate-200 text-white hover:bg-slate-800"
+                      ? "border-white bg-white text-slate-900 hover:bg-white"
+                      : "border-slate-200 bg-transparent text-white hover:bg-slate-800"
                   }`}
                   onClick={() => setMode("estimate")}
                 >
                   <Calculator className="mr-2 h-4 w-4" /> Estimate Builder
                 </Button>
                 <Button
-                  variant={mode === "prices" ? "default" : "outline"}
+                  variant="outline"
                   className={`rounded-2xl ${
                     mode === "prices"
-                      ? "bg-white text-slate-900 hover:bg-white"
-                      : "border-slate-200 text-white hover:bg-slate-800"
+                      ? "border-white bg-white text-slate-900 hover:bg-white"
+                      : "border-slate-200 bg-transparent text-white hover:bg-slate-800"
                   }`}
                   onClick={() => setMode("prices")}
                 >
@@ -2235,7 +2402,11 @@ export default function RenovationEstimatorPage() {
                         If Print opens nothing, pop-ups are blocked. Allow pop-ups for localhost.
                       </p>
                       <div className="mt-3 flex flex-wrap gap-2">
-                        <Button className="rounded-2xl bg-white text-slate-900 hover:bg-white" onClick={handlePrintPdf}>
+                        <Button
+                          variant="outline"
+                          className="rounded-2xl border-white bg-white text-slate-900 hover:bg-white"
+                          onClick={handlePrintPdf}
+                        >
                           <Printer className="mr-2 h-4 w-4" /> Print / Save PDF
                         </Button>
                         <Button
