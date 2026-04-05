@@ -10,7 +10,13 @@ export default function PopcornSection() {
     >
       <div className="card">
         <div className="secHead">
-          <h3 className="secTitle">Popcorn / Stucco Removal</h3>
+          <h3
+            className="secTitle"
+            contentEditable
+            suppressContentEditableWarning
+          >
+            Popcorn / Stucco Removal
+          </h3>
           <div className="opts">
             <label>
               Height factor{" "}

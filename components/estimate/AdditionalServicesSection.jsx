@@ -8,7 +8,13 @@ export default function AdditionalServicesSection() {
     >
       <div className="card">
         <div className="secHead">
-          <h3 className="secTitle">Additional Services</h3>
+          <h3
+            className="secTitle"
+            contentEditable
+            suppressContentEditableWarning
+          >
+            Additional Services
+          </h3>
           <label className="ml-3">
             <input type="checkbox" className="hideSec" /> Hide from customer
           </label>

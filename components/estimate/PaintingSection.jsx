@@ -8,7 +8,13 @@ export default function PaintingSection() {
     >
       <div className="card">
         <div className="secHead">
-          <h3 className="secTitle">Interior Painting</h3>
+          <h3
+            className="secTitle"
+            contentEditable
+            suppressContentEditableWarning
+          >
+            Interior Painting
+          </h3>
           <label className="ml-3">
             <input type="checkbox" className="hideSec" /> Hi
           </label>

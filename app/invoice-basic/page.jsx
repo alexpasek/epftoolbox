@@ -18,6 +18,19 @@ const BRAND_PROFILES = {
   },
 };
 
+const APPROX_MATERIALS_NOTE =
+  "Materials are estimated only. Final material charges will be adjusted to the actual materials used for the project.";
+
+function formatCurrency(amount) {
+  return `$${Math.round(Number(amount) || 0).toLocaleString()}`;
+}
+
+function formatMaterialsAmount(amount, mode = "exact") {
+  if (mode === "included") return "Included";
+  if (mode === "approx") return `Approx. ${formatCurrency(amount)}`;
+  return formatCurrency(amount);
+}
+
 function recalcTotals(inv) {
   const labour = (inv.items || []).reduce(
     (s, r) => s + (Number(r.amount) || 0),
@@ -105,6 +118,7 @@ function InvoiceBasicPageInner() {
             taxRate: 13,
             matFixed: 0,
             matPct: 0,
+            materialsMode: "exact",
             items: [],
             notes: "",
           };
@@ -253,6 +267,9 @@ function InvoiceBasicPageInner() {
 
   const t = invoice.totals || recalcTotals(invoice);
   const brand = BRAND_PROFILES[invoice.brandKey] || BRAND_PROFILES.epf;
+  const materialsMode = invoice.materialsMode || "exact";
+  const materialsNote =
+    materialsMode === "approx" ? APPROX_MATERIALS_NOTE : "";
 
   return (
     <main className="min-h-screen bg-slate-100 px-4 py-6">
@@ -467,6 +484,21 @@ function InvoiceBasicPageInner() {
               </label>
             </div>
             <label className="flex items-center justify-between gap-2">
+              <span>Materials display</span>
+              <select
+                className="w-32 border border-slate-200 rounded-md px-2 py-1 text-right bg-white"
+                value={materialsMode}
+                onChange={(e) => updateField("materialsMode", e.target.value)}
+              >
+                <option value="exact">Exact cost</option>
+                <option value="included">Included</option>
+                <option value="approx">Approx.</option>
+              </select>
+            </label>
+            {materialsNote ? (
+              <div className="text-[11px] text-slate-500">{materialsNote}</div>
+            ) : null}
+            <label className="flex items-center justify-between gap-2">
               <span>Tax rate (%)</span>
               <input
                 type="number"
@@ -479,23 +511,23 @@ function InvoiceBasicPageInner() {
             <div className="border-t border-slate-200 mt-2 pt-2 space-y-1">
               <div className="flex justify-between">
                 <span>Labour</span>
-                <span>${Math.round(t.labour).toLocaleString()}</span>
+                <span>{formatCurrency(t.labour)}</span>
               </div>
               <div className="flex justify-between">
                 <span>Materials</span>
-                <span>${Math.round(t.materials).toLocaleString()}</span>
+                <span>{formatMaterialsAmount(t.materials, materialsMode)}</span>
               </div>
               <div className="flex justify-between">
                 <span>Subtotal</span>
-                <span>${Math.round(t.subtotal).toLocaleString()}</span>
+                <span>{formatCurrency(t.subtotal)}</span>
               </div>
               <div className="flex justify-between">
                 <span>Tax</span>
-                <span>${Math.round(t.tax).toLocaleString()}</span>
+                <span>{formatCurrency(t.tax)}</span>
               </div>
               <div className="flex justify-between font-semibold text-sm pt-1 border-t border-slate-200 mt-1">
                 <span>Total</span>
-                <span>${Math.round(t.total).toLocaleString()}</span>
+                <span>{formatCurrency(t.total)}</span>
               </div>
             </div>
           </div>

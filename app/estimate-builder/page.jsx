@@ -12,6 +12,8 @@ import PrintLayout from "@/components/estimate/PrintLayout";
 const STATE_KEY = "epf.estimateState.v2";
 const ES_LIST_KEY = "epf.eslist";
 const ES_COUNTER_KEY = "epf.es.counter";
+const CUSTOM_SERVICE_KEY = "epf.customServices.v1";
+const SERVICE_OVERRIDE_KEY = "epf.serviceOverrides.v1";
 
 const BRAND_PROFILES = {
   epf: {
@@ -536,6 +538,7 @@ function scrapeEstimateFromDom(brandOverride) {
     taxRate: parseFloat($("#tax_rate")?.value || "13"),
     matFixed: parseFloat($("#mat_fixed")?.value || "0"),
     matPct: parseFloat($("#mat_pct")?.value || "0"),
+    materialsMode: val("#mat_display") || "exact",
     discPct: parseFloat($("#disc_pct")?.value || "0"),
     items: [],
     notes: val("#scope_notes") || defaultNotes,
@@ -564,12 +567,14 @@ function scrapeEstimateFromDom(brandOverride) {
       sectionTotal += amt;
       labourTotal += amt;
       if (!isPrivate) {
+        const zeroLabel = tr.dataset.zeroLabel || "";
         const item = {
           description: (descCell?.innerText || "").trim(),
           qty,
           unit: tr.querySelector(".unit")?.value || "",
           rate,
           amount: amt,
+          zeroLabel,
         };
         base.items.push(item);
         sectionItems.push(item);
@@ -742,6 +747,7 @@ export default function EstimateBuilderPage() {
               privateRow: tr.classList.contains("private") ? 1 : 0,
               group: tr.dataset.group || "",
               role: tr.dataset.role || "",
+              zeroLabel: tr.dataset.zeroLabel || "",
             });
           }
         });
@@ -766,6 +772,7 @@ export default function EstimateBuilderPage() {
         startWindow: ($("#startWindow")?.textContent || "").trim(),
         mat_fixed: $("#mat_fixed")?.value || "0",
         mat_pct: $("#mat_pct")?.value || "0",
+        mat_display: $("#mat_display")?.value || "exact",
         disc_pct: $("#disc_pct")?.value || "0",
         tax_rate: $("#tax_rate")?.value || "13",
         tax_now: $("#cbTaxNow")?.checked ? 1 : 0,
@@ -784,7 +791,10 @@ export default function EstimateBuilderPage() {
       const setVal = (sel, value) => {
         const el = document.querySelector(sel);
         if (!el) return;
-        if ("value" in el && el.tagName === "INPUT")
+        if (
+          "value" in el &&
+          ["INPUT", "SELECT", "TEXTAREA"].includes(el.tagName)
+        )
           el.value = value ?? el.value;
         else el.textContent = value ?? el.textContent;
       };
@@ -810,6 +820,7 @@ export default function EstimateBuilderPage() {
       setVal("#startWindow", meta.startWindow || "[TBD]");
       setVal("#mat_fixed", meta.mat_fixed || "0");
       setVal("#mat_pct", meta.mat_pct || "0");
+      setVal("#mat_display", meta.mat_display || "exact");
       setVal("#disc_pct", meta.disc_pct || "0");
       setVal("#tax_rate", meta.tax_rate || "13");
       const cb = document.querySelector("#cbTaxNow");
@@ -871,6 +882,7 @@ export default function EstimateBuilderPage() {
               privateRow: !!it.privateRow,
               group: it.group,
               role: it.role,
+              zeroLabel: it.zeroLabel || "",
             });
           }
         });
@@ -1052,6 +1064,7 @@ export default function EstimateBuilderPage() {
           tmplId: null,
           details: null,
           linear: null,
+          zeroLabel: null,
         },
         opts || {}
       );
@@ -1060,6 +1073,12 @@ export default function EstimateBuilderPage() {
       if (o.group) tr.dataset.group = o.group;
       if (o.role) tr.dataset.role = o.role;
       if (o.linear) tr.dataset.linear = o.linear;
+      const zeroLabel =
+        o.zeroLabel ??
+        (/\(included\)/i.test(String(o.descHTML ?? o.desc ?? ""))
+          ? "included"
+          : "");
+      tr.dataset.zeroLabel = zeroLabel;
 
       const detailsArr =
         o.details ??
@@ -1104,6 +1123,12 @@ export default function EstimateBuilderPage() {
           <input class="amt" type="number" step="0.01" disabled>
         </td>
         <td class="num">
+          <label class="rowFlag">
+            <input type="checkbox" class="rowIncludeToggle"${
+              zeroLabel === "included" ? " checked" : ""
+            }>
+            <span>Included</span>
+          </label>
           <button class="btn ghost chooseService" title="Pick service">⋯</button>
           <button class="btn del" title="Remove">✕</button>
         </td>
@@ -1199,6 +1224,7 @@ export default function EstimateBuilderPage() {
         rate: 0,
         group,
         role: "cleanup",
+        zeroLabel: "included",
       });
 
       if (!tb.querySelector('tr[data-role="min"]')) {
@@ -1418,6 +1444,7 @@ export default function EstimateBuilderPage() {
     /** ========= Recalc totals (now includes per-section totals) ========= */
     function recalc() {
       let grandLabour = 0;
+      const materialsMode = $("#mat_display")?.value || "exact";
 
       $$(".sec").forEach((sec) => {
         // If section disabled, clear its total and skip row math
@@ -1446,6 +1473,10 @@ export default function EstimateBuilderPage() {
 
           const amount = qty * rate;
           amtEl.value = amount ? amount.toFixed(2) : "";
+          amtEl.placeholder =
+            amount === 0 && tr.dataset.zeroLabel === "included"
+              ? "Included"
+              : "";
           sectionLabour += amount;
         });
 
@@ -1474,8 +1505,14 @@ export default function EstimateBuilderPage() {
         const el = $(sel);
         if (el) el.textContent = text;
       };
+      const materialSummary =
+        materialsMode === "included"
+          ? "Included"
+          : materialsMode === "approx"
+            ? `Approx. $${Math.round(materials).toLocaleString()}`
+            : "$" + Math.round(materials).toLocaleString();
       setText("#s_labour", "$" + Math.round(grandLabour).toLocaleString());
-      setText("#s_mat", "$" + Math.round(materials).toLocaleString());
+      setText("#s_mat", materialSummary);
       setText(
         "#s_disc",
         (discount ? "-" : "") + "$" + Math.round(discount).toLocaleString()
@@ -1627,6 +1664,12 @@ export default function EstimateBuilderPage() {
         return;
       }
 
+      if (t.id === "mat_display") {
+        scheduleDraftSave();
+        window.__EPF_RECALC__?.();
+        return;
+      }
+
       if (t.classList.contains("roomPaintSel")) {
         const row = t.closest("tr");
         if (!row) return;
@@ -1655,6 +1698,15 @@ export default function EstimateBuilderPage() {
           }
         }
         window.__EPF_RECALC__?.();
+      }
+
+      if (t.classList.contains("rowIncludeToggle")) {
+        const row = t.closest("tr");
+        if (row) {
+          row.dataset.zeroLabel = t.checked ? "included" : "";
+          scheduleDraftSave();
+          window.__EPF_RECALC__?.();
+        }
       }
     });
 
@@ -1825,6 +1877,8 @@ export default function EstimateBuilderPage() {
     /** ========= Service picker (bottom sheet) ========= */
     let pickerTargetRow = null;
     let pickerSectionId = null;
+    let customServices = [];
+    let serviceOverrides = {};
     let pickerRoot = document.getElementById("epf-service-picker");
     if (!pickerRoot) {
       pickerRoot = document.createElement("div");
@@ -1837,6 +1891,10 @@ export default function EstimateBuilderPage() {
             <input class="esp-search" type="text" placeholder="Search service…" />
             <button type="button" class="esp-close-btn">Close</button>
           </div>
+          <div class="esp-toolbar">
+            <button type="button" class="esp-action-btn esp-add-custom">＋ Custom service</button>
+            <button type="button" class="esp-action-btn esp-save-row">Save current row</button>
+          </div>
           <div class="esp-list"></div>
         </div>`;
       document.body.appendChild(pickerRoot);
@@ -1845,6 +1903,189 @@ export default function EstimateBuilderPage() {
     const pickerSearch = pickerRoot.querySelector(".esp-search");
     const pickerCloseBtn = pickerRoot.querySelector(".esp-close-btn");
     const pickerBackdrop = pickerRoot.querySelector(".esp-backdrop");
+    const pickerAddCustomBtn = pickerRoot.querySelector(".esp-add-custom");
+    const pickerSaveRowBtn = pickerRoot.querySelector(".esp-save-row");
+
+    function serviceStorageKey(tmpl) {
+      return (
+        tmpl.storageKey ||
+        `${tmpl.section || "any"}::${tmpl.id || tmpl.name}::${tmpl.name || ""}`
+      );
+    }
+
+    function loadCustomServices() {
+      if (typeof window === "undefined") return [];
+      try {
+        const raw = window.localStorage.getItem(CUSTOM_SERVICE_KEY);
+        const parsed = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed) ? parsed : [];
+      } catch (err) {
+        console.warn("Failed to load custom services", err);
+        return [];
+      }
+    }
+
+    function persistCustomServices(next) {
+      customServices = Array.isArray(next) ? next : [];
+      if (typeof window === "undefined") return;
+      try {
+        window.localStorage.setItem(
+          CUSTOM_SERVICE_KEY,
+          JSON.stringify(customServices)
+        );
+      } catch (err) {
+        console.warn("Failed to save custom services", err);
+      }
+    }
+
+    function loadServiceOverrides() {
+      if (typeof window === "undefined") return {};
+      try {
+        const raw = window.localStorage.getItem(SERVICE_OVERRIDE_KEY);
+        const parsed = raw ? JSON.parse(raw) : {};
+        return parsed && typeof parsed === "object" ? parsed : {};
+      } catch (err) {
+        console.warn("Failed to load service overrides", err);
+        return {};
+      }
+    }
+
+    function persistServiceOverrides(next) {
+      serviceOverrides = next && typeof next === "object" ? next : {};
+      if (typeof window === "undefined") return;
+      try {
+        window.localStorage.setItem(
+          SERVICE_OVERRIDE_KEY,
+          JSON.stringify(serviceOverrides)
+        );
+      } catch (err) {
+        console.warn("Failed to save service overrides", err);
+      }
+    }
+
+    function normalizeServiceDetails(value) {
+      if (Array.isArray(value)) {
+        return value
+          .map((line) => String(line || "").trim())
+          .filter(Boolean);
+      }
+      return String(value || "")
+        .split("|")
+        .map((line) => line.trim())
+        .filter(Boolean);
+    }
+
+    function rowDraftFromTarget(row) {
+      if (!row) return null;
+      const descText = row.querySelector("td")?.innerText || "";
+      const lines = descText
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean);
+      const [name = "", ...details] = lines;
+      return {
+        name,
+        details,
+        desc: details.join(" | "),
+        unit: row.querySelector(".unit")?.value || "ea",
+        rate: parseFloat(row.querySelector(".rate")?.value || "0") || 0,
+        defaultQty:
+          row.querySelector(".qty")?.value === ""
+            ? null
+            : parseFloat(row.querySelector(".qty")?.value || "0") || 0,
+      };
+    }
+
+    function promptForServiceTemplate(initial = {}, forcedSectionId = "") {
+      const name = window.prompt("Service name?", initial.name || "")?.trim();
+      if (!name) return null;
+
+      const detailsSeed = normalizeServiceDetails(
+        initial.details?.length ? initial.details : initial.desc
+      ).join(" | ");
+      const detailsInput = window.prompt(
+        'Details / bullets? Use "|" between points (optional).',
+        detailsSeed
+      );
+      if (detailsInput == null) return null;
+
+      const unit = (
+        window.prompt(
+          "Unit? Use sf, ea, job, lf, door, room, or allow.",
+          initial.unit || "ea"
+        ) || ""
+      )
+        .trim()
+        .toLowerCase();
+      if (!unit) return null;
+
+      const rateInput = window.prompt(
+        "Rate / price?",
+        String(initial.rate ?? "0")
+      );
+      if (rateInput == null) return null;
+      const rate = parseFloat(rateInput);
+      if (Number.isNaN(rate)) {
+        window.alert("Rate must be a number.");
+        return null;
+      }
+
+      const qtyInput = window.prompt(
+        "Default quantity? Leave blank for none.",
+        initial.defaultQty == null ? "" : String(initial.defaultQty)
+      );
+      if (qtyInput == null) return null;
+      const trimmedQty = qtyInput.trim();
+      const defaultQty =
+        trimmedQty === ""
+          ? null
+          : Number.isNaN(parseFloat(trimmedQty))
+            ? null
+            : parseFloat(trimmedQty);
+
+      const details = normalizeServiceDetails(detailsInput);
+      return {
+        id:
+          initial.id ||
+          "custom-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+        section: forcedSectionId || initial.section || "sec-add",
+        name,
+        desc: details.join(" | "),
+        details,
+        unit,
+        rate,
+        defaultQty,
+        custom: true,
+      };
+    }
+
+    function editableTemplateSeed(tmpl) {
+      const details =
+        Array.isArray(tmpl.details) && tmpl.details.length
+          ? tmpl.details
+          : detailsFor({
+              tmplId: tmpl.id,
+              role: "",
+              desc: tmpl.name,
+            });
+      return {
+        ...tmpl,
+        desc: tmpl.desc || normalizeServiceDetails(details).join(" | "),
+        details,
+      };
+    }
+
+    function customActionButton(label, className, onClick) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = className;
+      btn.textContent = label;
+      btn.addEventListener("click", (event) => {
+        event.stopPropagation();
+        onClick();
+      });
+      return btn;
+    }
 
     function closeServicePicker() {
       pickerTargetRow = null;
@@ -1858,11 +2099,14 @@ export default function EstimateBuilderPage() {
       const unitSel = pickerTargetRow.querySelector(".unit");
       const rateInput = pickerTargetRow.querySelector(".rate");
 
-      const detailsArr = detailsFor({
-        tmplId: tmpl.id,
-        role: "",
-        desc: tmpl.name,
-      });
+      const detailsArr =
+        Array.isArray(tmpl.details) && tmpl.details.length
+          ? tmpl.details
+          : detailsFor({
+              tmplId: tmpl.id,
+              role: "",
+              desc: tmpl.name,
+            });
       if (descCell)
         descCell.innerHTML = renderDescWithDetails(tmpl.name, detailsArr);
       if (qtyInput && tmpl.defaultQty != null)
@@ -1870,13 +2114,85 @@ export default function EstimateBuilderPage() {
       if (unitSel && tmpl.unit) unitSel.value = tmpl.unit;
       if (rateInput && tmpl.rate != null) rateInput.value = String(tmpl.rate);
     }
+
+    function addCustomServiceFromDraft(draft) {
+      const tmpl = promptForServiceTemplate(draft || {}, pickerSectionId);
+      if (!tmpl) return;
+      persistCustomServices([tmpl, ...customServices]);
+      renderServiceList(pickerSearch?.value || "");
+    }
+
+    function editCustomService(tmpl) {
+      const updated = promptForServiceTemplate(tmpl, tmpl.section);
+      if (!updated) return;
+      persistCustomServices(
+        customServices.map((service) => (service.id === tmpl.id ? updated : service))
+      );
+      renderServiceList(pickerSearch?.value || "");
+    }
+
+    function deleteCustomService(tmpl) {
+      const confirmed = window.confirm(`Delete custom service "${tmpl.name}"?`);
+      if (!confirmed) return;
+      persistCustomServices(
+        customServices.filter((service) => service.id !== tmpl.id)
+      );
+      renderServiceList(pickerSearch?.value || "");
+    }
+
+    function editBaseService(tmpl) {
+      const seed = editableTemplateSeed(tmpl);
+      const updated = promptForServiceTemplate(seed, tmpl.section);
+      if (!updated) return;
+      const key = serviceStorageKey(tmpl);
+      persistServiceOverrides({
+        ...serviceOverrides,
+        [key]: {
+          name: updated.name,
+          desc: updated.desc,
+          details: updated.details,
+          unit: updated.unit,
+          rate: updated.rate,
+          defaultQty: updated.defaultQty,
+          hidden: false,
+        },
+      });
+      renderServiceList(pickerSearch?.value || "");
+    }
+
+    function deleteBaseService(tmpl) {
+      const confirmed = window.confirm(`Hide service "${tmpl.name}" from the list?`);
+      if (!confirmed) return;
+      const key = serviceStorageKey(tmpl);
+      persistServiceOverrides({
+        ...serviceOverrides,
+        [key]: {
+          ...(serviceOverrides[key] || {}),
+          hidden: true,
+        },
+      });
+      renderServiceList(pickerSearch?.value || "");
+    }
+
     function renderServiceList(query) {
       if (!pickerList) return;
       pickerList.innerHTML = "";
       const q = (query || "").trim().toLowerCase();
       const activeBrand =
         (typeof window !== "undefined" && window.__EPF_BRAND__) || "epf";
-      const allowed = SERVICE_COST.filter((t) => {
+      const baseServices = SERVICE_COST.map((tmpl) => {
+        const key = serviceStorageKey(tmpl);
+        const override = serviceOverrides[key] || {};
+        if (override.hidden) return null;
+        return {
+          ...tmpl,
+          ...override,
+          storageKey: key,
+          custom: false,
+        };
+      }).filter(Boolean);
+      const allServices = [...customServices, ...baseServices];
+      const allowed = allServices.filter((t) => {
         if (!pickerSectionId) return true;
         if (t.section === "any") return true;
         return t.section === pickerSectionId;
@@ -1898,6 +2214,7 @@ export default function EstimateBuilderPage() {
       const rankFor = (section) =>
         SERVICE_SECTION_ORDER[section] ?? SERVICE_SECTION_ORDER["sec-add"] ?? 10;
       const sorted = [...allowed].sort((a, b) => {
+        if (!!a.custom !== !!b.custom) return a.custom ? -1 : 1;
         const rankDiff = rankFor(a.section) - rankFor(b.section);
         if (rankDiff !== 0) return rankDiff;
         return a.name.localeCompare(b.name);
@@ -1908,12 +2225,31 @@ export default function EstimateBuilderPage() {
         btn.className = "esp-item";
         btn.innerHTML = `
           <div class="esp-main">
-            <div class="esp-name">${tmpl.name}</div>
+            <div class="esp-name">${tmpl.name}${
+              tmpl.custom ? '<span class="esp-tag">Custom</span>' : ""
+            }</div>
             <div class="esp-desc">${tmpl.desc}</div>
           </div>
-          <div class="esp-price">$${(tmpl.rate ?? 0).toFixed(2)}</div>`;
+          <div class="esp-side">
+            <div class="esp-price">$${(tmpl.rate ?? 0).toFixed(2)}</div>
+          </div>`;
+        const side = btn.querySelector(".esp-side");
+        const actions = document.createElement("div");
+        actions.className = "esp-item-actions";
+        actions.appendChild(
+          customActionButton("Edit", "esp-mini-btn", () =>
+            tmpl.custom ? editCustomService(tmpl) : editBaseService(tmpl)
+          )
+        );
+        actions.appendChild(
+          customActionButton("Delete", "esp-mini-btn danger", () =>
+            tmpl.custom ? deleteCustomService(tmpl) : deleteBaseService(tmpl)
+          )
+        );
+        side?.appendChild(actions);
         btn.addEventListener("click", () => {
           applyServiceTemplate(tmpl);
+          scheduleDraftSave();
           window.__EPF_RECALC__?.();
           closeServicePicker();
         });
@@ -1924,6 +2260,8 @@ export default function EstimateBuilderPage() {
       pickerTargetRow = row;
       const sec = row.closest(".sec");
       pickerSectionId = sec?.id || "";
+      customServices = loadCustomServices();
+      serviceOverrides = loadServiceOverrides();
       pickerRoot.classList.add("open");
       if (pickerSearch) {
         pickerSearch.value = "";
@@ -1935,6 +2273,19 @@ export default function EstimateBuilderPage() {
     }
     pickerSearch?.addEventListener("input", (e) =>
       renderServiceList(e.target.value)
+    );
+    pickerAddCustomBtn?.addEventListener("click", () =>
+      addCustomServiceFromDraft({
+        name: "",
+        details: [],
+        desc: "",
+        unit: "ea",
+        rate: 0,
+        defaultQty: 1,
+      })
+    );
+    pickerSaveRowBtn?.addEventListener("click", () =>
+      addCustomServiceFromDraft(rowDraftFromTarget(pickerTargetRow) || {})
     );
     pickerCloseBtn?.addEventListener("click", closeServicePicker);
     pickerBackdrop?.addEventListener("click", closeServicePicker);
@@ -2518,6 +2869,20 @@ export default function EstimateBuilderPage() {
                 <div className="kv">
                   <label>Materials — % of labour</label>
                   <input id="mat_pct" type="number" defaultValue="0" />
+                </div>
+              </div>
+              <div className="row">
+                <div className="kv">
+                  <label>Materials display</label>
+                  <select id="mat_display" defaultValue="exact">
+                    <option value="exact">Exact cost</option>
+                    <option value="included">Show as Included</option>
+                    <option value="approx">Show as Approx.</option>
+                  </select>
+                  <small className="text-xs text-slate-500">
+                    Use <strong>Approx.</strong> when final material charges will
+                    be adjusted to actual usage.
+                  </small>
                 </div>
               </div>
               <div className="row">

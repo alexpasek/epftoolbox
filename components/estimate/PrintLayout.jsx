@@ -31,6 +31,22 @@ const DEFAULT_BRAND = {
 const currency = (val) =>
   `$${Math.round(Number(val || 0)).toLocaleString("en-CA")}`;
 
+const APPROX_MATERIALS_NOTE =
+  "Materials are estimated only. Final material charges will be adjusted to the actual materials used for the project.";
+
+function formatLineAmount(item = {}) {
+  const amount = Number(item.amount || 0);
+  if (amount === 0 && item.zeroLabel === "included") return "Included";
+  return currency(amount);
+}
+
+function formatMaterialsAmount(totals = {}, materialsMode = "exact") {
+  const amount = Number(totals.materials || 0);
+  if (materialsMode === "included") return "Included";
+  if (materialsMode === "approx") return `Approx. ${currency(amount)}`;
+  return currency(amount);
+}
+
 export default function PrintLayout({
   snapshot,
   previewVisible,
@@ -50,8 +66,11 @@ export default function PrintLayout({
     items = [],
     sections = [],
     notes,
+    materialsMode = "exact",
     totals = {},
   } = snapshot;
+  const materialsNote =
+    materialsMode === "approx" ? APPROX_MATERIALS_NOTE : "";
 
   const brand = brandProfile || DEFAULT_BRAND;
   const className = `print-estimate${previewVisible ? " show" : ""}`;
@@ -166,7 +185,7 @@ export default function PrintLayout({
                             ) : null}
                           </td>
                           <td className="line-amount">
-                            {currency(item.amount)}
+                            {formatLineAmount(item)}
                           </td>
                         </tr>
                       );
@@ -196,7 +215,7 @@ export default function PrintLayout({
                           </ul>
                         ) : null}
                       </td>
-                      <td className="line-amount">{currency(item.amount)}</td>
+                      <td className="line-amount">{formatLineAmount(item)}</td>
                     </tr>
                   );
                 })}
@@ -205,10 +224,11 @@ export default function PrintLayout({
           )}
         </section>
 
-        {notes ? (
+        {notes || materialsNote ? (
           <section className="print-notes">
             <h4>Scope notes</h4>
-            <p>{notes}</p>
+            {notes ? <p>{notes}</p> : null}
+            {materialsNote ? <p>{materialsNote}</p> : null}
           </section>
         ) : null}
 
@@ -219,7 +239,7 @@ export default function PrintLayout({
           </article>
           <article>
             <span>Materials</span>
-            <strong>{currency(totals.materials)}</strong>
+            <strong>{formatMaterialsAmount(totals, materialsMode)}</strong>
           </article>
           <article>
             <span>Tax</span>
