@@ -293,6 +293,67 @@
     color: #fff;
 }
 
+.print-estimate .print-signatures {
+    margin-top: 22px;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+}
+
+.print-estimate .print-signatures article {
+    padding: 16px 18px;
+    border: 1px solid #d7dfeb;
+    border-radius: 14px;
+    background: #ffffff;
+}
+
+.print-estimate .print-signatures article>span {
+    display: block;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #64748b;
+}
+
+.print-estimate .print-signatures strong {
+    display: block;
+    margin-top: 8px;
+    font-size: 14px;
+    color: #0f172a;
+}
+
+.print-estimate .print-signatures .signature-meta {
+    margin: 8px 0 0;
+    font-size: 12px;
+    color: #475569;
+    line-height: 1.45;
+}
+
+.print-estimate .print-signatures .signature-line {
+    margin-top: 32px;
+    border-bottom: 1.5px solid #0f172a;
+}
+
+.print-estimate .print-signatures .signature-date {
+    margin-top: 18px;
+    display: grid;
+    grid-template-columns: auto minmax(120px, 1fr) auto;
+    align-items: end;
+    gap: 8px;
+}
+
+.print-estimate .print-signatures .signature-date span,
+.print-estimate .print-signatures .signature-date em {
+    font-size: 12px;
+    color: #475569;
+    font-style: normal;
+}
+
+.print-estimate .print-signatures .date-line {
+    border-bottom: 1px solid #94a3b8;
+    min-height: 18px;
+}
+
 .print-estimate .print-notes {
     margin-top: 18px;
     padding: 14px 18px;
@@ -328,6 +389,12 @@
 
 .print-estimate .print-footer p + p {
     margin-top: 4px;
+}
+
+@media (max-width: 720px) {
+    .print-estimate .print-signatures {
+        grid-template-columns: 1fr;
+    }
 }
 
 .epf .title {
@@ -1283,6 +1350,169 @@ body.customer .epf .sec .roomHeader {
         display: block !important;
         page-break-after: auto;
     }
+    .print-estimate .print-page {
+        max-width: none;
+        border: 0;
+        border-radius: 0;
+        box-shadow: none;
+        padding: 8mm 7mm 7mm;
+    }
+    .print-estimate .preview-close {
+        display: none !important;
+    }
+    .print-estimate .print-hero {
+        margin-bottom: 12px;
+        padding: 12px 14px;
+        border-radius: 14px;
+        gap: 12px;
+        align-items: flex-start;
+    }
+    .print-estimate .hero-brand {
+        gap: 10px;
+        align-items: flex-start;
+    }
+    .print-estimate .hero-brand .logo-wrap {
+        width: 48px;
+        height: 48px;
+        padding: 6px;
+        border-radius: 12px;
+    }
+    .print-estimate .hero-text h1 {
+        font-size: 18px;
+    }
+    .print-estimate .hero-text p {
+        font-size: 12px;
+    }
+    .print-estimate .hero-text span,
+    .print-estimate .hero-text .brand-legal {
+        font-size: 10px;
+    }
+    .print-estimate .hero-summary strong {
+        font-size: 24px;
+    }
+    .print-estimate .hero-summary p,
+    .print-estimate .hero-summary small {
+        font-size: 11px;
+        margin: 0;
+    }
+    .print-estimate .print-info-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px;
+        margin-bottom: 12px;
+    }
+    .print-estimate .print-info-grid article {
+        padding: 8px 10px;
+        border-radius: 10px;
+    }
+    .print-estimate .print-info-grid span {
+        font-size: 10px;
+    }
+    .print-estimate .print-info-grid strong {
+        margin-top: 3px;
+        font-size: 13px;
+    }
+    .print-estimate .print-info-grid p {
+        margin-top: 4px;
+        font-size: 10px;
+    }
+    .print-estimate .scope-card {
+        break-inside: auto;
+        page-break-inside: auto;
+    }
+    .print-estimate .scope-card header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-end;
+        gap: 10px;
+        margin: 8px 0 4px;
+    }
+    .print-estimate .scope-table h3 {
+        margin: 0;
+        font-size: 12px;
+        letter-spacing: 0.4px;
+    }
+    .print-estimate .scope-table table {
+        border-radius: 10px;
+    }
+    .print-estimate .scope-table td {
+        padding: 8px 10px;
+    }
+    .print-estimate .scope-table .line-title {
+        font-size: 12.5px;
+    }
+    .print-estimate .scope-table ul {
+        margin-top: 3px;
+        padding-left: 14px;
+        font-size: 10.5px;
+        line-height: 1.3;
+    }
+    .print-estimate .scope-table .line-amount {
+        font-size: 14px;
+    }
+    .print-estimate .print-notes {
+        margin-top: 10px;
+        padding: 10px 12px;
+        border-radius: 10px;
+    }
+    .print-estimate .print-notes h4 {
+        margin-bottom: 4px;
+        font-size: 11px;
+    }
+    .print-estimate .print-notes p {
+        font-size: 10.5px;
+        line-height: 1.35;
+    }
+    .print-estimate .print-totals {
+        margin-top: 10px;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 8px;
+    }
+    .print-estimate .print-totals article {
+        padding: 8px 10px;
+        border-radius: 10px;
+    }
+    .print-estimate .print-totals article span {
+        font-size: 10px;
+    }
+    .print-estimate .print-totals article strong {
+        margin-top: 4px;
+        font-size: 14px;
+    }
+    .print-estimate .print-signatures {
+        margin-top: 12px;
+        gap: 10px;
+    }
+    .print-estimate .print-signatures article {
+        padding: 10px 12px;
+        border-radius: 10px;
+    }
+    .print-estimate .print-signatures article > span,
+    .print-estimate .print-signatures .signature-date span,
+    .print-estimate .print-signatures .signature-date em,
+    .print-estimate .print-signatures .signature-meta {
+        font-size: 10px;
+    }
+    .print-estimate .print-signatures strong {
+        margin-top: 6px;
+        font-size: 12px;
+    }
+    .print-estimate .print-signatures .signature-line {
+        margin-top: 16px;
+    }
+    .print-estimate .print-signatures .signature-date {
+        margin-top: 10px;
+        gap: 6px;
+    }
+    .print-estimate .print-signatures .date-line {
+        min-height: 14px;
+    }
+    .print-estimate .print-footer {
+        margin-top: 12px;
+        font-size: 10px;
+    }
+    .print-estimate .print-footer p + p {
+        margin-top: 2px;
+    }
     .epf .services,
     .epf .controls,
     .epf .secTog,
@@ -2043,7 +2273,7 @@ body.customer .epf .sec .roomHeader {
     }
     @page {
         size: Letter;
-        margin: 18mm 12mm 14mm;
+        margin: 10mm 8mm 10mm;
     }
     /* Small gap above each section that follows another section */
     .epf .sec+.sec::before {

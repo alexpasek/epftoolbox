@@ -538,6 +538,7 @@ function scrapeEstimateFromDom(brandOverride) {
     taxRate: parseFloat($("#tax_rate")?.value || "13"),
     matFixed: parseFloat($("#mat_fixed")?.value || "0"),
     matPct: parseFloat($("#mat_pct")?.value || "0"),
+    depositAmount: parseFloat($("#deposit_amount")?.value || "0"),
     materialsMode: val("#mat_display") || "exact",
     discPct: parseFloat($("#disc_pct")?.value || "0"),
     items: [],
@@ -772,6 +773,7 @@ export default function EstimateBuilderPage() {
         startWindow: ($("#startWindow")?.textContent || "").trim(),
         mat_fixed: $("#mat_fixed")?.value || "0",
         mat_pct: $("#mat_pct")?.value || "0",
+        deposit_amount: $("#deposit_amount")?.value || "0",
         mat_display: $("#mat_display")?.value || "exact",
         disc_pct: $("#disc_pct")?.value || "0",
         tax_rate: $("#tax_rate")?.value || "13",
@@ -820,6 +822,7 @@ export default function EstimateBuilderPage() {
       setVal("#startWindow", meta.startWindow || "[TBD]");
       setVal("#mat_fixed", meta.mat_fixed || "0");
       setVal("#mat_pct", meta.mat_pct || "0");
+      setVal("#deposit_amount", meta.deposit_amount || "0");
       setVal("#mat_display", meta.mat_display || "exact");
       setVal("#disc_pct", meta.disc_pct || "0");
       setVal("#tax_rate", meta.tax_rate || "13");
@@ -2368,10 +2371,33 @@ export default function EstimateBuilderPage() {
     return () => window.removeEventListener("afterprint", afterPrint);
   }, []);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!previewVisible) return;
+
+    let refreshTimer = null;
+    const refreshPreview = () => {
+      if (refreshTimer) window.clearTimeout(refreshTimer);
+      refreshTimer = window.setTimeout(() => {
+        capturePrintSnapshot(brandKeyRef.current || brandKey);
+      }, 40);
+    };
+
+    refreshPreview();
+    document.addEventListener("input", refreshPreview, true);
+    document.addEventListener("change", refreshPreview, true);
+
+    return () => {
+      if (refreshTimer) window.clearTimeout(refreshTimer);
+      document.removeEventListener("input", refreshPreview, true);
+      document.removeEventListener("change", refreshPreview, true);
+    };
+  }, [previewVisible, brandKey]);
+
   function capturePrintSnapshot(nextBrandKey = brandKey) {
     const key = nextBrandKey || brandKey || "epf";
     if (typeof window !== "undefined") window.__EPF_BRAND__ = key;
-    setBrandKey(key);
+    if (brandKeyRef.current !== key) setBrandKey(key);
     const snapshot = scrapeEstimateFromDom(key);
     if (snapshot) {
       const withBrand = { ...snapshot, brandKey: key };
@@ -2814,8 +2840,8 @@ export default function EstimateBuilderPage() {
               type="button"
               className="btn ghost"
               onClick={() => {
-    const snap = capturePrintSnapshot();
-    console.debug("btnPrintAlpha clicked", { snap });
+                const snap = capturePrintSnapshot();
+                console.debug("Preview print layout clicked", { snap });
                 if (snap) setPreviewVisible(true);
               }}
             >
@@ -2883,6 +2909,10 @@ export default function EstimateBuilderPage() {
                     Use <strong>Approx.</strong> when final material charges will
                     be adjusted to actual usage.
                   </small>
+                </div>
+                <div className="kv">
+                  <label>Deposit amount</label>
+                  <input id="deposit_amount" type="number" defaultValue="0" />
                 </div>
               </div>
               <div className="row">

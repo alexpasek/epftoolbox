@@ -66,6 +66,7 @@ export default function PrintLayout({
     items = [],
     sections = [],
     notes,
+    depositAmount = 0,
     materialsMode = "exact",
     totals = {},
   } = snapshot;
@@ -248,6 +249,34 @@ export default function PrintLayout({
           <article className="grand">
             <span>Total</span>
             <strong>{currency(totals.total)}</strong>
+          </article>
+        </section>
+
+        <section className="print-signatures">
+          <article>
+            <span>Client Approval</span>
+            <div className="signature-line" />
+            <strong>Client Signature</strong>
+            <p className="signature-meta">
+              Client: {client || "[Client name]"}
+            </p>
+            <div className="signature-date">
+              <span>Date</span>
+              <div className="date-line" />
+            </div>
+            <p className="signature-meta">
+              Deposit: {currency(depositAmount)}
+            </p>
+          </article>
+          <article>
+            <span>Prepared By</span>
+            <div className="signature-line" />
+            <strong>{preparedBy || brand.name || DEFAULT_BRAND.name}</strong>
+            <div className="signature-date">
+              <span>Date</span>
+              <div className="date-line" />
+              <em>{date || new Date().toISOString().slice(0, 10)}</em>
+            </div>
           </article>
         </section>
 
