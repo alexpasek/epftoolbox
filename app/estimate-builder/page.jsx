@@ -927,6 +927,14 @@ export default function EstimateBuilderPage() {
             <label class="ml-3"><input type="checkbox" class="hideSec"> Hide from customer</label>
           </div>
           <table class="grid">
+            <colgroup>
+              <col class="col-desc">
+              <col class="col-qty">
+              <col class="col-unit">
+              <col class="col-rate">
+              <col class="col-amount">
+              <col class="col-actions">
+            </colgroup>
             <thead>
               <tr>
                 <th>Description</th>
@@ -1052,6 +1060,38 @@ export default function EstimateBuilderPage() {
         .querySelectorAll(".sec tbody tr")
         .forEach((row) => applyPerimeterValueToRow(row, perimeter));
     }
+
+    function findMovableSiblingRow(tr, direction) {
+      if (!tr) return null;
+      const step =
+        direction < 0 ? "previousElementSibling" : "nextElementSibling";
+      const group = tr.dataset.group || "";
+      let cursor = tr;
+
+      while (cursor) {
+        cursor = cursor[step];
+        if (!cursor) return null;
+        if (cursor.classList?.contains("roomHeader")) {
+          if (group) return null;
+          continue;
+        }
+        if (group && (cursor.dataset.group || "") !== group) return null;
+        return cursor;
+      }
+
+      return null;
+    }
+
+    function moveRow(tr, direction) {
+      const target = findMovableSiblingRow(tr, direction);
+      const parent = tr?.parentElement;
+      if (!target || !parent) return;
+      if (direction < 0) parent.insertBefore(tr, target);
+      else parent.insertBefore(target, tr);
+      window.__EPF_RECALC__?.();
+      scheduleDraftSave();
+    }
+
     function addRow(sec, opts) {
       const tb = sec.querySelector("tbody");
       const o = Object.assign(
@@ -1089,8 +1129,8 @@ export default function EstimateBuilderPage() {
       const descHTML = o.descHTML ?? renderDescWithDetails(o.desc, detailsArr);
 
       tr.innerHTML = `
-        <td contenteditable="true">${descHTML}</td>
-        <td class="num qtyCell">
+        <td class="descCell" data-label="Description" contenteditable="true">${descHTML}</td>
+        <td class="num qtyCell" data-label="Qty">
           <div class="qtyWrap">
             <input class="qty" type="number" step="0.01" inputmode="decimal" value="${
               o.qty !== "" ? o.qty : ""
@@ -1098,7 +1138,7 @@ export default function EstimateBuilderPage() {
             <button class="btn mini qtyWheel" title="Pick quantity">▦</button>
           </div>
         </td>
-        <td>
+        <td data-label="Unit">
           <select class="unit">
             <option value="sf"${o.unit === "sf" ? " selected" : ""}>sf</option>
             <option value="ea"${o.unit === "ea" ? " selected" : ""}>ea</option>
@@ -1117,23 +1157,27 @@ export default function EstimateBuilderPage() {
             }>allow</option>
           </select>
         </td>
-        <td class="num col-rate">
+        <td class="num col-rate" data-label="Rate">
           <input class="rate" type="number" step="0.01" inputmode="decimal" value="${
             o.rate !== "" ? o.rate : ""
           }">
         </td>
-        <td class="num">
+        <td class="num amtCell" data-label="Amount">
           <input class="amt" type="number" step="0.01" disabled>
         </td>
-        <td class="num">
+        <td class="num rowActionsCell" data-label="Actions">
           <label class="rowFlag">
             <input type="checkbox" class="rowIncludeToggle"${
               zeroLabel === "included" ? " checked" : ""
             }>
             <span>Included</span>
           </label>
-          <button class="btn ghost chooseService" title="Pick service">⋯</button>
-          <button class="btn del" title="Remove">✕</button>
+          <div class="rowActions">
+            <button class="btn ghost mini moveUp" type="button" title="Move up" aria-label="Move row up">↑</button>
+            <button class="btn ghost mini moveDown" type="button" title="Move down" aria-label="Move row down">↓</button>
+            <button class="btn ghost chooseService" type="button" title="Pick service">⋯</button>
+            <button class="btn del" type="button" title="Remove">✕</button>
+          </div>
         </td>
       `;
       tb?.appendChild(tr);
@@ -1739,6 +1783,18 @@ export default function EstimateBuilderPage() {
       if (t.classList.contains("qtyWheel")) {
         const input = t.closest("td")?.querySelector(".qty");
         if (input) openQtyPicker(input);
+        return;
+      }
+
+      if (t.closest(".moveUp")) {
+        const row = t.closest("tr");
+        if (row) moveRow(row, -1);
+        return;
+      }
+
+      if (t.closest(".moveDown")) {
+        const row = t.closest("tr");
+        if (row) moveRow(row, 1);
         return;
       }
 

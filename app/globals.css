@@ -631,6 +631,13 @@
     background: rgba(255, 255, 255, 0.72);
 }
 
+.epf .opts {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+}
+
 .epf .secTog {
     display: flex;
     flex-wrap: wrap;
@@ -676,6 +683,54 @@
     min-width: 720px;
 }
 
+.epf table.grid {
+    table-layout: fixed;
+}
+
+.epf table.grid col.col-qty {
+    width: 12%;
+}
+
+.epf table.grid col.col-unit {
+    width: 10%;
+}
+
+.epf table.grid col.col-rate,
+.epf table.grid col.col-amount {
+    width: 13%;
+}
+
+.epf table.grid col.col-actions {
+    width: 18%;
+}
+
+.epf table.grid th:nth-child(1),
+.epf table.grid td:nth-child(1) {
+    width: 34%;
+}
+
+.epf table.grid th:nth-child(2),
+.epf table.grid td:nth-child(2) {
+    width: 12%;
+}
+
+.epf table.grid th:nth-child(3),
+.epf table.grid td:nth-child(3) {
+    width: 10%;
+}
+
+.epf table.grid th:nth-child(4),
+.epf table.grid td:nth-child(4),
+.epf table.grid th:nth-child(5),
+.epf table.grid td:nth-child(5) {
+    width: 13%;
+}
+
+.epf table.grid th:nth-child(6),
+.epf table.grid td:nth-child(6) {
+    width: 18%;
+}
+
 .epf thead th {
     background: #f9fafb;
     color: #111827;
@@ -716,10 +771,11 @@
 }
 
 .epf .qtyWrap {
-    display: flex;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
     gap: 6px;
     align-items: center;
-    justify-content: flex-end;
+    width: 100%;
 }
 
 .epf .btn.mini {
@@ -740,6 +796,18 @@
 
 .epf .rowFlag input {
     margin: 0;
+}
+
+.epf .rowActionsCell {
+    white-space: nowrap;
+}
+
+.epf .rowActions {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 4px;
+    flex-wrap: wrap;
 }
 
 
@@ -859,8 +927,77 @@
     .epf .services .card label {
         font-size: 14px;
     }
-    .epf table {
-        min-width: 580px;
+    .epf .opts {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    .epf .opts .ml-3 {
+        margin-left: 0 !important;
+    }
+    .epf .tableWrap {
+        overflow-x: visible;
+        padding-left: 0;
+        padding-right: 0;
+    }
+    .epf table.grid {
+        min-width: 0;
+        width: 100%;
+        table-layout: auto;
+        border-collapse: separate;
+        border-spacing: 0;
+    }
+    .epf table.grid colgroup,
+    .epf table.grid thead {
+        display: none;
+    }
+    .epf table.grid tbody,
+    .epf table.grid tr,
+    .epf table.grid td {
+        display: block;
+        width: 100% !important;
+        max-width: 100%;
+    }
+    .epf table.grid tbody tr:not(.roomHeader) {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px 12px;
+        margin-bottom: 12px;
+        padding: 12px;
+        border: 1px solid #d8e1ef;
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.92);
+    }
+    .epf table.grid tbody tr:not(.roomHeader) td {
+        border-bottom: 0;
+        padding: 0;
+        min-width: 0;
+        text-align: left;
+    }
+    .epf table.grid tbody tr:not(.roomHeader) td[data-label]::before {
+        content: attr(data-label);
+        display: block;
+        margin-bottom: 4px;
+        color: #64748b;
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+    }
+    .epf table.grid tbody tr:not(.roomHeader) td:first-child,
+    .epf table.grid tbody tr:not(.roomHeader) td:last-child {
+        grid-column: 1 / -1;
+    }
+    .epf table.grid .roomHeader {
+        display: block;
+        margin-bottom: 8px;
+    }
+    .epf table.grid .roomHeader td {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 12px;
+        border-bottom: 0;
+        border-radius: 12px;
     }
     .epf th,
     .epf td {
@@ -886,17 +1023,38 @@
         justify-content: center;
     }
     .epf .qtyWrap {
-        flex-direction: column;
+        grid-template-columns: minmax(0, 1fr) 40px;
         align-items: stretch;
     }
-    .epf .qtyWrap .btn.mini {
+    .epf .qtyCell .btn.mini {
+        width: 40px;
+        min-width: 40px;
+        padding-inline: 0;
+    }
+    .epf .rowActions {
         width: 100%;
+        justify-content: flex-start;
+    }
+    .epf .rowActionsCell {
+        display: flex !important;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 8px;
+    }
+    .epf .rowFlag {
+        margin-right: 0;
+    }
+    .epf .qtyWrap .btn.mini {
         text-align: center;
     }
     .epf .kv input,
     .epf input.qty,
     .epf input.rate,
     .epf select.unit {
+        font-size: 15px;
+        padding: 8px 10px;
+    }
+    .epf input.amt {
         font-size: 15px;
         padding: 8px 10px;
     }
@@ -1954,6 +2112,54 @@ body.customer .epf .sec .roomHeader {
     border-spacing: 0;
 }
 
+.epf table.grid {
+    table-layout: fixed;
+}
+
+.epf table.grid col.col-qty {
+    width: 12%;
+}
+
+.epf table.grid col.col-unit {
+    width: 10%;
+}
+
+.epf table.grid col.col-rate,
+.epf table.grid col.col-amount {
+    width: 13%;
+}
+
+.epf table.grid col.col-actions {
+    width: 18%;
+}
+
+.epf table.grid th:nth-child(1),
+.epf table.grid td:nth-child(1) {
+    width: 34%;
+}
+
+.epf table.grid th:nth-child(2),
+.epf table.grid td:nth-child(2) {
+    width: 12%;
+}
+
+.epf table.grid th:nth-child(3),
+.epf table.grid td:nth-child(3) {
+    width: 10%;
+}
+
+.epf table.grid th:nth-child(4),
+.epf table.grid td:nth-child(4),
+.epf table.grid th:nth-child(5),
+.epf table.grid td:nth-child(5) {
+    width: 13%;
+}
+
+.epf table.grid th:nth-child(6),
+.epf table.grid td:nth-child(6) {
+    width: 18%;
+}
+
 .epf thead th {
     background: #f9fafb;
     color: #111827;
@@ -2524,6 +2730,110 @@ body.customer .epf .sec .roomHeader {
 .epf .sectionControls .right{display:flex;gap:8px}
 .epf .secHead{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:8px}
 .epf .small{font-size:12px;color:#111827;opacity:.9;margin-top:4px}
+
+  @media (max-width: 640px) {
+    .epf .opts {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+    .epf .opts .ml-3 {
+      margin-left: 0 !important;
+    }
+    .epf .tableWrap {
+      overflow-x: visible !important;
+      padding-left: 0 !important;
+      padding-right: 0 !important;
+    }
+    .epf table.grid {
+      min-width: 0 !important;
+      width: 100% !important;
+      table-layout: auto !important;
+      border-spacing: 0 !important;
+    }
+    .epf table.grid colgroup,
+    .epf table.grid thead {
+      display: none !important;
+    }
+    .epf table.grid tbody,
+    .epf table.grid tr,
+    .epf table.grid td {
+      display: block;
+      width: 100% !important;
+      max-width: 100%;
+    }
+    .epf table.grid tbody tr:not(.roomHeader) {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px 12px;
+      margin-bottom: 12px;
+      padding: 12px;
+      border: 1px solid #d8e1ef;
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.92);
+    }
+    .epf table.grid tbody tr:not(.roomHeader) td {
+      border-bottom: 0;
+      padding: 0;
+      min-width: 0;
+      text-align: left;
+    }
+    .epf table.grid tbody tr:not(.roomHeader) td[data-label]::before {
+      content: attr(data-label);
+      display: block;
+      margin-bottom: 4px;
+      color: #64748b;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+    .epf table.grid tbody tr:not(.roomHeader) td:first-child,
+    .epf table.grid tbody tr:not(.roomHeader) td:last-child {
+      grid-column: 1 / -1;
+    }
+    .epf table.grid .roomHeader {
+      display: block;
+      margin-bottom: 8px;
+    }
+    .epf table.grid .roomHeader td {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 12px;
+      border-bottom: 0;
+      border-radius: 12px;
+    }
+    .epf .qtyWrap {
+      grid-template-columns: minmax(0, 1fr) 40px !important;
+      align-items: stretch;
+    }
+    .epf .qtyCell .btn.mini {
+      width: 40px !important;
+      min-width: 40px;
+      padding-inline: 0;
+    }
+    .epf .rowActionsCell {
+      display: flex !important;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 8px;
+    }
+    .epf .rowActions {
+      width: 100%;
+      justify-content: flex-start;
+    }
+    .epf .rowFlag {
+      margin-right: 0;
+    }
+    .epf input.qty,
+    .epf input.rate,
+    .epf input.amt,
+    .epf select.unit {
+      width: 100%;
+      font-size: 15px;
+      padding: 8px 10px;
+    }
+  }
 
   
 }

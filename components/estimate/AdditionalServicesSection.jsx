@@ -22,6 +22,14 @@ export default function AdditionalServicesSection() {
 
         <div className="tableWrap">
           <table className="grid">
+            <colgroup>
+              <col className="col-desc" />
+              <col className="col-qty" />
+              <col className="col-unit" />
+              <col className="col-rate" />
+              <col className="col-amount" />
+              <col className="col-actions" />
+            </colgroup>
             <thead>
               <tr>
                 <th>Description</th>

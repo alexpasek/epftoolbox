@@ -216,6 +216,17 @@ function InvoiceBasicPageInner() {
     setInvoice(next);
   };
 
+  const moveItem = (idx, direction) => {
+    const items = [...(invoice.items || [])];
+    const targetIdx = idx + direction;
+    if (targetIdx < 0 || targetIdx >= items.length) return;
+    const [item] = items.splice(idx, 1);
+    items.splice(targetIdx, 0, item);
+    const next = { ...invoice, items };
+    next.totals = recalcTotals(next);
+    setInvoice(next);
+  };
+
   const handleSave = () => {
     if (typeof window === "undefined") return;
 
@@ -425,13 +436,37 @@ function InvoiceBasicPageInner() {
                       />
                     </td>
                     <td className="px-2 py-1 text-center align-top">
-                      <button
-                        type="button"
-                        className="text-slate-400 hover:text-red-500"
-                        onClick={() => removeItem(idx)}
-                      >
-                        ✕
-                      </button>
+                      <div className="flex justify-center gap-1">
+                        <button
+                          type="button"
+                          className="rounded border border-slate-200 px-2 py-1 text-slate-500 hover:border-brand hover:text-brand disabled:cursor-not-allowed disabled:opacity-40"
+                          onClick={() => moveItem(idx, -1)}
+                          disabled={idx === 0}
+                          aria-label="Move row up"
+                          title="Move up"
+                        >
+                          ↑
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded border border-slate-200 px-2 py-1 text-slate-500 hover:border-brand hover:text-brand disabled:cursor-not-allowed disabled:opacity-40"
+                          onClick={() => moveItem(idx, 1)}
+                          disabled={idx === (invoice.items || []).length - 1}
+                          aria-label="Move row down"
+                          title="Move down"
+                        >
+                          ↓
+                        </button>
+                        <button
+                          type="button"
+                          className="text-slate-400 hover:text-red-500"
+                          onClick={() => removeItem(idx)}
+                          aria-label="Remove row"
+                          title="Remove"
+                        >
+                          ✕
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
