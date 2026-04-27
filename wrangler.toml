@@ -7,3 +7,7 @@ compatibility_date = "2024-12-01"
 [[kv_namespaces]]
 binding = "invoice2"
 id = "c1e0bf73482b42d5bc0a4c2bb0b5c7f7"
+
+[[kv_namespaces]]
+binding = "CRM_BUCKET"
+id = "c1e0bf73482b42d5bc0a4c2bb0b5c7f7"

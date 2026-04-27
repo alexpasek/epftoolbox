@@ -27,6 +27,13 @@ const tools = [
       "Fast invoice from an accepted estimate — client info, line items, tax, and PDF-friendly layout.",
   },
   {
+    href: "/crm",
+    label: "Client CRM",
+    badge: "Sales",
+    description:
+      "Track leads, follow-ups, estimates, payments, voice notes, and client emails from one mobile dashboard.",
+  },
+  {
     href: "/invoices",
     label: "Saved Invoices",
     badge: "History",
