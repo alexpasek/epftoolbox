@@ -6,6 +6,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 const DELETE_PASSWORD = "1234";
 const CRM_STORAGE_KEY = "epf.crm.clients";
+const CRM_AUTH_KEY = "epf.crm.unlocked";
+const CRM_ACCESS_PIN = "1234";
 
 const makeId = () =>
   `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -73,6 +75,66 @@ const tagOptions = [
   "Need Address",
   "Need Estimate",
 ];
+
+const crmAssistantFields = [
+  "name",
+  "phone",
+  "email",
+  "address",
+  "neighborhood",
+  "city",
+  "service",
+  "approxSqft",
+  "ceilingCondition",
+  "customCondition",
+  "ceilingHeight",
+  "leadSource",
+  "leadStatus",
+  "projectFlag",
+  "tag",
+  "priority",
+  "estimateDate",
+  "estimateAmount",
+  "estimateSent",
+  "followUpDate",
+  "bookedStartDate",
+  "projectCompletedDate",
+  "depositAmount",
+  "paymentAmount",
+  "balanceDue",
+  "paymentMethod",
+  "projectNotes",
+];
+
+const assistantFieldLabels = {
+  name: ["name", "client"],
+  phone: ["phone", "number", "mobile", "cell"],
+  email: ["email"],
+  address: ["address"],
+  neighborhood: ["neighborhood", "neighbourhood", "area"],
+  city: ["city"],
+  service: ["service", "work", "job"],
+  approxSqft: ["approx sqft", "square feet", "sqft", "sq ft"],
+  ceilingCondition: ["condition", "ceiling condition"],
+  customCondition: ["other condition", "custom condition"],
+  ceilingHeight: ["ceiling height", "height"],
+  leadSource: ["lead source", "source"],
+  leadStatus: ["lead status"],
+  projectFlag: ["status", "flag", "colour flag", "color flag"],
+  tag: ["tag"],
+  priority: ["priority"],
+  estimateDate: ["estimate date"],
+  estimateAmount: ["estimate", "estimate amount", "quote", "quote amount"],
+  estimateSent: ["estimate sent", "quote sent"],
+  followUpDate: ["follow up", "follow-up", "followup"],
+  bookedStartDate: ["booked", "start date", "booked start"],
+  projectCompletedDate: ["completed date", "completion date"],
+  depositAmount: ["deposit"],
+  paymentAmount: ["paid", "payment", "payment amount"],
+  balanceDue: ["balance", "balance due"],
+  paymentMethod: ["payment method"],
+  projectNotes: ["note", "notes", "project notes"],
+};
 
 const startingClients = [
   {
@@ -260,6 +322,162 @@ function addDaysISO(days) {
   return date.toISOString().slice(0, 10);
 }
 
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function normalizeAssistantText(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function findOptionInText(text, options) {
+  const normalized = normalizeAssistantText(text);
+  return options.find((option) => {
+    const normalizedOption = normalizeAssistantText(option);
+    return normalized === normalizedOption || normalized.includes(normalizedOption);
+  });
+}
+
+function parseAssistantDate(value) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  const lower = text.toLowerCase();
+  if (lower.includes("tomorrow")) return addDaysISO(1);
+  if (lower.includes("today")) return todayISO();
+  const daysMatch = lower.match(/in\s+(\d{1,3})\s+days?/);
+  if (daysMatch) return addDaysISO(Number(daysMatch[1]));
+  const isoMatch = text.match(/\b\d{4}-\d{2}-\d{2}\b/);
+  if (isoMatch) return isoMatch[0];
+  return text;
+}
+
+function extractAssistantValue(command, labels) {
+  const allLabels = Object.values(assistantFieldLabels).flat().map(escapeRegExp);
+  const stopPattern = allLabels.join("|");
+
+  for (const label of labels) {
+    const pattern = new RegExp(
+      `\\b${escapeRegExp(label)}\\b\\s*(?:is|to|as|=|:)?\\s*(.+?)(?=\\s+\\b(?:${stopPattern})\\b\\s*(?:is|to|as|=|:)?|$)`,
+      "i"
+    );
+    const match = command.match(pattern);
+    if (match?.[1]) {
+      return match[1].replace(/[,.]\s*$/, "").trim();
+    }
+  }
+
+  return "";
+}
+
+function extractAssistantTargetName(command) {
+  const text = String(command || "");
+  const match = text.match(
+    /\b(?:for|client|customer|open|opened card)\s+([a-zA-Z][a-zA-Z' -]{1,60}?)(?=\s+(?:set|change|update|mark|make|add|phone|email|address|city|service|status|flag|tag|note|notes|follow|estimate|quote|paid|payment|balance|deposit|priority|booked|completed)\b|[,.;]|$)/i
+  );
+  if (!match?.[1]) return "";
+  return match[1]
+    .replace(/\b(card|client|customer)\b/gi, "")
+    .trim();
+}
+
+function parseAssistantUpdates(command) {
+  const updates = {};
+  const text = String(command || "");
+  const lower = text.toLowerCase();
+
+  crmAssistantFields.forEach((field) => {
+    const rawValue = extractAssistantValue(text, assistantFieldLabels[field] || [field]);
+    if (!rawValue) return;
+    updates[field] = rawValue;
+  });
+
+  const parsedLead = parseLeadEmail(text);
+  ["name", "phone", "email", "address", "neighborhood", "city", "service", "approxSqft"].forEach(
+    (field) => {
+      if (!updates[field] && parsedLead[field]) updates[field] = parsedLead[field];
+    }
+  );
+
+  const flag = findOptionInText(text, flagOptions);
+  if (flag) updates.projectFlag = flag;
+  if (/\b(green|active)\b/i.test(text)) updates.projectFlag = "Active";
+  if (/\b(no response|called.*no response|orange)\b/i.test(text)) {
+    updates.projectFlag = "No Response";
+    if (!updates.tag) updates.tag = "Called Client No Response";
+  }
+  if (/\b(balance due|owes|unpaid)\b/i.test(text)) updates.projectFlag = "Balance Due";
+  if (/\b(complete|completed|done|finished|red)\b/i.test(text)) {
+    updates.projectFlag = "Completed";
+    updates.leadStatus = "Completed";
+    updates.projectCompletedDate = updates.projectCompletedDate || todayISO();
+  }
+  if (/\b(lost|not interested)\b/i.test(text)) updates.projectFlag = "Lost";
+
+  const tag = findOptionInText(text, tagOptions);
+  if (tag) updates.tag = tag;
+  if (/\bhot\b/i.test(text)) updates.tag = "Hot Lead";
+  if (/\bneed photos\b/i.test(text)) updates.tag = "Need Photos";
+  if (/\bneed address\b/i.test(text)) updates.tag = "Need Address";
+  if (/\bneed estimate\b/i.test(text)) updates.tag = "Need Estimate";
+  if (/\bestimate sent\b|\bquote sent\b/i.test(text)) {
+    updates.tag = "Estimate Sent";
+    updates.leadStatus = "Estimate Sent";
+    updates.estimateSent = "Yes";
+  }
+  if (/\bbooked\b/i.test(text)) {
+    updates.tag = "Booked";
+    updates.leadStatus = "Booked";
+    if (!updates.projectFlag) updates.projectFlag = "Active";
+  }
+  if (/\bpaid\b/i.test(text)) updates.tag = "Paid";
+
+  const priority = findOptionInText(text, ["Low", "Normal", "High", "Urgent"]);
+  if (priority) updates.priority = priority;
+
+  if (updates.followUpDate) updates.followUpDate = parseAssistantDate(updates.followUpDate);
+  if (updates.estimateDate) updates.estimateDate = parseAssistantDate(updates.estimateDate);
+  if (updates.bookedStartDate) updates.bookedStartDate = parseAssistantDate(updates.bookedStartDate);
+  if (updates.projectCompletedDate) {
+    updates.projectCompletedDate = parseAssistantDate(updates.projectCompletedDate);
+  }
+
+  if (/\bfollow[- ]?up\b/i.test(text) && !updates.followUpDate) {
+    updates.followUpDate = parseAssistantDate(text);
+    updates.projectFlag = "Follow-Up";
+    updates.tag = updates.tag || "Follow-Up";
+  }
+
+  const explicitNote = text.match(/\b(?:add note|note|notes)\b\s*(?:is|are|:)?\s*(.+)$/i);
+  if (explicitNote?.[1]) updates.projectNotes = explicitNote[1].trim();
+
+  return Object.fromEntries(
+    Object.entries(updates).filter(([, value]) => value !== undefined && value !== "")
+  );
+}
+
+function mergeAssistantUpdates(client, updates, mode) {
+  const next = { ...client };
+  const note = updates.projectNotes;
+  Object.entries(updates).forEach(([field, value]) => {
+    if (field === "projectNotes" && mode === "appendNote") return;
+    next[field] = value;
+  });
+  if (note && mode === "appendNote") {
+    next.projectNotes = `${client.projectNotes ? `${client.projectNotes}\n` : ""}${new Date().toLocaleDateString("en-CA")}: ${note}`;
+  }
+  return next;
+}
+
+function describeAssistantUpdates(updates) {
+  return Object.entries(updates).map(([field, value]) => ({
+    field,
+    value: safeValue(value),
+  }));
+}
+
 function timeStamp() {
   return new Date().toLocaleString("en-CA");
 }
@@ -370,10 +588,23 @@ export default function CrmPage() {
   const [recording, setRecording] = useState(false);
   const [openHistoryId, setOpenHistoryId] = useState(null);
   const [syncStatus, setSyncStatus] = useState("Loading shared CRM...");
+  const [isUnlocked, setIsUnlocked] = useState(false);
+  const [accessPin, setAccessPin] = useState("");
+  const [accessError, setAccessError] = useState("");
+  const [selectedClientId, setSelectedClientId] = useState(null);
+  const [activeView, setActiveView] = useState("Today");
+  const [assistantCommand, setAssistantCommand] = useState("");
+  const [assistantStatus, setAssistantStatus] = useState(
+    "Ask me to add a client, edit the open card, or update a client by name."
+  );
+  const [pendingAssistantAction, setPendingAssistantAction] = useState(null);
+  const [voiceTarget, setVoiceTarget] = useState(null);
+  const [voiceInterim, setVoiceInterim] = useState("");
   const addressInputRef = useRef(null);
   const addressAutocompleteRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
+  const speechRecognitionRef = useRef(null);
 
   const saveLocalClients = useCallback((nextClients) => {
     try {
@@ -399,6 +630,12 @@ export default function CrmPage() {
     },
     [saveLocalClients]
   );
+
+  useEffect(() => {
+    try {
+      setIsUnlocked(window.localStorage.getItem(CRM_AUTH_KEY) === "yes");
+    } catch {}
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -471,6 +708,12 @@ export default function CrmPage() {
     return () => window.clearTimeout(timer);
   }, [showForm, initAddressAutocomplete]);
 
+  useEffect(() => {
+    return () => {
+      speechRecognitionRef.current?.abort?.();
+    };
+  }, []);
+
   const monthOptions = useMemo(() => {
     return [...new Set(clients.map(getClientMonthKey))].sort((a, b) => {
       if (a === "No Date") return 1;
@@ -520,6 +763,38 @@ export default function CrmPage() {
       });
   }, [clients, search, flagFilter, tagFilter, monthFilter]);
 
+  const todayClients = useMemo(() => {
+    const today = todayISO();
+    return clients
+      .filter((client) => {
+        const balance = Number(String(client.balanceDue || "").replace(/[^0-9.]/g, ""));
+        return (
+          (client.followUpDate && client.followUpDate <= today && client.projectFlag !== "Completed") ||
+          client.projectFlag === "No Response" ||
+          client.tag === "Hot Lead" ||
+          client.tag === "Need Photos" ||
+          client.tag === "Need Address" ||
+          client.projectFlag === "Balance Due" ||
+          balance > 0
+        );
+      })
+      .sort((a, b) => {
+        const today = todayISO();
+        const aDue = a.followUpDate && a.followUpDate <= today;
+        const bDue = b.followUpDate && b.followUpDate <= today;
+        if (aDue && !bDue) return -1;
+        if (!aDue && bDue) return 1;
+        return getUpdatedTime(b) - getUpdatedTime(a);
+      });
+  }, [clients]);
+
+  const selectedClient = useMemo(
+    () => clients.find((client) => client.id === selectedClientId) || null,
+    [clients, selectedClientId]
+  );
+
+  const visibleClients = activeView === "Today" ? todayClients : filteredClients;
+
   const stats = useMemo(() => {
     const today = todayISO();
     return {
@@ -564,6 +839,343 @@ export default function CrmPage() {
       syncClients(nextClients);
       return nextClients;
     });
+  }
+
+  function unlockCrm(event) {
+    event.preventDefault();
+    if (accessPin !== CRM_ACCESS_PIN) {
+      setAccessError("Wrong CRM PIN.");
+      return;
+    }
+    try {
+      window.localStorage.setItem(CRM_AUTH_KEY, "yes");
+    } catch {}
+    setIsUnlocked(true);
+    setAccessError("");
+    setAccessPin("");
+  }
+
+  function lockCrm() {
+    try {
+      window.localStorage.removeItem(CRM_AUTH_KEY);
+    } catch {}
+    setIsUnlocked(false);
+  }
+
+  function startVoiceText(target) {
+    const SpeechRecognition =
+      window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      setAssistantStatus("Voice typing is not available in this browser.");
+      return;
+    }
+
+    speechRecognitionRef.current?.abort?.();
+    const recognition = new SpeechRecognition();
+    recognition.lang = "en-CA";
+    recognition.continuous = false;
+    recognition.interimResults = true;
+
+    recognition.onresult = (event) => {
+      let finalText = "";
+      let interimText = "";
+
+      for (let index = event.resultIndex; index < event.results.length; index += 1) {
+        const transcript = event.results[index][0]?.transcript || "";
+        if (event.results[index].isFinal) {
+          finalText += transcript;
+        } else {
+          interimText += transcript;
+        }
+      }
+
+      setVoiceInterim(interimText.trim());
+      const transcript = finalText.trim();
+      if (!transcript) return;
+
+      if (target === "paste") {
+        setPasteText((current) => `${current ? `${current}\n` : ""}${transcript}`);
+        setAssistantStatus("Voice text added to the voicemail box.");
+      } else {
+        setAssistantCommand((current) => `${current ? `${current} ` : ""}${transcript}`);
+        setAssistantStatus("Voice command added. Review it, then run assistant.");
+      }
+    };
+
+    recognition.onerror = () => {
+      setAssistantStatus("Voice typing stopped. Check microphone permission.");
+      setVoiceTarget(null);
+      setVoiceInterim("");
+    };
+    recognition.onend = () => {
+      setVoiceTarget(null);
+      setVoiceInterim("");
+    };
+
+    speechRecognitionRef.current = recognition;
+    setVoiceTarget(target);
+    recognition.start();
+  }
+
+  function stopVoiceText() {
+    speechRecognitionRef.current?.stop?.();
+    setVoiceTarget(null);
+  }
+
+  function findClientByAssistantName(name) {
+    const query = normalizeAssistantText(name);
+    if (!query) return null;
+    return (
+      clients.find((client) => normalizeAssistantText(client.name) === query) ||
+      clients.find((client) => normalizeAssistantText(client.name).includes(query)) ||
+      clients.find((client) =>
+        [client.phone, client.email, client.address]
+          .filter(Boolean)
+          .some((value) => normalizeAssistantText(value).includes(query))
+      ) ||
+      null
+    );
+  }
+
+  function updatesFromAiChanges(changes) {
+    return Object.fromEntries(
+      (Array.isArray(changes) ? changes : [])
+        .filter((change) => change?.field && change.value !== undefined)
+        .map((change) => [change.field, String(change.value)])
+    );
+  }
+
+  function stageAssistantAction({ type, updates, appendNote, targetName, message }) {
+    const normalizedUpdates = updates || {};
+
+    if (type === "create") {
+      const nextClient = {
+        ...emptyForm,
+        ...normalizedUpdates,
+        id: makeId(),
+        name: normalizedUpdates.name || targetName || "",
+        sourceEmailText: assistantCommand,
+        updatedAt: new Date().toISOString(),
+        activity: [`${timeStamp()}: Client created by CRM assistant.`],
+        editHistory: [],
+      };
+
+      if (!nextClient.name && !nextClient.phone && !nextClient.email) {
+        setAssistantStatus("I need at least a name, phone, or email to add a client.");
+        return false;
+      }
+
+      setPendingAssistantAction({
+        type: "create",
+        client: nextClient,
+        summary: message || `Create ${nextClient.name || nextClient.phone || nextClient.email}`,
+        changes: describeAssistantUpdates(normalizedUpdates),
+      });
+      setAssistantStatus("Review the new client action, then apply it.");
+      return true;
+    }
+
+    if (!Object.keys(normalizedUpdates).length) {
+      setAssistantStatus(
+        message ||
+          "I could not find a CRM change in that command. Try status, tag, phone, email, note, follow-up, estimate, paid, balance, service, city, or address."
+      );
+      return false;
+    }
+
+    if (type === "form") {
+      setPendingAssistantAction({
+        type: "form",
+        updates: normalizedUpdates,
+        appendNote,
+        summary: message || "Update the open card",
+        changes: describeAssistantUpdates(normalizedUpdates),
+      });
+      setAssistantStatus("Review the open-card action, then apply it.");
+      return true;
+    }
+
+    const targetClient = findClientByAssistantName(targetName);
+    if (!targetClient) {
+      setAssistantStatus(
+        targetName
+          ? `I could not find a client named "${targetName}".`
+          : "Tell me which client to update, or open a card first."
+      );
+      return false;
+    }
+
+    setPendingAssistantAction({
+      type: "update",
+      clientId: targetClient.id,
+      clientName: targetClient.name || "client",
+      updates: normalizedUpdates,
+      appendNote,
+      summary: message || `Update ${targetClient.name || "client"}`,
+      changes: describeAssistantUpdates(normalizedUpdates),
+    });
+    setAssistantStatus("Review the client update, then apply it.");
+    return true;
+  }
+
+  function stageLocalAssistantAction(command) {
+    if (!command) {
+      setAssistantStatus("Type what you want changed first.");
+      return false;
+    }
+
+    const lower = command.toLowerCase();
+    const isAddCommand = /\b(?:add|create|new)\s+(?:a\s+|new\s+)?(?:client|lead|customer)\b/.test(
+      lower
+    );
+    const wantsOpenCard =
+      /\b(open card|opened card|this card|current card|this client)\b/.test(lower) ||
+      (showForm && editingId && !extractAssistantTargetName(command));
+    const appendNote = /\b(add note|note|notes)\b/i.test(command);
+    const updates = parseAssistantUpdates(command);
+
+    if (isAddCommand) {
+      return stageAssistantAction({
+        type: "create",
+        updates,
+        appendNote,
+        targetName: extractAssistantTargetName(command),
+      });
+    }
+
+    if (!Object.keys(updates).length) {
+      setAssistantStatus(
+        "I could not find a CRM change in that command. Try status, tag, phone, email, note, follow-up, estimate, paid, balance, service, city, or address."
+      );
+      return false;
+    }
+
+    if (wantsOpenCard && showForm) {
+      return stageAssistantAction({
+        type: "form",
+        updates,
+        appendNote,
+      });
+    }
+
+    const targetName = extractAssistantTargetName(command);
+    return stageAssistantAction({
+      type: "update",
+      targetName,
+      updates,
+      appendNote,
+    });
+  }
+
+  async function runCrmAssistant() {
+    const command = assistantCommand.trim();
+    if (!command) {
+      setAssistantStatus("Type what you want changed first.");
+      return;
+    }
+
+    setAssistantStatus("Asking AI assistant...");
+    setPendingAssistantAction(null);
+
+    try {
+      const res = await fetch("/api/crm/assistant", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          command,
+          clients,
+          openClient: editingId
+            ? { ...form, id: editingId }
+            : selectedClient || null,
+        }),
+      });
+
+      if (!res.ok) throw new Error("AI assistant unavailable");
+      const data = await res.json();
+      const action = data?.action;
+      if (!action || action.type === "noop") {
+        setAssistantStatus(action?.message || "AI did not find a CRM change.");
+        return;
+      }
+
+      const updates = updatesFromAiChanges(action.changes);
+      const didStage = stageAssistantAction({
+        type: action.type,
+        updates,
+        appendNote: action.appendNote,
+        targetName: action.targetName,
+        message: action.message,
+      });
+
+      if (didStage) return;
+    } catch {
+      setAssistantStatus("AI unavailable. Using local assistant.");
+    }
+
+    stageLocalAssistantAction(command);
+  }
+
+  function applyAssistantAction() {
+    const action = pendingAssistantAction;
+    if (!action) return;
+
+    if (action.type === "create") {
+      updateClientList((current) => [action.client, ...current]);
+      setSelectedClientId(action.client.id);
+      setAssistantStatus(`Added ${action.client.name || action.client.phone || action.client.email}.`);
+    }
+
+    if (action.type === "form") {
+      setForm((current) => {
+        const nextForm = mergeAssistantUpdates(
+          current,
+          action.updates,
+          action.appendNote ? "appendNote" : "replace"
+        );
+        return {
+          ...nextForm,
+          activity: [
+            `${timeStamp()}: CRM assistant changed ${Object.keys(action.updates).join(", ")}.`,
+            ...(current.activity || []),
+          ],
+        };
+      });
+      setAssistantStatus("Applied to the open card. Save the client when ready.");
+    }
+
+    if (action.type === "update") {
+      updateClientList((current) =>
+        current.map((client) => {
+          if (client.id !== action.clientId) return client;
+          const nextClient = mergeAssistantUpdates(
+            client,
+            action.updates,
+            action.appendNote ? "appendNote" : "replace"
+          );
+          nextClient.updatedAt = new Date().toISOString();
+          const changes = getChangedFields(client, nextClient);
+          return {
+            ...nextClient,
+            activity: [
+              `${timeStamp()}: CRM assistant changed ${Object.keys(action.updates).join(", ")}.`,
+              ...(nextClient.activity || []),
+            ],
+            editHistory: [...changes, ...(client.editHistory || [])],
+          };
+        })
+      );
+      setSelectedClientId(action.clientId);
+      setAssistantStatus(`Updated ${action.clientName}.`);
+    }
+
+    setPendingAssistantAction(null);
+    setAssistantCommand("");
+  }
+
+  function cancelAssistantAction() {
+    setPendingAssistantAction(null);
+    setAssistantStatus("Action cancelled.");
   }
 
   function resetForm() {
@@ -621,22 +1233,29 @@ export default function CrmPage() {
         })
       );
     } else {
+      const nextId = makeId();
       updateClientList((current) => [
         {
           ...form,
-          id: makeId(),
+          id: nextId,
           updatedAt: new Date().toISOString(),
           activity: [`${timeStamp()}: Client saved.`, ...(form.activity || [])],
           editHistory: form.editHistory || [],
         },
         ...current,
       ]);
+      setSelectedClientId(nextId);
     }
 
     resetForm();
   }
 
+  function openClient(client) {
+    setSelectedClientId(client.id);
+  }
+
   function editClient(client) {
+    setSelectedClientId(client.id);
     setEditingId(client.id);
     setForm({
       ...emptyForm,
@@ -660,6 +1279,7 @@ export default function CrmPage() {
       return;
     }
     updateClientList((current) => current.filter((client) => client.id !== id));
+    if (selectedClientId === id) setSelectedClientId(null);
   }
 
   function quickFlag(id, flag) {
@@ -877,6 +1497,28 @@ export default function CrmPage() {
     URL.revokeObjectURL(url);
   }
 
+  if (!isUnlocked) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-slate-100 p-4 text-slate-900">
+        <form onSubmit={unlockCrm} className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-lg">
+          <p className="text-sm font-bold text-slate-500">EPF Client CRM</p>
+          <h1 className="mt-1 text-2xl font-black text-slate-950">Enter CRM PIN</h1>
+          <input
+            type="password"
+            value={accessPin}
+            onChange={(e) => setAccessPin(e.target.value)}
+            className="mt-4 w-full rounded-2xl border border-slate-300 p-3 text-sm outline-none focus:border-slate-900"
+            autoFocus
+          />
+          {accessError && <p className="mt-2 text-sm font-bold text-red-600">{accessError}</p>}
+          <button className="mt-4 w-full rounded-2xl bg-slate-950 px-4 py-3 text-sm font-black text-white">
+            Unlock CRM
+          </button>
+        </form>
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-screen bg-slate-100 p-3 text-slate-900 md:p-6">
       <Script
@@ -923,6 +1565,12 @@ export default function CrmPage() {
               >
                 Export CSV
               </button>
+              <button
+                onClick={lockCrm}
+                className="rounded-2xl border border-white/20 px-4 py-3 text-sm font-bold text-white"
+              >
+                Lock
+              </button>
             </div>
           </div>
           {copyMessage && (
@@ -931,6 +1579,48 @@ export default function CrmPage() {
             </p>
           )}
         </header>
+
+        {!showForm && (
+          <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+            <div className="flex flex-col gap-2 md:flex-row md:items-center">
+              <p className="text-sm font-black text-slate-950">CRM Assistant</p>
+              <input
+                value={assistantCommand}
+                onChange={(e) => setAssistantCommand(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") runCrmAssistant();
+                }}
+                className="min-w-0 flex-1 rounded-2xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-900"
+                placeholder="Add client, or update by name..."
+              />
+              <div className="flex gap-2">
+                <VoiceTextButton
+                  active={voiceTarget === "assistant"}
+                  start={() => startVoiceText("assistant")}
+                  stop={stopVoiceText}
+                />
+                <button
+                  onClick={runCrmAssistant}
+                  className="rounded-2xl bg-slate-950 px-4 py-2 text-sm font-black text-white"
+                >
+                  Run
+                </button>
+              </div>
+            </div>
+            <p className="mt-2 text-xs font-bold text-slate-500">{assistantStatus}</p>
+            {voiceTarget === "assistant" && (
+              <p className="mt-2 rounded-2xl bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-700">
+                {voiceInterim || "Listening..."}
+              </p>
+            )}
+            <AssistantActionPreview
+              action={pendingAssistantAction}
+              apply={applyAssistantAction}
+              cancel={cancelAssistantAction}
+            />
+          </section>
+        )}
+
 
         <section className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
           <Stat label="Total" value={stats.total} />
@@ -941,6 +1631,29 @@ export default function CrmPage() {
           <Stat label="Paid Clients" value={stats.paidCount} />
           <Stat label="Completed" value={stats.completed} />
           <Stat label="Total Paid $" value={money(stats.paid)} />
+        </section>
+
+        <section className="rounded-2xl bg-white p-3 shadow-sm">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div className="flex rounded-2xl bg-slate-100 p-1">
+              {["Today", "All"].map((view) => (
+                <button
+                  key={view}
+                  onClick={() => setActiveView(view)}
+                  className={`rounded-xl px-4 py-2 text-sm font-black ${
+                    activeView === view
+                      ? "bg-slate-950 text-white"
+                      : "text-slate-700 hover:bg-white"
+                  }`}
+                >
+                  {view === "Today" ? `Today (${todayClients.length})` : "All Clients"}
+                </button>
+              ))}
+            </div>
+            <p className="text-sm font-bold text-slate-500">
+              Today shows due follow-ups, no response, hot leads, missing info, and balances.
+            </p>
+          </div>
         </section>
 
         {!showForm && (
@@ -983,21 +1696,91 @@ export default function CrmPage() {
 
             <div className="grid gap-5 lg:grid-cols-[420px_1fr]">
               <div>
-                <label className="block text-sm font-bold">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <h3 className="text-sm font-black text-slate-950">CRM Assistant</h3>
+                      <p className="text-xs font-bold text-slate-500">{assistantStatus}</p>
+                    </div>
+                    <VoiceTextButton
+                      active={voiceTarget === "assistant"}
+                      start={() => startVoiceText("assistant")}
+                      stop={stopVoiceText}
+                    />
+                  </div>
+                  <textarea
+                    value={assistantCommand}
+                    onChange={(e) => setAssistantCommand(e.target.value)}
+                    onKeyDown={(e) => {
+                      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") runCrmAssistant();
+                    }}
+                    className="mt-2 min-h-20 w-full rounded-2xl border border-slate-300 bg-white p-3 text-sm outline-none focus:border-slate-900"
+                    placeholder={
+                      editingId
+                        ? "Say or type: change opened card tag Hot Lead follow up tomorrow"
+                        : "Say or type: add client Mike Jones phone 403-555-1212 service popcorn ceiling removal"
+                    }
+                  />
+                  {voiceTarget === "assistant" && (
+                    <p className="mt-2 rounded-2xl bg-white px-3 py-2 text-sm font-semibold text-slate-700">
+                      {voiceInterim || "Listening..."}
+                    </p>
+                  )}
+                  <div className="mt-2 flex gap-2">
+                    <button
+                      onClick={runCrmAssistant}
+                      className="flex-1 rounded-2xl bg-slate-950 px-4 py-2 text-sm font-black text-white"
+                    >
+                      Run Assistant
+                    </button>
+                    <button
+                      onClick={() =>
+                        setAssistantCommand(
+                          editingId
+                            ? "change opened card status to Follow-Up tag Follow-Up follow up tomorrow"
+                            : "add client Mike Jones phone 403-555-1212 service popcorn ceiling removal"
+                        )
+                      }
+                      className="rounded-2xl border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-900"
+                    >
+                      Example
+                    </button>
+                  </div>
+                  <AssistantActionPreview
+                    action={pendingAssistantAction}
+                    apply={applyAssistantAction}
+                    cancel={cancelAssistantAction}
+                  />
+                </div>
+
+                <label className="mt-4 block text-sm font-bold">
                   Paste email / form / voicemail text
                 </label>
+                <div className="mt-1 flex gap-2">
+                  <VoiceTextButton
+                    active={voiceTarget === "paste"}
+                    start={() => startVoiceText("paste")}
+                    stop={stopVoiceText}
+                    label="Voice Text"
+                  />
+                  <button
+                    onClick={autoFillFromPaste}
+                    className="flex-1 rounded-2xl bg-slate-950 px-4 py-2 text-sm font-bold text-white"
+                  >
+                    Auto-Fill From Text
+                  </button>
+                </div>
                 <textarea
                   value={pasteText}
                   onChange={(e) => setPasteText(e.target.value)}
-                  className="mt-1 min-h-52 w-full rounded-2xl border border-slate-300 p-3 text-sm outline-none focus:border-slate-900"
+                  className="mt-2 min-h-44 w-full rounded-2xl border border-slate-300 p-3 text-sm outline-none focus:border-slate-900"
                   placeholder={"Name: Laura Lewis\nPhone: 4036088822\nEmail: laura-lewis@live.com\nNeighborhood: Silver Springs\nService: Popcorn Ceiling Removal\nApprox SqFt: 1400\n\nOr paste voicemail text: My name is Bash. Call me back at 403-835-6535. I want to change popcorn ceiling to knockdown."}
                 />
-                <button
-                  onClick={autoFillFromPaste}
-                  className="mt-2 w-full rounded-2xl bg-slate-950 px-4 py-3 text-sm font-bold text-white"
-                >
-                  Auto-Fill From Paste
-                </button>
+                {voiceTarget === "paste" && (
+                  <p className="mt-2 rounded-2xl bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-700">
+                    {voiceInterim || "Listening..."}
+                  </p>
+                )}
 
                 <VoiceNotesPanel
                   form={form}
@@ -1140,41 +1923,185 @@ export default function CrmPage() {
             </div>
           </div>
 
-          {filteredClients.map((client) => (
+          {visibleClients.map((client) => (
             <ClientCard
               key={client.id}
               client={client}
+              isSelected={selectedClientId === client.id}
               isHistoryOpen={openHistoryId === client.id}
               toggleHistory={() => setOpenHistoryId(openHistoryId === client.id ? null : client.id)}
+              openClient={openClient}
               quickFlag={quickFlag}
               editClient={editClient}
               deleteClient={deleteClient}
             />
           ))}
 
-          {filteredClients.length === 0 && (
+          {visibleClients.length === 0 && (
             <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center text-slate-500">
-              No clients found.
+              {activeView === "Today" ? "No priority clients for today." : "No clients found."}
             </div>
           )}
         </section>
+
+        {selectedClient && (
+          <ClientDrawer
+            client={selectedClient}
+            close={() => setSelectedClientId(null)}
+            editClient={editClient}
+            quickFlag={quickFlag}
+          />
+        )}
       </div>
     </main>
   );
 }
 
-function ClientCard({ client, isHistoryOpen, toggleHistory, quickFlag, editClient, deleteClient }) {
+function AssistantActionPreview({ action, apply, cancel }) {
+  if (!action) return null;
+  return (
+    <div className="mt-3 rounded-2xl border border-amber-300 bg-amber-50 p-3 text-sm">
+      <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+        <div>
+          <p className="font-black text-amber-950">{action.summary}</p>
+          <div className="mt-2 grid gap-1 text-amber-900 md:grid-cols-2">
+            {(action.changes || []).map((change) => (
+              <p key={`${change.field}-${change.value}`} className="break-words">
+                <b>{change.field}:</b> {change.value}
+              </p>
+            ))}
+          </div>
+        </div>
+        <div className="flex shrink-0 gap-2">
+          <button onClick={apply} className="rounded-2xl bg-green-600 px-4 py-2 text-sm font-black text-white">
+            Apply
+          </button>
+          <button onClick={cancel} className="rounded-2xl border border-amber-300 bg-white px-4 py-2 text-sm font-bold text-amber-950">
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ClientDrawer({ client, close, editClient, quickFlag }) {
+  const timeline = [
+    ...(client.activity || []).map((item, index) => ({
+      id: `activity-${index}`,
+      title: item,
+      type: "Activity",
+    })),
+    ...(client.editHistory || []).map((item) => ({
+      id: item.id,
+      title: `${item.field}: ${item.from} -> ${item.to}`,
+      type: item.date,
+    })),
+  ];
+
+  return (
+    <aside className="fixed inset-0 z-40 bg-slate-950/40 p-3 md:p-6">
+      <div className="ml-auto flex h-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+        <div className="border-b border-slate-200 p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-black uppercase tracking-wide text-slate-500">Client Detail</p>
+              <h2 className="mt-1 text-2xl font-black text-slate-950">
+                {client.name || "Unnamed Client"}
+              </h2>
+              <p className="mt-1 text-sm font-bold text-slate-600">
+                {[client.service, client.city].filter(Boolean).join(" - ") || "No service or city"}
+              </p>
+            </div>
+            <button onClick={close} className="rounded-2xl border border-slate-300 px-3 py-2 text-sm font-black">
+              Close
+            </button>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <span className={`rounded-full border-2 px-3 py-1 text-xs font-black ${flagClasses(client.projectFlag)}`}>
+              {client.projectFlag || "No Flag"}
+            </span>
+            <span className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-black text-slate-800">
+              {client.tag || "No Tag"}
+            </span>
+            {client.followUpDate && (
+              <span className="rounded-full bg-yellow-100 px-3 py-1 text-xs font-black text-yellow-950">
+                Follow-up {client.followUpDate}
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div className="flex-1 space-y-4 overflow-auto p-4">
+          <div className="grid gap-2 text-sm md:grid-cols-2">
+            <Info label="Phone" value={client.phone} />
+            <Info label="Email" value={client.email} />
+            <Info label="Address" value={client.address} />
+            <Info label="Area" value={[client.neighborhood, client.city].filter(Boolean).join(", ")} />
+            <Info label="Estimate" value={`${client.estimateDate || "No date"} - ${money(client.estimateAmount)}`} />
+            <Info label="Payment" value={`Paid ${money(client.paymentAmount)} - Balance ${money(client.balanceDue)}`} />
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            {client.phone && <ActionLink href={`tel:${client.phone}`}>Call</ActionLink>}
+            {client.phone && <ActionLink href={`sms:${client.phone}`}>Text</ActionLink>}
+            {client.email && <ActionLink href={`mailto:${client.email}`}>Email</ActionLink>}
+            <button onClick={() => editClient(client)} className="rounded-2xl bg-slate-950 px-4 py-2 text-sm font-black text-white">
+              Edit Full Card
+            </button>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <FlagButton flag="Active" clientId={client.id} quickFlag={quickFlag}>Active</FlagButton>
+            <FlagButton flag="No Response" clientId={client.id} quickFlag={quickFlag}>No Response</FlagButton>
+            <FlagButton flag="Follow-Up" clientId={client.id} quickFlag={quickFlag}>Follow-Up</FlagButton>
+            <FlagButton flag="Balance Due" clientId={client.id} quickFlag={quickFlag}>Balance Due</FlagButton>
+            <FlagButton flag="Completed" clientId={client.id} quickFlag={quickFlag}>Completed</FlagButton>
+          </div>
+
+          {client.projectNotes && (
+            <div className="rounded-2xl bg-slate-50 p-3 text-sm">
+              <p className="font-black">Notes</p>
+              <p className="mt-2 whitespace-pre-wrap text-slate-700">{client.projectNotes}</p>
+            </div>
+          )}
+
+          <div className="rounded-2xl bg-slate-50 p-3 text-sm">
+            <p className="font-black">Timeline</p>
+            {!timeline.length ? (
+              <p className="mt-2 text-slate-500">No timeline entries yet.</p>
+            ) : (
+              <div className="mt-3 space-y-2">
+                {timeline.slice(0, 20).map((item) => (
+                  <div key={item.id} className="rounded-xl border border-slate-200 bg-white p-2">
+                    <p className="text-xs font-bold text-slate-500">{item.type}</p>
+                    <p className="mt-1 text-slate-800">{item.title}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+function ClientCard({ client, isSelected, isHistoryOpen, toggleHistory, openClient, quickFlag, editClient, deleteClient }) {
   const dueToday =
     client.followUpDate && client.followUpDate <= todayISO() && client.projectFlag !== "Completed";
 
   return (
-    <article className={`rounded-2xl border-4 p-4 shadow-md ${flagClasses(client.projectFlag)}`}>
+    <article className={`rounded-2xl border-4 p-4 shadow-md ${isSelected ? "ring-4 ring-slate-900/20" : ""} ${flagClasses(client.projectFlag)}`}>
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-2">
-            <h3 className="text-2xl font-black text-slate-950">
+            <button
+              onClick={() => openClient(client)}
+              className="text-left text-2xl font-black text-slate-950 hover:underline"
+            >
               {client.name || "Unnamed Client"}
-            </h3>
+            </button>
             <span className={`rounded-full border-2 px-3 py-1 text-xs font-black ${flagClasses(client.projectFlag)}`}>
               {client.projectFlag || "—"}
             </span>
@@ -1255,6 +2182,9 @@ function ClientCard({ client, isHistoryOpen, toggleHistory, quickFlag, editClien
         </div>
 
         <div className="flex gap-2 md:flex-col">
+          <button onClick={() => openClient(client)} className="rounded-2xl border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-900">
+            Open
+          </button>
           <button onClick={() => editClient(client)} className="rounded-2xl bg-slate-950 px-4 py-2 text-sm font-bold text-white">
             Edit
           </button>
@@ -1325,6 +2255,22 @@ function FlagButton({ flag, clientId, quickFlag, children }) {
   return (
     <button onClick={() => quickFlag(clientId, flag)} className={`rounded-2xl border-2 bg-white px-3 py-2 text-sm font-black ${flagClasses(flag)}`}>
       {children}
+    </button>
+  );
+}
+
+function VoiceTextButton({ active, start, stop, label = "Voice" }) {
+  return (
+    <button
+      type="button"
+      onClick={active ? stop : start}
+      className={`rounded-2xl px-4 py-2 text-sm font-black ${
+        active
+          ? "bg-red-600 text-white"
+          : "border border-slate-300 bg-white text-slate-900"
+      }`}
+    >
+      {active ? "Stop" : label}
     </button>
   );
 }

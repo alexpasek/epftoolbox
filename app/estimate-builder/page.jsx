@@ -639,9 +639,20 @@ function saveEstimateForLater(currentBrandKey = "epf") {
 }
 
 export default function EstimateBuilderPage() {
-  const [accessMode, setAccessMode] = useState(null); // null | "full" | "alphaOnly"
+  const [accessMode, setAccessMode] = useState(() => {
+    if (typeof window === "undefined") return null;
+    const storedAccess = window.localStorage.getItem("epf.accessMode");
+    return storedAccess === "alphaOnly" || storedAccess === "full"
+      ? storedAccess
+      : null;
+  }); // null | "full" | "alphaOnly"
   const [passInput, setPassInput] = useState("");
-  const [brandKey, setBrandKeyState] = useState("epf");
+  const [brandKey, setBrandKeyState] = useState(() => {
+    if (typeof window === "undefined") return "epf";
+    return window.localStorage.getItem("epf.accessMode") === "alphaOnly"
+      ? "alphaDrywall"
+      : "epf";
+  });
   const brandKeyRef = useRef(brandKey);
   const [quotesClickCount, setQuotesClickCount] = useState(0);
   const setBrandKey = useCallback(
@@ -659,20 +670,6 @@ export default function EstimateBuilderPage() {
     brandKeyRef.current = brandKey;
   }, [brandKey]);
 
-  /* eslint-disable react-hooks/set-state-in-effect */
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const storedAccess = window.localStorage.getItem("epf.accessMode");
-    if (storedAccess === "alphaOnly") {
-      setAccessMode("alphaOnly");
-      setBrandKey("alphaDrywall");
-    } else if (storedAccess === "full") {
-      setAccessMode("full");
-    } else {
-      setAccessMode(null);
-    }
-  }, [setBrandKey]);
-  /* eslint-enable react-hooks/set-state-in-effect */
 
   // Prevent navigating away via back button when locked to Alpha-only
   useEffect(() => {
@@ -2427,6 +2424,22 @@ export default function EstimateBuilderPage() {
     return () => window.removeEventListener("afterprint", afterPrint);
   }, []);
 
+  const capturePrintSnapshot = useCallback(
+    (nextBrandKey = brandKey) => {
+      const key = nextBrandKey || brandKey || "epf";
+      if (typeof window !== "undefined") window.__EPF_BRAND__ = key;
+      if (brandKeyRef.current !== key) setBrandKey(key);
+      const snapshot = scrapeEstimateFromDom(key);
+      if (snapshot) {
+        const withBrand = { ...snapshot, brandKey: key };
+        setPrintSnapshot(withBrand);
+        return withBrand;
+      }
+      return snapshot;
+    },
+    [brandKey, setBrandKey]
+  );
+
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (!previewVisible) return;
@@ -2448,20 +2461,7 @@ export default function EstimateBuilderPage() {
       document.removeEventListener("input", refreshPreview, true);
       document.removeEventListener("change", refreshPreview, true);
     };
-  }, [previewVisible, brandKey]);
-
-  function capturePrintSnapshot(nextBrandKey = brandKey) {
-    const key = nextBrandKey || brandKey || "epf";
-    if (typeof window !== "undefined") window.__EPF_BRAND__ = key;
-    if (brandKeyRef.current !== key) setBrandKey(key);
-    const snapshot = scrapeEstimateFromDom(key);
-    if (snapshot) {
-      const withBrand = { ...snapshot, brandKey: key };
-      setPrintSnapshot(withBrand);
-      return withBrand;
-    }
-    return snapshot;
-  }
+  }, [previewVisible, brandKey, capturePrintSnapshot]);
 
   function triggerPrint(nextBrandKey, forceEs = false) {
     if (isPrinting) return;
