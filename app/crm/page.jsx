@@ -1,5 +1,5 @@
-"use client";
 // @ts-nocheck
+"use client";
 
 import Link from "next/link";
 import Script from "next/script";
@@ -2096,7 +2096,7 @@ function AssistantActionPreview({ action, apply, cancel }) {
           <p className="font-black text-amber-950">{action.summary}</p>
           <div className="mt-2 grid gap-1 text-amber-900 md:grid-cols-2">
             {(action.changes || []).map((change) => (
-              <p key={`${change.field}-${change.value}`} className="break-words">
+              <p key={`${change.field}-${change.value}`} className="wrap-anywhere">
                 <b>{change.field}:</b> {change.value}
               </p>
             ))}
@@ -2571,7 +2571,7 @@ function Info({ label, value }) {
   return (
     <div className="rounded-2xl bg-white/80 p-3">
       <p className="text-xs font-black uppercase tracking-wide text-slate-500">{label}</p>
-      <p className="mt-1 break-words font-semibold text-slate-900">{value || "—"}</p>
+      <p className="mt-1 wrap-anywhere font-semibold text-slate-900">{value || "—"}</p>
     </div>
   );
 }
@@ -2602,7 +2602,7 @@ function HistoryPanel({ items }) {
             <div key={item.id} className="rounded-xl border border-slate-200 bg-white p-2">
               <p className="text-xs font-bold text-slate-500">{item.date}</p>
               <p className="font-bold">{item.field}</p>
-              <p className="break-words text-slate-600">
+              <p className="wrap-anywhere text-slate-600">
                 {item.from} {" -> "} {item.to}
               </p>
             </div>
