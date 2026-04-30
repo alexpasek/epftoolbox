@@ -1,4 +1,5 @@
 "use client";
+// @ts-nocheck
 
 import Link from "next/link";
 import Script from "next/script";
@@ -574,6 +575,36 @@ function fileToVoiceNote(file) {
   };
 }
 
+function getSpeechRecognitionConstructor() {
+  if (typeof window === "undefined") return null;
+  return window["SpeechRecognition"] || window["webkitSpeechRecognition"] || null;
+}
+
+function getPreferredSpeechVoice() {
+  if (typeof window === "undefined" || !window.speechSynthesis) return null;
+  const voices = window.speechSynthesis.getVoices?.() || [];
+  return (
+    voices.find((voice) => /samantha|ava|allison|google us english|microsoft aria/i.test(voice.name)) ||
+    voices.find((voice) => voice.lang?.toLowerCase().startsWith("en-ca")) ||
+    voices.find((voice) => voice.lang?.toLowerCase().startsWith("en-us")) ||
+    voices.find((voice) => voice.lang?.toLowerCase().startsWith("en")) ||
+    null
+  );
+}
+
+function speakText(message) {
+  if (typeof window === "undefined" || !window.speechSynthesis || !message) return false;
+  window.speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(message);
+  utterance.lang = "en-CA";
+  utterance.rate = 0.95;
+  utterance.pitch = 1;
+  const voice = getPreferredSpeechVoice();
+  if (voice) utterance.voice = voice;
+  window.speechSynthesis.speak(utterance);
+  return true;
+}
+
 export default function CrmPage() {
   const [clients, setClients] = useState(startingClients);
   const [form, setForm] = useState(emptyForm);
@@ -600,6 +631,9 @@ export default function CrmPage() {
   const [pendingAssistantAction, setPendingAssistantAction] = useState(null);
   const [voiceTarget, setVoiceTarget] = useState(null);
   const [voiceInterim, setVoiceInterim] = useState("");
+  const [voiceReplies, setVoiceReplies] = useState(false);
+  const [voiceAgentMode, setVoiceAgentMode] = useState(true);
+  const [voiceAutoApply, setVoiceAutoApply] = useState(false);
   const addressInputRef = useRef(null);
   const addressAutocompleteRef = useRef(null);
   const mediaRecorderRef = useRef(null);
@@ -862,16 +896,32 @@ export default function CrmPage() {
     setIsUnlocked(false);
   }
 
+  function getVoicePrompt(target) {
+    if (target === "paste") {
+      return "Dictate the voicemail or lead message. Include name, phone, service, city, and anything the client said.";
+    }
+    if (showForm && editingId) {
+      return "Say the change for this open card. For example, set tag hot lead, follow up tomorrow, or add note client wants evening call.";
+    }
+    if (showForm) {
+      return "Say new client details. Include name, phone, email, city, service, estimate, status, tag, or follow up date.";
+    }
+    return "Say add client with name and phone, or say set client name, then status, tag, note, follow up, estimate, payment, or balance.";
+  }
+
   function startVoiceText(target) {
-    const SpeechRecognition =
-      window.SpeechRecognition || window.webkitSpeechRecognition;
+    const SpeechRecognition = getSpeechRecognitionConstructor();
 
     if (!SpeechRecognition) {
       setAssistantStatus("Voice typing is not available in this browser.");
       return;
     }
 
+    setAssistantStatus(`${getVoicePrompt(target)} Listening now.`);
     speechRecognitionRef.current?.abort?.();
+    if (typeof window !== "undefined" && window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
     const recognition = new SpeechRecognition();
     recognition.lang = "en-CA";
     recognition.continuous = false;
@@ -899,7 +949,16 @@ export default function CrmPage() {
         setAssistantStatus("Voice text added to the voicemail box.");
       } else {
         setAssistantCommand((current) => `${current ? `${current} ` : ""}${transcript}`);
-        setAssistantStatus("Voice command added. Review it, then run assistant.");
+        if (voiceAgentMode) {
+          setAssistantStatus(
+            voiceAutoApply
+              ? `Heard: "${transcript}". Agent is applying it...`
+              : `Heard: "${transcript}". Agent is preparing a change for review...`
+          );
+          processAssistantCommand(transcript, { autoApply: voiceAutoApply });
+        } else {
+          setAssistantStatus("Voice command added. Review it, then run assistant.");
+        }
       }
     };
 
@@ -915,7 +974,11 @@ export default function CrmPage() {
 
     speechRecognitionRef.current = recognition;
     setVoiceTarget(target);
-    recognition.start();
+    try {
+      recognition.start();
+    } catch {
+      setVoiceTarget(null);
+    }
   }
 
   function stopVoiceText() {
@@ -946,7 +1009,71 @@ export default function CrmPage() {
     );
   }
 
-  function stageAssistantAction({ type, updates, appendNote, targetName, message }) {
+  function applyAssistantActionObject(action) {
+    if (!action) return;
+
+    if (action.type === "create") {
+      updateClientList((current) => [action.client, ...current]);
+      setSelectedClientId(action.client.id);
+      setAssistantStatus(`Added ${action.client.name || action.client.phone || action.client.email}.`);
+      if (voiceReplies) speakText(`Added ${action.client.name || "client"}.`);
+    }
+
+    if (action.type === "form") {
+      setForm((current) => {
+        const nextForm = mergeAssistantUpdates(
+          current,
+          action.updates,
+          action.appendNote ? "appendNote" : "replace"
+        );
+        return {
+          ...nextForm,
+          activity: [
+            `${timeStamp()}: CRM assistant changed ${Object.keys(action.updates).join(", ")}.`,
+            ...(current.activity || []),
+          ],
+        };
+      });
+      setAssistantStatus("Applied to the open card. Save the client when ready.");
+      if (voiceReplies) speakText("Applied.");
+    }
+
+    if (action.type === "update") {
+      updateClientList((current) =>
+        current.map((client) => {
+          if (client.id !== action.clientId) return client;
+          const nextClient = mergeAssistantUpdates(
+            client,
+            action.updates,
+            action.appendNote ? "appendNote" : "replace"
+          );
+          nextClient.updatedAt = new Date().toISOString();
+          const changes = getChangedFields(client, nextClient);
+          return {
+            ...nextClient,
+            activity: [
+              `${timeStamp()}: CRM assistant changed ${Object.keys(action.updates).join(", ")}.`,
+              ...(nextClient.activity || []),
+            ],
+            editHistory: [...changes, ...(client.editHistory || [])],
+          };
+        })
+      );
+      setSelectedClientId(action.clientId);
+      setAssistantStatus(`Updated ${action.clientName}.`);
+      if (voiceReplies) speakText(`Updated ${action.clientName}.`);
+    }
+  }
+
+  function stageAssistantAction({
+    type,
+    updates,
+    appendNote,
+    targetName,
+    message,
+    autoApply = false,
+    sourceCommand = assistantCommand,
+  }) {
     const normalizedUpdates = updates || {};
 
     if (type === "create") {
@@ -955,7 +1082,7 @@ export default function CrmPage() {
         ...normalizedUpdates,
         id: makeId(),
         name: normalizedUpdates.name || targetName || "",
-        sourceEmailText: assistantCommand,
+        sourceEmailText: sourceCommand,
         updatedAt: new Date().toISOString(),
         activity: [`${timeStamp()}: Client created by CRM assistant.`],
         editHistory: [],
@@ -966,12 +1093,18 @@ export default function CrmPage() {
         return false;
       }
 
-      setPendingAssistantAction({
+      const action = {
         type: "create",
         client: nextClient,
         summary: message || `Create ${nextClient.name || nextClient.phone || nextClient.email}`,
         changes: describeAssistantUpdates(normalizedUpdates),
-      });
+      };
+      if (autoApply) {
+        applyAssistantActionObject(action);
+        setPendingAssistantAction(null);
+        return true;
+      }
+      setPendingAssistantAction(action);
       setAssistantStatus("Review the new client action, then apply it.");
       return true;
     }
@@ -985,13 +1118,19 @@ export default function CrmPage() {
     }
 
     if (type === "form") {
-      setPendingAssistantAction({
+      const action = {
         type: "form",
         updates: normalizedUpdates,
         appendNote,
         summary: message || "Update the open card",
         changes: describeAssistantUpdates(normalizedUpdates),
-      });
+      };
+      if (autoApply) {
+        applyAssistantActionObject(action);
+        setPendingAssistantAction(null);
+        return true;
+      }
+      setPendingAssistantAction(action);
       setAssistantStatus("Review the open-card action, then apply it.");
       return true;
     }
@@ -1006,7 +1145,7 @@ export default function CrmPage() {
       return false;
     }
 
-    setPendingAssistantAction({
+    const action = {
       type: "update",
       clientId: targetClient.id,
       clientName: targetClient.name || "client",
@@ -1014,12 +1153,18 @@ export default function CrmPage() {
       appendNote,
       summary: message || `Update ${targetClient.name || "client"}`,
       changes: describeAssistantUpdates(normalizedUpdates),
-    });
+    };
+    if (autoApply) {
+      applyAssistantActionObject(action);
+      setPendingAssistantAction(null);
+      return true;
+    }
+    setPendingAssistantAction(action);
     setAssistantStatus("Review the client update, then apply it.");
     return true;
   }
 
-  function stageLocalAssistantAction(command) {
+  function stageLocalAssistantAction(command, options = {}) {
     if (!command) {
       setAssistantStatus("Type what you want changed first.");
       return false;
@@ -1041,6 +1186,8 @@ export default function CrmPage() {
         updates,
         appendNote,
         targetName: extractAssistantTargetName(command),
+        autoApply: options.autoApply,
+        sourceCommand: command,
       });
     }
 
@@ -1056,6 +1203,8 @@ export default function CrmPage() {
         type: "form",
         updates,
         appendNote,
+        autoApply: options.autoApply,
+        sourceCommand: command,
       });
     }
 
@@ -1065,11 +1214,13 @@ export default function CrmPage() {
       targetName,
       updates,
       appendNote,
+      autoApply: options.autoApply,
+      sourceCommand: command,
     });
   }
 
-  async function runCrmAssistant() {
-    const command = assistantCommand.trim();
+  async function processAssistantCommand(rawCommand, options = {}) {
+    const command = String(rawCommand || "").trim();
     if (!command) {
       setAssistantStatus("Type what you want changed first.");
       return;
@@ -1106,6 +1257,8 @@ export default function CrmPage() {
         appendNote: action.appendNote,
         targetName: action.targetName,
         message: action.message,
+        autoApply: options.autoApply,
+        sourceCommand: command,
       });
 
       if (didStage) return;
@@ -1113,62 +1266,17 @@ export default function CrmPage() {
       setAssistantStatus("AI unavailable. Using local assistant.");
     }
 
-    stageLocalAssistantAction(command);
+    stageLocalAssistantAction(command, options);
+  }
+
+  async function runCrmAssistant() {
+    await processAssistantCommand(assistantCommand);
   }
 
   function applyAssistantAction() {
     const action = pendingAssistantAction;
     if (!action) return;
-
-    if (action.type === "create") {
-      updateClientList((current) => [action.client, ...current]);
-      setSelectedClientId(action.client.id);
-      setAssistantStatus(`Added ${action.client.name || action.client.phone || action.client.email}.`);
-    }
-
-    if (action.type === "form") {
-      setForm((current) => {
-        const nextForm = mergeAssistantUpdates(
-          current,
-          action.updates,
-          action.appendNote ? "appendNote" : "replace"
-        );
-        return {
-          ...nextForm,
-          activity: [
-            `${timeStamp()}: CRM assistant changed ${Object.keys(action.updates).join(", ")}.`,
-            ...(current.activity || []),
-          ],
-        };
-      });
-      setAssistantStatus("Applied to the open card. Save the client when ready.");
-    }
-
-    if (action.type === "update") {
-      updateClientList((current) =>
-        current.map((client) => {
-          if (client.id !== action.clientId) return client;
-          const nextClient = mergeAssistantUpdates(
-            client,
-            action.updates,
-            action.appendNote ? "appendNote" : "replace"
-          );
-          nextClient.updatedAt = new Date().toISOString();
-          const changes = getChangedFields(client, nextClient);
-          return {
-            ...nextClient,
-            activity: [
-              `${timeStamp()}: CRM assistant changed ${Object.keys(action.updates).join(", ")}.`,
-              ...(nextClient.activity || []),
-            ],
-            editHistory: [...changes, ...(client.editHistory || [])],
-          };
-        })
-      );
-      setSelectedClientId(action.clientId);
-      setAssistantStatus(`Updated ${action.clientName}.`);
-    }
-
+    applyAssistantActionObject(action);
     setPendingAssistantAction(null);
     setAssistantCommand("");
   }
@@ -1255,7 +1363,7 @@ export default function CrmPage() {
   }
 
   function editClient(client) {
-    setSelectedClientId(client.id);
+    setSelectedClientId(null);
     setEditingId(client.id);
     setForm({
       ...emptyForm,
@@ -1608,9 +1716,20 @@ export default function CrmPage() {
               </div>
             </div>
             <p className="mt-2 text-xs font-bold text-slate-500">{assistantStatus}</p>
+            <VoiceReplyToggle enabled={voiceReplies} setEnabled={setVoiceReplies} />
+            <VoiceAgentControls
+              agentMode={voiceAgentMode}
+              setAgentMode={setVoiceAgentMode}
+              autoApply={voiceAutoApply}
+              setAutoApply={setVoiceAutoApply}
+            />
+            <VoiceHelp
+              editing={false}
+              setCommand={setAssistantCommand}
+            />
             {voiceTarget === "assistant" && (
-              <p className="mt-2 rounded-2xl bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-700">
-                {voiceInterim || "Listening..."}
+              <p className="mt-2 rounded-2xl bg-green-50 px-3 py-2 text-sm font-semibold text-green-900">
+                {voiceInterim || "Listening now. Say the client name and what to change."}
               </p>
             )}
             <AssistantActionPreview
@@ -1722,10 +1841,21 @@ export default function CrmPage() {
                     }
                   />
                   {voiceTarget === "assistant" && (
-                    <p className="mt-2 rounded-2xl bg-white px-3 py-2 text-sm font-semibold text-slate-700">
-                      {voiceInterim || "Listening..."}
+                    <p className="mt-2 rounded-2xl bg-green-50 px-3 py-2 text-sm font-semibold text-green-900">
+                      {voiceInterim || "Listening now. Say the details or changes."}
                     </p>
                   )}
+                  <VoiceReplyToggle enabled={voiceReplies} setEnabled={setVoiceReplies} />
+                  <VoiceAgentControls
+                    agentMode={voiceAgentMode}
+                    setAgentMode={setVoiceAgentMode}
+                    autoApply={voiceAutoApply}
+                    setAutoApply={setVoiceAutoApply}
+                  />
+                  <VoiceHelp
+                    editing={Boolean(editingId)}
+                    setCommand={setAssistantCommand}
+                  />
                   <div className="mt-2 flex gap-2">
                     <button
                       onClick={runCrmAssistant}
@@ -1777,8 +1907,8 @@ export default function CrmPage() {
                   placeholder={"Name: Laura Lewis\nPhone: 4036088822\nEmail: laura-lewis@live.com\nNeighborhood: Silver Springs\nService: Popcorn Ceiling Removal\nApprox SqFt: 1400\n\nOr paste voicemail text: My name is Bash. Call me back at 403-835-6535. I want to change popcorn ceiling to knockdown."}
                 />
                 {voiceTarget === "paste" && (
-                  <p className="mt-2 rounded-2xl bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-700">
-                    {voiceInterim || "Listening..."}
+                  <p className="mt-2 rounded-2xl bg-green-50 px-3 py-2 text-sm font-semibold text-green-900">
+                    {voiceInterim || "Listening now. Dictate the voicemail or lead message."}
                   </p>
                 )}
 
@@ -1985,6 +2115,81 @@ function AssistantActionPreview({ action, apply, cancel }) {
   );
 }
 
+function VoiceHelp({ editing, setCommand }) {
+  const examples = editing
+    ? [
+        "set tag Hot Lead",
+        "follow up tomorrow",
+        "add note client wants evening call",
+        "mark completed paid 6400",
+      ]
+    : [
+        "add client Mike Jones phone 403-555-1212",
+        "set client Laura Lewis tag Hot Lead",
+        "add note for Laura Lewis call today",
+        "mark Laura Lewis no response",
+      ];
+
+  return (
+    <div className="mt-2">
+      <p className="text-xs font-bold text-slate-500">
+        Voice can add: name, phone, email, city, service, status, tag, notes, follow-up, estimate, paid, balance.
+      </p>
+      <div className="mt-1.5 flex flex-wrap gap-1.5">
+        {examples.map((example) => (
+          <button
+            key={example}
+            type="button"
+            onClick={() => setCommand(example)}
+            className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-slate-600 hover:border-slate-400"
+          >
+            {example}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function VoiceReplyToggle({ enabled, setEnabled }) {
+  return (
+    <label className="mt-2 inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-700">
+      <input
+        type="checkbox"
+        checked={enabled}
+        onChange={(e) => setEnabled(e.target.checked)}
+        className="h-4 w-4"
+      />
+      Voice confirmations
+    </label>
+  );
+}
+
+function VoiceAgentControls({ agentMode, setAgentMode, autoApply, setAutoApply }) {
+  return (
+    <div className="mt-2 flex flex-wrap gap-2">
+      <label className="inline-flex items-center gap-2 rounded-full bg-green-50 px-3 py-1.5 text-xs font-bold text-green-900">
+        <input
+          type="checkbox"
+          checked={agentMode}
+          onChange={(e) => setAgentMode(e.target.checked)}
+          className="h-4 w-4"
+        />
+        Voice agent runs after I talk
+      </label>
+      <label className="inline-flex items-center gap-2 rounded-full bg-red-50 px-3 py-1.5 text-xs font-bold text-red-900">
+        <input
+          type="checkbox"
+          checked={autoApply}
+          onChange={(e) => setAutoApply(e.target.checked)}
+          className="h-4 w-4"
+        />
+        Auto apply voice changes
+      </label>
+    </div>
+  );
+}
+
 function ClientDrawer({ client, close, editClient, quickFlag }) {
   const timeline = [
     ...(client.activity || []).map((item, index) => ({
@@ -2000,13 +2205,13 @@ function ClientDrawer({ client, close, editClient, quickFlag }) {
   ];
 
   return (
-    <aside className="fixed inset-0 z-40 bg-slate-950/40 p-3 md:p-6">
-      <div className="ml-auto flex h-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
-        <div className="border-b border-slate-200 p-4">
+    <aside className="fixed inset-0 z-40 bg-slate-950/40 p-2 md:p-4">
+      <div className="ml-auto flex h-full max-w-xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl">
+        <div className="border-b border-slate-200 p-3">
           <div className="flex items-start justify-between gap-3">
             <div>
               <p className="text-xs font-black uppercase tracking-wide text-slate-500">Client Detail</p>
-              <h2 className="mt-1 text-2xl font-black text-slate-950">
+              <h2 className="mt-1 text-xl font-black text-slate-950">
                 {client.name || "Unnamed Client"}
               </h2>
               <p className="mt-1 text-sm font-bold text-slate-600">
@@ -2032,7 +2237,7 @@ function ClientDrawer({ client, close, editClient, quickFlag }) {
           </div>
         </div>
 
-        <div className="flex-1 space-y-4 overflow-auto p-4">
+        <div className="flex-1 space-y-3 overflow-auto p-3">
           <div className="grid gap-2 text-sm md:grid-cols-2">
             <Info label="Phone" value={client.phone} />
             <Info label="Email" value={client.email} />
@@ -2092,13 +2297,13 @@ function ClientCard({ client, isSelected, isHistoryOpen, toggleHistory, openClie
     client.followUpDate && client.followUpDate <= todayISO() && client.projectFlag !== "Completed";
 
   return (
-    <article className={`rounded-2xl border-4 p-4 shadow-md ${isSelected ? "ring-4 ring-slate-900/20" : ""} ${flagClasses(client.projectFlag)}`}>
+    <article className={`rounded-xl border-2 p-3 shadow-sm ${isSelected ? "ring-4 ring-slate-900/20" : ""} ${flagClasses(client.projectFlag)}`}>
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={() => openClient(client)}
-              className="text-left text-2xl font-black text-slate-950 hover:underline"
+              className="text-left text-xl font-black text-slate-950 hover:underline"
             >
               {client.name || "Unnamed Client"}
             </button>
@@ -2270,7 +2475,7 @@ function VoiceTextButton({ active, start, stop, label = "Voice" }) {
           : "border border-slate-300 bg-white text-slate-900"
       }`}
     >
-      {active ? "Stop" : label}
+      {active ? "Listening" : label}
     </button>
   );
 }
