@@ -54,6 +54,26 @@ async function writeClients(clients) {
   }
 }
 
+function recordTime(client) {
+  const value = client?.deletedAt || client?.updatedAt || client?.createdAt || "";
+  const time = new Date(value).getTime();
+  return Number.isFinite(time) ? time : 0;
+}
+
+function mergeClients(existing, incoming) {
+  const byId = new Map();
+
+  [...existing, ...incoming].forEach((client) => {
+    if (!client?.id) return;
+    const previous = byId.get(client.id);
+    if (!previous || recordTime(client) >= recordTime(previous)) {
+      byId.set(client.id, client);
+    }
+  });
+
+  return [...byId.values()].sort((a, b) => recordTime(b) - recordTime(a));
+}
+
 export async function GET() {
   const clients = await readClients();
   if (!clients) {
@@ -79,7 +99,16 @@ export async function POST(req) {
     return NextResponse.json({ error: "Missing clients array" }, { status: 400 });
   }
 
-  const ok = await writeClients(clients);
+  const existing = await readClients();
+  if (!existing) {
+    return NextResponse.json(
+      { error: "Failed to read CRM clients. Check the Cloudflare storage binding." },
+      { status: 500 }
+    );
+  }
+
+  const merged = mergeClients(existing, clients);
+  const ok = await writeClients(merged);
   if (!ok) {
     return NextResponse.json(
       { error: "Failed to save CRM clients. Check the Cloudflare storage binding." },
@@ -87,5 +116,5 @@ export async function POST(req) {
     );
   }
 
-  return NextResponse.json({ ok: true, count: clients.length });
+  return NextResponse.json({ ok: true, count: merged.length, items: merged });
 }
