@@ -3,8 +3,40 @@
 import { startTransition, useEffect, useState } from "react";
 import Link from "next/link";
 
+const COMPANY_FILTERS = [
+  { value: "all", label: "All Companies" },
+  { value: "epf", label: "EPF Pro" },
+  { value: "popcornCalgary", label: "Popcorn Calgary" },
+  { value: "alphaDrywall", label: "Alpha Drywall" },
+];
+
+function recalcInvoiceTotals(inv) {
+  const labour = Array.isArray(inv?.items)
+    ? inv.items.reduce(
+        (sum, row) => sum + (row?.included ? 0 : Number(row?.amount) || 0),
+        0
+      )
+    : 0;
+  const materials =
+    Number(inv?.matFixed || 0) + labour * (Number(inv?.matPct || 0) / 100);
+  const beforeDiscount = labour + materials;
+  const discount = beforeDiscount * (Number(inv?.discPct || 0) / 100);
+  const subtotal = beforeDiscount - discount;
+  const taxableBeforeDiscount =
+    labour + (inv?.materialsTaxMode === "nonTaxable" ? 0 : materials);
+  const discountShare =
+    beforeDiscount > 0 ? discount * (taxableBeforeDiscount / beforeDiscount) : 0;
+  const taxableSubtotal = Math.max(0, taxableBeforeDiscount - discountShare);
+  const tax = inv?.taxNow
+    ? taxableSubtotal * (Number(inv?.taxRate || 0) / 100)
+    : 0;
+  const total = subtotal + tax;
+  return { labour, materials, discount, subtotal, tax, total };
+}
+
 export default function InvoicesPage() {
   const [invoices, setInvoices] = useState([]);
+  const [companyFilter, setCompanyFilter] = useState("all");
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -61,7 +93,13 @@ export default function InvoicesPage() {
           list.forEach((inv) => {
             if (!inv || !inv.id) return;
             const existing = mergedMap.get(inv.id);
-            if (!existing || priority >= existing.priority) {
+            const currentTime = timestamp(inv);
+            const existingTime = existing ? timestamp(existing) : 0;
+            if (
+              !existing ||
+              currentTime > existingTime ||
+              (currentTime === existingTime && priority >= existing.priority)
+            ) {
               mergedMap.set(inv.id, { ...inv, priority });
             }
           });
@@ -72,25 +110,10 @@ export default function InvoicesPage() {
         pushList(mainList, 1);
 
         const withTotals = Array.from(mergedMap.values()).map((inv) => {
-          if (inv?.totals && typeof inv.totals.total === "number") {
-            const { priority, ...rest } = inv;
-            return rest;
-          }
-          const labour = Array.isArray(inv?.items)
-            ? inv.items.reduce((s, r) => s + (Number(r?.amount) || 0), 0)
-            : 0;
-          const materials = Number(inv?.matFixed || 0);
-          const total = labour + materials;
           const { priority, ...rest } = inv;
           return {
             ...rest,
-            totals: {
-              labour,
-              materials,
-              subtotal: total,
-              tax: 0,
-              total,
-            },
+            totals: recalcInvoiceTotals(inv),
           };
         });
 
@@ -114,17 +137,42 @@ export default function InvoicesPage() {
   return (
     <main className="min-h-screen bg-slate-100 px-4 py-6">
       <div className="mx-auto max-w-4xl bg-white border border-slate-200 rounded-xl shadow-sm p-4 sm:p-6">
-        <header className="flex items-center justify-between mb-4">
+        <header className="flex flex-col gap-3 mb-4 sm:flex-row sm:items-center sm:justify-between">
           <h1 className="text-lg font-semibold text-slate-900">
             Quotes / Invoices
           </h1>
-          <Link
-            href="/estimate-builder"
-            className="text-xs px-3 py-2 rounded-md border border-slate-200 text-slate-700 hover:border-brand hover:text-brand"
-          >
-            Back to Estimate Builder
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href="/invoice-basic?new=1"
+              className="text-xs px-3 py-2 rounded-md bg-brand text-white font-semibold hover:opacity-90"
+            >
+              + New Invoice
+            </Link>
+            <Link
+              href="/estimate-builder"
+              className="text-xs px-3 py-2 rounded-md border border-slate-200 text-slate-700 hover:border-brand hover:text-brand"
+            >
+              Back to Estimate Builder
+            </Link>
+          </div>
         </header>
+
+        <div className="mb-4 flex flex-wrap gap-2 rounded-lg bg-slate-50 p-2">
+          {COMPANY_FILTERS.map((company) => (
+            <button
+              key={company.value}
+              type="button"
+              onClick={() => setCompanyFilter(company.value)}
+              className={`rounded-md px-3 py-2 text-xs font-semibold ${
+                companyFilter === company.value
+                  ? "bg-brand text-white"
+                  : "border border-slate-200 bg-white text-slate-700 hover:border-brand hover:text-brand"
+              }`}
+            >
+              {company.label}
+            </button>
+          ))}
+        </div>
 
         {invoices.length === 0 ? (
           <p className="text-sm text-slate-500">
@@ -147,7 +195,13 @@ export default function InvoicesPage() {
                 </tr>
               </thead>
               <tbody>
-                {invoices.map((inv) => {
+                {invoices
+                  .filter(
+                    (inv) =>
+                      companyFilter === "all" ||
+                      (inv.brandKey || inv.brand || "epf") === companyFilter
+                  )
+                  .map((inv) => {
                   const dateStr =
                     inv.date ||
                     (inv.createdAt || "").slice(0, 10) ||
@@ -229,6 +283,12 @@ export default function InvoicesPage() {
                                 "epf.eslist",
                                 JSON.stringify(esList)
                               );
+                              fetch(
+                                `/api/invoices?id=${encodeURIComponent(inv.id)}`,
+                                { method: "DELETE" }
+                              ).catch((err) =>
+                                console.warn("Failed to delete remote invoice", err)
+                              );
                               setInvoices((prev) =>
                                 prev.filter((item) => item.id !== inv.id)
                               );
@@ -246,6 +306,15 @@ export default function InvoicesPage() {
                 })}
               </tbody>
             </table>
+            {invoices.filter(
+              (inv) =>
+                companyFilter === "all" ||
+                (inv.brandKey || inv.brand || "epf") === companyFilter
+            ).length === 0 ? (
+              <p className="py-6 text-center text-sm text-slate-500">
+                No invoices for this company.
+              </p>
+            ) : null}
           </div>
         )}
       </div>

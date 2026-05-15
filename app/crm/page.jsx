@@ -605,6 +605,19 @@ function speakText(message) {
   return true;
 }
 
+function createInvoiceHref(client) {
+  const params = new URLSearchParams({ new: "1" });
+  if (client.id) params.set("clientId", client.id);
+  if (client.name) params.set("client", client.name);
+  const contact = [client.phone, client.email].filter(Boolean).join(" / ");
+  if (contact) params.set("contact", contact);
+  if (client.address) params.set("site", client.address);
+  if (client.service) params.set("service", client.service);
+  const estimateAmount = String(client.estimateAmount || "").replace(/[^0-9.]/g, "");
+  if (estimateAmount) params.set("amount", estimateAmount);
+  return `/invoice-basic?${params.toString()}`;
+}
+
 export default function CrmPage() {
   const [clients, setClients] = useState(startingClients);
   const [form, setForm] = useState(emptyForm);
@@ -826,6 +839,15 @@ export default function CrmPage() {
     () => clients.find((client) => client.id === selectedClientId) || null,
     [clients, selectedClientId]
   );
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const clientId = new URLSearchParams(window.location.search).get("client");
+    if (!clientId || selectedClientId === clientId) return;
+    if (clients.some((client) => client.id === clientId)) {
+      setSelectedClientId(clientId);
+    }
+  }, [clients, selectedClientId]);
 
   const visibleClients = activeView === "Today" ? todayClients : filteredClients;
 
@@ -1655,6 +1677,12 @@ export default function CrmPage() {
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
+              <Link
+                href="/invoices"
+                className="rounded-2xl bg-white px-4 py-3 text-sm font-bold text-slate-950"
+              >
+                Invoices
+              </Link>
               <button
                 onClick={startNewClient}
                 className="rounded-2xl bg-green-500 px-5 py-3 text-sm font-black text-white shadow-lg shadow-green-900/30"
@@ -2251,6 +2279,9 @@ function ClientDrawer({ client, close, editClient, quickFlag }) {
             {client.phone && <ActionLink href={`tel:${client.phone}`}>Call</ActionLink>}
             {client.phone && <ActionLink href={`sms:${client.phone}`}>Text</ActionLink>}
             {client.email && <ActionLink href={`mailto:${client.email}`}>Email</ActionLink>}
+            <Link href={createInvoiceHref(client)} className="rounded-2xl bg-green-600 px-4 py-2 text-sm font-black text-white">
+              Create Invoice
+            </Link>
             <button onClick={() => editClient(client)} className="rounded-2xl bg-slate-950 px-4 py-2 text-sm font-black text-white">
               Edit Full Card
             </button>
@@ -2329,6 +2360,9 @@ function ClientCard({ client, isSelected, isHistoryOpen, toggleHistory, openClie
             {client.phone && <ActionLink href={`tel:${client.phone}`}>Call Client</ActionLink>}
             {client.phone && <ActionLink href={`sms:${client.phone}`}>Text Client</ActionLink>}
             {client.email && <ActionLink href={`mailto:${client.email}`}>Email Client</ActionLink>}
+            <Link href={createInvoiceHref(client)} className="rounded-2xl bg-green-600 px-3 py-2 text-sm font-black text-white">
+              Create Invoice
+            </Link>
           </div>
 
           <div className="grid gap-2 text-sm md:grid-cols-3">

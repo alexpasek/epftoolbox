@@ -397,6 +397,10 @@
     }
 }
 
+.invoice-amount-print {
+    display: none;
+}
+
 .epf .title {
     text-align: center;
 }
@@ -1670,6 +1674,89 @@ body.customer .epf .sec .roomHeader {
     }
     .print-estimate .print-footer p + p {
         margin-top: 2px;
+    }
+    .invoice-document {
+        max-width: none !important;
+        border: 0 !important;
+        border-radius: 0 !important;
+        box-shadow: none !important;
+        padding: 8mm 7mm 7mm !important;
+        color: #0f172a !important;
+        font: 11pt/1.45 "Helvetica Neue", Arial, sans-serif !important;
+    }
+    .invoice-document header {
+        border-bottom: 2px solid #e11d48;
+        padding-bottom: 8px;
+    }
+    .invoice-document input,
+    .invoice-document textarea,
+    .invoice-document select {
+        border: 0 !important;
+        border-radius: 0 !important;
+        box-shadow: none !important;
+        background: transparent !important;
+        padding: 0 !important;
+        color: #0f172a !important;
+        font: inherit !important;
+        resize: none !important;
+        appearance: none !important;
+        -webkit-appearance: none !important;
+    }
+    .invoice-document textarea {
+        min-height: 34px !important;
+        overflow: visible !important;
+    }
+    .invoice-document button,
+    .invoice-document .invoice-actions,
+    .invoice-document .invoice-row-actions,
+    .invoice-document .invoice-settings,
+    .invoice-document .invoice-amount-edit,
+    .invoice-document .invoice-detail-column,
+    .invoice-document .invoice-include-column,
+    .invoice-document .invoice-rate-column {
+        display: none !important;
+    }
+    .invoice-document .invoice-amount-print {
+        display: inline !important;
+    }
+    .invoice-document table th:nth-child(2),
+    .invoice-document table th:nth-child(3),
+    .invoice-document table th:nth-child(4),
+    .invoice-document table th:nth-child(5),
+    .invoice-document table th:nth-child(7),
+    .invoice-document table td:nth-child(2),
+    .invoice-document table td:nth-child(3),
+    .invoice-document table td:nth-child(4),
+    .invoice-document table td:nth-child(5),
+    .invoice-document table td:nth-child(7) {
+        display: none !important;
+    }
+    .invoice-document table th:first-child,
+    .invoice-document table td:first-child {
+        width: 72% !important;
+    }
+    .invoice-document table th:nth-child(6),
+    .invoice-document table td:nth-child(6) {
+        width: 28% !important;
+        text-align: right !important;
+    }
+    .invoice-document table {
+        border: 1px solid #dfe6f5;
+        border-collapse: collapse;
+    }
+    .invoice-document th,
+    .invoice-document td {
+        border-bottom: 1px solid #e2e8f0;
+        padding: 7px 8px !important;
+    }
+    .invoice-document thead tr {
+        background: #f8fafc !important;
+    }
+    .invoice-document .overflow-x-auto {
+        overflow: visible !important;
+    }
+    .invoice-document section {
+        break-inside: avoid;
     }
     .epf .services,
     .epf .controls,

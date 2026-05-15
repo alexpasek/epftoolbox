@@ -10,10 +10,13 @@ async function getR2Binding() {
   if (typeof globalThis.INVOICES_BUCKET !== "undefined") {
     return globalThis.INVOICES_BUCKET;
   }
+  if (typeof globalThis.invoice2 !== "undefined") {
+    return globalThis.invoice2;
+  }
   try {
     // Edge runtime exposes env via process.env bindings in Cloudflare Pages.
     // For R2, the binding should be INVOICES_BUCKET per user's setting.
-    const binding = process.env.INVOICES_BUCKET;
+    const binding = process.env.INVOICES_BUCKET || process.env.invoice2;
     if (binding) return binding;
   } catch (err) {
     console.warn("R2 binding lookup failed", err);
@@ -115,4 +118,35 @@ export async function POST(req) {
     brandKey: merged.brandKey,
   });
   return NextResponse.json({ ok: true, record: merged });
+}
+
+export async function DELETE(req) {
+  const url = new URL(req.url);
+  const id = url.searchParams.get("id");
+  if (!id) {
+    return NextResponse.json({ error: "Missing invoice id" }, { status: 400 });
+  }
+
+  const all = await readAll();
+  if (!all) {
+    return NextResponse.json(
+      { error: "Storage not configured; add binding INVOICES_BUCKET (R2) to Pages project." },
+      { status: 500 }
+    );
+  }
+
+  const next = all.filter((item) => String(item.id) !== String(id));
+  if (next.length === all.length) {
+    return NextResponse.json({ ok: true, deleted: false });
+  }
+
+  const ok = await writeAll(next);
+  if (!ok) {
+    return NextResponse.json(
+      { error: "Failed to persist invoice deletion; check binding and tokens." },
+      { status: 500 }
+    );
+  }
+
+  return NextResponse.json({ ok: true, deleted: true, count: next.length });
 }
