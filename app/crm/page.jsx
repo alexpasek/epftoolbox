@@ -2,12 +2,24 @@
 "use client";
 
 import Link from "next/link";
+import Script from "next/script";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 const CRM_STORAGE_KEY = "epf.crm.clients";
 const CRM_AUTH_KEY = "epf.crm.unlocked";
+const CRM_ACCESS_MODE_KEY = "epf.crm.accessMode";
 const CRM_ACCESS_PIN = "1234";
+const CRM_LIMITED_PIN = "yehor";
 const DELETE_PASSWORD = "1234";
+const LIMITED_ASSIGNEE = "Yehor";
+const limitedCalgaryKeywords = [
+  "calgary",
+  "airdrie",
+  "chestermere",
+  "cochrane",
+  "popcorn ceiling removal calgary",
+  "alpha drywall",
+];
 
 const leadStatuses = [
   "New Lead",
@@ -43,6 +55,18 @@ const communicationResults = [
   "Appointment Booked",
   "Estimate Sent",
 ];
+const workNeededOptions = [
+  "Popcorn ceiling removal",
+  "Knockdown ceiling texture",
+  "Ceiling texture repair",
+  "Ceiling skim coat",
+  "Drywall repair",
+  "Drywall installation",
+  "Interior painting",
+  "Wallpaper removal",
+  "Other",
+];
+const paymentMethodOptions = ["Cash", "e-Transfer", "Check"];
 
 const navItems = ["Dashboard", "Pipeline", "Clients", "Calendar", "Invoices"];
 const CRM_SCHEMA_VERSION = 2;
@@ -114,6 +138,33 @@ function createInvoiceHref(client = {}) {
   const estimateAmount = String(client.estimateAmount || "").replace(/[^0-9.]/g, "");
   if (estimateAmount) params.set("amount", estimateAmount);
   return `/invoice-basic?${params.toString()}`;
+}
+
+function createEstimateHref(client = {}, salesTeamMode = false) {
+  const params = new URLSearchParams({ source: "crm" });
+  if (salesTeamMode) {
+    params.set("brandScope", "calgary");
+    params.set("brand", "popcornCalgary");
+  }
+  if (client.id) params.set("clientId", client.id);
+  if (client.name) params.set("client", client.name);
+  const contact = [client.phone, client.email].filter(Boolean).join(" / ");
+  if (contact) params.set("contact", contact);
+  const site = [client.address, client.city].filter(Boolean).join(", ");
+  if (site) params.set("site", site);
+  if (client.service) params.set("service", client.service);
+  if (client.workNeeded) params.set("work", client.workNeeded);
+  if (client.city) params.set("city", client.city);
+  if (client.squareFootage) params.set("size", client.squareFootage);
+  return `/estimate-builder?${params.toString()}`;
+}
+
+function createGoogleMapsHref(clientOrAddress = {}) {
+  const query =
+    typeof clientOrAddress === "string"
+      ? clientOrAddress
+      : [clientOrAddress.address, clientOrAddress.city].filter(Boolean).join(", ");
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query || "")}`;
 }
 
 function cleanName(value = "") {
@@ -354,6 +405,63 @@ function uniqueTimelineEntries(entries = []) {
   });
 }
 
+function parseStoredList(rawStr) {
+  if (!rawStr) return [];
+  try {
+    const parsed = JSON.parse(rawStr);
+    if (Array.isArray(parsed)) return parsed;
+    if (parsed && typeof parsed === "object") return [parsed];
+  } catch {}
+  return [];
+}
+
+function getClientEstimates(client = {}, invoices = []) {
+  const ids = new Set((client.estimateIds || []).filter(Boolean));
+  return invoices
+    .filter((invoice) => invoice?.crmClientId === client.id || ids.has(invoice?.id))
+    .sort((a, b) => new Date(b.updatedAt || b.savedAt || b.createdAt || 0).getTime() - new Date(a.updatedAt || a.savedAt || a.createdAt || 0).getTime());
+}
+
+function isLimitedClient(client = {}) {
+  const assigned = String(client.assignedTo || "").toLowerCase();
+  if (assigned === LIMITED_ASSIGNEE.toLowerCase()) return true;
+
+  const haystack = [
+    client.city,
+    client.address,
+    client.service,
+    client.workNeeded,
+    client.source,
+    client.notes,
+    ...(client.communicationLog || []).map((entry) => entry.content),
+  ]
+    .join(" ")
+    .toLowerCase();
+
+  return limitedCalgaryKeywords.some((keyword) => haystack.includes(keyword));
+}
+
+function canAccessClient(client = {}, accessMode = "master") {
+  if (accessMode !== "limited") return true;
+  return isLimitedClient(client);
+}
+
+function canAccessInvoice(invoice = {}, visibleClientIds = new Set(), accessMode = "master") {
+  if (accessMode !== "limited") return true;
+  if (invoice.crmClientId && visibleClientIds.has(invoice.crmClientId)) return true;
+  const haystack = [
+    invoice.brandKey,
+    invoice.client,
+    invoice.site,
+    invoice.contact,
+    invoice.notes,
+    ...(invoice.items || []).map((item) => item.description),
+  ]
+    .join(" ")
+    .toLowerCase();
+  return limitedCalgaryKeywords.some((keyword) => haystack.includes(keyword));
+}
+
 function normalizeClient(client = {}) {
   const id = client.id || makeId();
   const createdAt = client.createdAt || client.updatedAt || nowISO();
@@ -372,7 +480,7 @@ function normalizeClient(client = {}) {
     city: client.city || client.neighborhood || "",
     service: client.service || "",
     source: normalizeSource(client.source || client.leadSource),
-    assignedTo: client.assignedTo || "Alex",
+    assignedTo: client.assignedTo || "",
     createdAt,
     updatedAt: client.updatedAt || createdAt,
     deletedAt: client.deletedAt || "",
@@ -383,7 +491,9 @@ function normalizeClient(client = {}) {
     estimateDate: client.estimateDate || "",
     estimateSentAt,
     estimateAcceptedAt: client.estimateAcceptedAt || "",
+    estimateIds: Array.isArray(client.estimateIds) ? client.estimateIds.filter(Boolean) : [],
     squareFootage: client.squareFootage || client.approxSqft || "",
+    workNeeded: client.workNeeded || client.scopeOfWork || client.workScope || "",
     popcornCondition: conditionValue(client),
     ceilingHeight: client.ceilingHeight || "",
     asbestosStatus: client.asbestosStatus || "",
@@ -491,6 +601,26 @@ function needsReminder(client) {
   return isFollowUpOverdue(client);
 }
 
+function hasClientActionAfter(client = {}, isoDate = "") {
+  const since = new Date(isoDate).getTime();
+  if (!Number.isFinite(since)) return false;
+  return (client.communicationLog || []).some((entry) => {
+    const time = new Date(entry.date || "").getTime();
+    if (!Number.isFinite(time) || time <= since) return false;
+    const content = String(entry.content || "").toLowerCase();
+    if (content.includes("moved to follow-up")) return false;
+    return ["call", "text", "email", "note"].includes(entry.type);
+  });
+}
+
+function shouldMoveEstimateToFollowUp(client = {}) {
+  if (client.leadStatus !== "Estimate Sent") return false;
+  const estimateSent = (client.estimateSentAt || "").slice(0, 10);
+  if (!estimateSent) return false;
+  if (addDaysISO(2, new Date(estimateSent)) > todayISO()) return false;
+  return !hasClientActionAfter(client, client.estimateSentAt || estimateSent);
+}
+
 function lastContactDate(client) {
   const event = (client.communicationLog || []).find((item) =>
     ["call", "text", "email", "note"].includes(item.type)
@@ -522,8 +652,11 @@ export default function CrmPage() {
   const [syncStatus, setSyncStatus] = useState("Loading shared CRM...");
   const [cloudSyncAvailable, setCloudSyncAvailable] = useState(true);
   const [isUnlocked, setIsUnlocked] = useState(false);
+  const [accessMode, setAccessMode] = useState("master");
+  const [masterPreviewLimited, setMasterPreviewLimited] = useState(false);
   const [accessPin, setAccessPin] = useState("");
   const [accessError, setAccessError] = useState("");
+  const [savedInvoices, setSavedInvoices] = useState([]);
   const clientsRef = useRef(sampleClients);
 
   useEffect(() => {
@@ -597,9 +730,38 @@ export default function CrmPage() {
 
   useEffect(() => {
     try {
-      setIsUnlocked(window.localStorage.getItem(CRM_AUTH_KEY) === "yes");
+      const unlocked = window.localStorage.getItem(CRM_AUTH_KEY) === "yes";
+      setIsUnlocked(unlocked);
+      const storedMode = window.localStorage.getItem(CRM_ACCESS_MODE_KEY);
+      setAccessMode(storedMode === "limited" ? "limited" : "master");
     } catch {}
   }, []);
+
+  const refreshSavedInvoices = useCallback(() => {
+    try {
+      const invoices = parseStoredList(window.localStorage.getItem("epf.invoices"));
+      const esInvoices = parseStoredList(window.localStorage.getItem("epf.eslist"));
+      const byId = new Map();
+      [...invoices, ...esInvoices].filter(Boolean).forEach((invoice) => {
+        if (invoice.id) byId.set(invoice.id, invoice);
+      });
+      setSavedInvoices([...byId.values()]);
+    } catch {
+      setSavedInvoices([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isUnlocked) return;
+    refreshSavedInvoices();
+    const onRefresh = () => refreshSavedInvoices();
+    window.addEventListener("focus", onRefresh);
+    window.addEventListener("storage", onRefresh);
+    return () => {
+      window.removeEventListener("focus", onRefresh);
+      window.removeEventListener("storage", onRefresh);
+    };
+  }, [isUnlocked, refreshSavedInvoices]);
 
   useEffect(() => {
     let cancelled = false;
@@ -654,15 +816,43 @@ export default function CrmPage() {
     };
   }, [isUnlocked, refreshCloudClients]);
 
+  const isSalesTeamView = accessMode === "limited" || masterPreviewLimited;
+  const effectiveAccessMode = isSalesTeamView ? "limited" : accessMode;
+
   const selectedClient = useMemo(
-    () => clients.find((client) => client.id === selectedClientId && !client.deletedAt) || null,
-    [clients, selectedClientId]
+    () =>
+      clients.find(
+        (client) =>
+          client.id === selectedClientId &&
+          !client.deletedAt &&
+          canAccessClient(client, effectiveAccessMode)
+      ) || null,
+    [clients, effectiveAccessMode, selectedClientId]
   );
 
   const activeClients = useMemo(
-    () => clients.filter((client) => !client.deletedAt),
-    [clients]
+    () => clients.filter((client) => !client.deletedAt && canAccessClient(client, effectiveAccessMode)),
+    [clients, effectiveAccessMode]
   );
+
+  const visibleClientIds = useMemo(
+    () => new Set(activeClients.map((client) => client.id)),
+    [activeClients]
+  );
+
+  const visibleSavedInvoices = useMemo(
+    () => savedInvoices.filter((invoice) => canAccessInvoice(invoice, visibleClientIds, effectiveAccessMode)),
+    [effectiveAccessMode, savedInvoices, visibleClientIds]
+  );
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const clientId = new URLSearchParams(window.location.search || "").get("client");
+    if (clientId && activeClients.some((client) => client.id === clientId)) {
+      setSelectedClientId(clientId);
+      setActiveView("Clients");
+    }
+  }, [activeClients]);
 
   const filterOptions = useMemo(() => {
     const unique = (field) => [...new Set(activeClients.map((client) => client[field]).filter(Boolean))].sort();
@@ -681,7 +871,7 @@ export default function CrmPage() {
           client.notes,
           ...(client.communicationLog || []).map((entry) => entry.content),
         ].join(" ");
-        const haystack = [client.name, client.phone, client.email, client.city, client.service, notes]
+        const haystack = [client.name, client.phone, client.email, client.city, client.service, client.workNeeded, notes]
           .join(" ")
           .toLowerCase();
         const specialOk =
@@ -731,23 +921,55 @@ export default function CrmPage() {
     ];
   }, [activeClients]);
 
-  function updateClientList(mutator) {
+  const updateClientList = useCallback((mutator) => {
     setClients((current) => {
       const nextClients = mutator(current).map(normalizeClient);
       syncClients(nextClients);
       return nextClients;
     });
-  }
+  }, [syncClients]);
+
+  useEffect(() => {
+    if (!isUnlocked) return;
+    if (!clients.some(shouldMoveEstimateToFollowUp)) return;
+
+    updateClientList((current) =>
+      current.map((client) => {
+        if (!shouldMoveEstimateToFollowUp(client)) return client;
+        return normalizeClient({
+          ...client,
+          leadStatus: "Follow-Up",
+          followUpDate: client.followUpDate || todayISO(),
+          communicationLog: [
+            makeTimelineEntry({
+              type: "status_change",
+              content: "Estimate had no client action for 2 days. Moved to Follow-Up.",
+            }),
+            ...(client.communicationLog || []),
+          ],
+        });
+      })
+    );
+  }, [clients, isUnlocked, updateClientList]);
 
   function unlockCrm(event) {
     event.preventDefault();
-    if (accessPin !== CRM_ACCESS_PIN) {
+    const trimmedPin = accessPin.trim();
+    const nextMode =
+      trimmedPin === CRM_ACCESS_PIN
+        ? "master"
+        : trimmedPin.toLowerCase() === CRM_LIMITED_PIN
+          ? "limited"
+          : "";
+    if (!nextMode) {
       setAccessError("Wrong CRM PIN.");
       return;
     }
     try {
       window.localStorage.setItem(CRM_AUTH_KEY, "yes");
+      window.localStorage.setItem(CRM_ACCESS_MODE_KEY, nextMode);
     } catch {}
+    setAccessMode(nextMode);
     setIsUnlocked(true);
     setAccessPin("");
     setAccessError("");
@@ -756,8 +978,25 @@ export default function CrmPage() {
   function lockCrm() {
     try {
       window.localStorage.removeItem(CRM_AUTH_KEY);
+      window.localStorage.removeItem(CRM_ACCESS_MODE_KEY);
     } catch {}
+    setAccessMode("master");
+    setMasterPreviewLimited(false);
     setIsUnlocked(false);
+  }
+
+  function toggleSalesTeamWatch() {
+    setSelectedClientId(null);
+    setShowForm(false);
+    setEditingId(null);
+    setLeadMenuOpen(false);
+    setBackupMenuOpen(false);
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("client");
+      window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+    } catch {}
+    setMasterPreviewLimited((value) => !value);
   }
 
   function baseNewClient(source = "manual") {
@@ -765,6 +1004,8 @@ export default function CrmPage() {
       ...emptyClient,
       id: makeId(),
       source,
+      assignedTo: isSalesTeamView ? LIMITED_ASSIGNEE : emptyClient.assignedTo,
+      city: isSalesTeamView ? "Calgary" : emptyClient.city,
       leadStatus: "New Lead",
       projectStatus: "Not Scheduled",
       paymentStatus: "No Invoice",
@@ -1043,7 +1284,17 @@ export default function CrmPage() {
       addCommunication(client.id, "Email Sent");
       window.location.href = `mailto:${client.email}`;
     }
-    if (action === "estimate") addCommunication(client.id, "Estimate Sent");
+    if (action === "estimate") {
+      updateClient(
+        client.id,
+        { leadStatus: client.leadStatus === "New Lead" ? "Contacted" : client.leadStatus },
+        makeTimelineEntry({ type: "estimate", content: "Estimate draft opened", createdBy: "Sales" })
+      );
+      window.setTimeout(() => {
+        window.location.href = createEstimateHref(client, isSalesTeamView || isLimitedClient(client));
+      }, 50);
+    }
+    if (action === "estimateSent") addCommunication(client.id, "Estimate Sent");
     if (action === "invoice") {
       updateClient(
         client.id,
@@ -1095,6 +1346,17 @@ export default function CrmPage() {
 
   return (
     <main className="min-h-screen bg-slate-100 pb-20 text-slate-900">
+      <Script
+        src={`https://maps.googleapis.com/maps/api/js?key=${
+          process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY ?? ""
+        }&libraries=places`}
+        strategy="lazyOnload"
+        onLoad={() => {
+          if (typeof window !== "undefined") {
+            window.dispatchEvent(new Event("epf-google-places-ready"));
+          }
+        }}
+      />
       <div className="mx-auto max-w-7xl p-3 md:p-5">
         <header className="sticky top-0 z-20 -mx-3 border-b border-slate-200 bg-slate-100/95 px-3 py-3 backdrop-blur md:static md:mx-0 md:border-0 md:bg-transparent md:px-0">
           <div className="flex items-center justify-between gap-3">
@@ -1102,10 +1364,28 @@ export default function CrmPage() {
               <Link href="/" className="text-xs font-bold text-emerald-800 hover:underline">
                 Back to menu
               </Link>
-              <h1 className="truncate text-xl font-black md:text-3xl">Sales CRM</h1>
-              <p className="truncate text-xs font-semibold text-slate-500">{syncStatus}</p>
+              <h1 className="truncate text-xl font-black md:text-3xl">
+                {isSalesTeamView ? "Sales Team Watch" : "Sales CRM"}
+              </h1>
+              <p className="truncate text-xs font-semibold text-slate-500">
+                {isSalesTeamView ? "Sales team watch - Calgary records only. " : ""}
+                {syncStatus}
+              </p>
             </div>
             <div className="flex shrink-0 items-center gap-2">
+              {accessMode === "master" && (
+                <button
+                  type="button"
+                  onClick={toggleSalesTeamWatch}
+                  className={`rounded-md border px-3 py-2 text-sm font-black ${
+                    masterPreviewLimited
+                      ? "border-amber-300 bg-amber-50 text-amber-900"
+                      : "border-slate-300 bg-white text-slate-800"
+                  }`}
+                >
+                  {masterPreviewLimited ? "Watching Team" : "Sales Team Watch"}
+                </button>
+              )}
               <div className="relative">
                 <button
                   type="button"
@@ -1131,26 +1411,28 @@ export default function CrmPage() {
                   </div>
                 )}
               </div>
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => setBackupMenuOpen((open) => !open)}
-                  className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-bold"
-                >
-                  Backup
-                </button>
-                {backupMenuOpen && (
-                  <div className="absolute right-0 z-30 mt-2 w-48 rounded-lg border border-slate-200 bg-white p-2 shadow-xl">
-                  <button onClick={exportBackup} className="block w-full rounded-md px-3 py-2 text-left text-sm font-bold hover:bg-slate-100">
-                    Export JSON backup
+              {accessMode === "master" && (
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setBackupMenuOpen((open) => !open)}
+                    className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-bold"
+                  >
+                    Backup
                   </button>
-                  <label className="block cursor-pointer rounded-md px-3 py-2 text-sm font-bold hover:bg-slate-100">
-                    Import JSON backup
-                    <input type="file" accept="application/json,.json" className="hidden" onChange={(e) => importBackup(e.target.files?.[0])} />
-                  </label>
-                  </div>
-                )}
-              </div>
+                  {backupMenuOpen && (
+                    <div className="absolute right-0 z-30 mt-2 w-48 rounded-lg border border-slate-200 bg-white p-2 shadow-xl">
+                    <button onClick={exportBackup} className="block w-full rounded-md px-3 py-2 text-left text-sm font-bold hover:bg-slate-100">
+                      Export JSON backup
+                    </button>
+                    <label className="block cursor-pointer rounded-md px-3 py-2 text-sm font-bold hover:bg-slate-100">
+                      Import JSON backup
+                      <input type="file" accept="application/json,.json" className="hidden" onChange={(e) => importBackup(e.target.files?.[0])} />
+                    </label>
+                    </div>
+                  )}
+                </div>
+              )}
               <button onClick={lockCrm} className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-bold">
                 Lock
               </button>
@@ -1184,6 +1466,7 @@ export default function CrmPage() {
         {activeView === "Clients" && (
           <ClientsView
             clients={filteredClients}
+            savedInvoices={visibleSavedInvoices}
             filters={filters}
             setFilters={setFilters}
             filterOptions={filterOptions}
@@ -1214,6 +1497,7 @@ export default function CrmPage() {
             setSmartLeadText={setSmartLeadText}
             smartLeadParsed={smartLeadParsed}
             applyParsedLead={applyParsedLead}
+            savedInvoices={visibleSavedInvoices}
             close={() => {
               setShowForm(false);
               setEditingId(null);
@@ -1227,8 +1511,10 @@ export default function CrmPage() {
         {selectedClient && (
           <ClientDetail
             client={selectedClient}
+            savedInvoices={visibleSavedInvoices}
             close={() => setSelectedClientId(null)}
             editClient={editClient}
+            updateClient={updateClient}
             changeStatus={changeStatus}
             quickAction={quickAction}
             addCommunication={addCommunication}
@@ -1419,7 +1705,7 @@ function PipelineCard({ client, openClient, changeStatus }) {
   );
 }
 
-function ClientsView({ clients, filters, setFilters, filterOptions, search, setSearch, openClient, editClient, deleteClient, quickAction }) {
+function ClientsView({ clients, savedInvoices, filters, setFilters, filterOptions, search, setSearch, openClient, editClient, deleteClient, quickAction }) {
   return (
     <section className="space-y-3">
       <div className="rounded-lg bg-white p-3 shadow-sm">
@@ -1444,6 +1730,7 @@ function ClientsView({ clients, filters, setFilters, filterOptions, search, setS
           <ClientCard
             key={client.id}
             client={client}
+            estimates={getClientEstimates(client, savedInvoices)}
             openClient={openClient}
             editClient={editClient}
             deleteClient={deleteClient}
@@ -1460,7 +1747,7 @@ function ClientsView({ clients, filters, setFilters, filterOptions, search, setS
   );
 }
 
-function ClientCard({ client, openClient, editClient, deleteClient, quickAction }) {
+function ClientCard({ client, estimates = [], openClient, editClient, deleteClient, quickAction }) {
   return (
     <article className={`rounded-lg bg-white p-3 shadow-sm ${needsReminder(client) ? "ring-2 ring-amber-300" : ""}`}>
       <div className="flex items-start justify-between gap-3">
@@ -1474,9 +1761,10 @@ function ClientCard({ client, openClient, editClient, deleteClient, quickAction 
         </div>
       </div>
 
-      <div className="mt-3 grid grid-cols-2 gap-2 text-sm md:grid-cols-4">
+      <div className="mt-3 grid grid-cols-2 gap-2 text-sm md:grid-cols-5">
         <Info label="Phone" value={client.phone} />
         <Info label="Estimate" value={money(client.estimateAmount)} />
+        <Info label="Saved Estimates" value={estimates.length ? `${estimates.length}` : "-"} />
         <Info label="Follow-Up" value={client.followUpDate || "-"} />
         <Info label="Sales" value={client.assignedTo || "-"} />
       </div>
@@ -1500,7 +1788,7 @@ function ClientCard({ client, openClient, editClient, deleteClient, quickAction 
           <div className="absolute left-0 z-20 mt-2 w-40 rounded-lg border border-slate-200 bg-white p-2 shadow-xl">
             {["email", "estimate", "invoice", "note"].map((action) => (
               <button key={action} onClick={() => quickAction(client, action)} className="block w-full rounded-md px-3 py-2 text-left text-sm font-bold capitalize hover:bg-slate-100">
-                {action}
+                {action === "estimate" ? "Build Estimate" : action}
               </button>
             ))}
             <button onClick={() => editClient(client)} className="block w-full rounded-md px-3 py-2 text-left text-sm font-bold hover:bg-slate-100">
@@ -1582,7 +1870,9 @@ function InvoicesView({ clients, openClient, quickAction }) {
   );
 }
 
-function ClientDetail({ client, close, editClient, changeStatus, quickAction, addCommunication }) {
+function ClientDetail({ client, savedInvoices = [], close, editClient, updateClient, changeStatus, quickAction, addCommunication }) {
+  const attachedEstimates = getClientEstimates(client, savedInvoices);
+
   return (
     <aside className="fixed inset-0 z-40 bg-slate-950/40 md:p-4">
       <div className="ml-auto flex h-full max-w-2xl flex-col bg-slate-100 shadow-2xl md:rounded-lg">
@@ -1598,9 +1888,9 @@ function ClientDetail({ client, close, editClient, changeStatus, quickAction, ad
             </button>
           </div>
           <div className="mt-2 flex flex-wrap gap-2">
-            <StatusBadge value={client.leadStatus} />
-            <PaymentBadge value={client.paymentStatus} />
-            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-black text-slate-700">{client.projectStatus}</span>
+            <StatusBadge label="Lead" value={client.leadStatus} />
+            <PaymentBadge label="Payment" value={client.paymentStatus} />
+            <ProjectBadge label="Job" value={client.projectStatus} />
           </div>
           <WorkflowWarnings client={client} />
           <div className="mt-3 grid grid-cols-3 gap-2">
@@ -1636,13 +1926,23 @@ function ClientDetail({ client, close, editClient, changeStatus, quickAction, ad
               <Info label="Source" value={client.source} />
               <Info label="Assigned" value={client.assignedTo} />
             </div>
+            {(client.address || client.city) && (
+              <a
+                href={createGoogleMapsHref(client)}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-3 inline-flex w-full items-center justify-center rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-black text-slate-900 md:w-auto"
+              >
+                Open Address in Google Maps
+              </a>
+            )}
           </CrmSection>
 
           <CrmSection title="Job Details">
             <div className="grid gap-2 text-sm md:grid-cols-2">
               <Info label="Service" value={client.service} />
               <Info label="Square Footage" value={client.squareFootage} />
-              <Info label="Popcorn Condition" value={client.popcornCondition} />
+              <Info label="Work Needed" value={client.workNeeded} />
               <Info label="Ceiling Height" value={client.ceilingHeight} />
               <Info label="Asbestos" value={client.asbestosStatus} />
               <Info label="Start Date" value={client.startDate} />
@@ -1651,12 +1951,27 @@ function ClientDetail({ client, close, editClient, changeStatus, quickAction, ad
           </CrmSection>
 
           <CrmSection title="Estimate">
+            <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 p-3">
+              <p className="text-xs font-black uppercase text-amber-900">Next estimate step</p>
+              <p className="mt-1 text-sm font-bold text-amber-950">
+                Create the estimate first, then mark it sent after you send it to the client.
+              </p>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <button onClick={() => quickAction(client, "estimate")} className="min-h-11 rounded-md bg-emerald-800 px-3 py-2 text-sm font-black leading-tight text-white">
+                  Create Estimate
+                </button>
+                <button onClick={() => quickAction(client, "estimateSent")} className="rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-black text-amber-900">
+                  Mark Sent
+                </button>
+              </div>
+            </div>
             <div className="grid gap-2 text-sm md:grid-cols-2">
               <Info label="Amount" value={money(client.estimateAmount)} />
               <Info label="Estimate Date" value={client.estimateDate} />
               <Info label="Sent At" value={client.estimateSentAt?.slice(0, 10)} />
               <Info label="Accepted At" value={client.estimateAcceptedAt?.slice(0, 10)} />
             </div>
+            <AttachedEstimates estimates={attachedEstimates} />
           </CrmSection>
 
           <CrmSection title="Status" defaultOpen>
@@ -1664,6 +1979,7 @@ function ClientDetail({ client, close, editClient, changeStatus, quickAction, ad
               <InlineStatus label="Lead Status" value={client.leadStatus} options={leadStatuses} onChange={(v) => changeStatus(client.id, "leadStatus", v)} />
               <InlineStatus label="Project Status" value={client.projectStatus} options={projectStatuses} onChange={(v) => changeStatus(client.id, "projectStatus", v)} />
               <InlineStatus label="Payment Status" value={client.paymentStatus} options={paymentStatuses} onChange={(v) => changeStatus(client.id, "paymentStatus", v)} />
+              <DateInput label="Follow-Up Date" value={client.followUpDate} onChange={(v) => updateClient(client.id, { followUpDate: v }, makeTimelineEntry({ type: "status_change", content: `Follow-up date changed to ${v || "none"}` }))} />
             </div>
             <div className="mt-3 flex flex-wrap gap-2">
               {communicationResults.map((result) => (
@@ -1714,9 +2030,11 @@ function ClientForm({
   setSmartLeadText,
   smartLeadParsed,
   applyParsedLead,
+  savedInvoices = [],
 }) {
   const isSmartMode = !editing && ["paste", "voicemail"].includes(mode);
   const isPhoneMode = !editing && mode === "phone";
+  const attachedEstimates = editing ? getClientEstimates(form, savedInvoices) : [];
   const title = editing
     ? "Edit Client"
     : mode === "paste"
@@ -1788,7 +2106,12 @@ function ClientForm({
                 <div className="grid gap-3 md:grid-cols-2">
                   <Input label="Service" value={form.service} onChange={(v) => updateForm("service", v)} />
                   <Input label="Square Footage / Size" value={form.squareFootage} onChange={(v) => updateForm("squareFootage", v)} />
-                  <Input label="Address" value={form.address} onChange={(v) => updateForm("address", v)} />
+                  <AddressInput
+                    label="Address"
+                    value={form.address}
+                    onChange={(v) => updateForm("address", v)}
+                    onCityChange={(v) => updateForm("city", v)}
+                  />
                   <Input label="Requested Date" value={form.requestedDate} onChange={(v) => updateForm("requestedDate", v)} />
                 </div>
                 <label className="mt-3 block text-sm font-black">
@@ -1803,7 +2126,7 @@ function ClientForm({
                   <Select label="Project Status" value={form.projectStatus} options={projectStatuses} onChange={(v) => updateForm("projectStatus", v)} />
                   <Select label="Payment Status" value={form.paymentStatus} options={paymentStatuses} onChange={(v) => updateForm("paymentStatus", v)} />
                   <Input label="Estimate Amount" value={form.estimateAmount} onChange={(v) => updateForm("estimateAmount", v)} />
-                  <Input type="date" label="Follow-Up Date" value={form.followUpDate} onChange={(v) => updateForm("followUpDate", v)} />
+                  <DateInput label="Follow-Up Date" value={form.followUpDate} onChange={(v) => updateForm("followUpDate", v)} />
                   <Select label="Source" value={form.source} options={sources} onChange={(v) => updateForm("source", v)} />
                 </div>
                 {form.estimateAmount && ["New Lead", "Contacted"].includes(form.leadStatus) && (
@@ -1813,20 +2136,26 @@ function ClientForm({
                 )}
               </FormGroup>
 
+              {editing && (
+                <FormGroup title="Saved Estimates">
+                  <AttachedEstimates estimates={attachedEstimates} />
+                </FormGroup>
+              )}
+
               <details className="rounded-lg border border-slate-200 p-3">
                 <summary className="cursor-pointer text-sm font-black uppercase text-slate-500">More details</summary>
                 <div className="mt-3 grid gap-3 md:grid-cols-2">
                   <Input label="Assigned To" value={form.assignedTo} onChange={(v) => updateForm("assignedTo", v)} />
-                  <Select label="Popcorn Condition" value={form.popcornCondition} options={["unknown", "painted", "unpainted"]} onChange={(v) => updateForm("popcornCondition", v)} />
+                  <SuggestInput label="Work Needed" value={form.workNeeded} options={workNeededOptions} onChange={(v) => updateForm("workNeeded", v)} />
                   <Input label="Ceiling Height" value={form.ceilingHeight} onChange={(v) => updateForm("ceilingHeight", v)} />
                   <Input label="Asbestos Status" value={form.asbestosStatus} onChange={(v) => updateForm("asbestosStatus", v)} />
-                  <Input type="date" label="Estimate Date" value={form.estimateDate} onChange={(v) => updateForm("estimateDate", v)} />
-                  <Input type="date" label="Start Date" value={form.startDate} onChange={(v) => updateForm("startDate", v)} />
-                  <Input type="date" label="Completed Date" value={form.completedDate} onChange={(v) => updateForm("completedDate", v)} />
+                  <DateInput label="Estimate Date" value={form.estimateDate} onChange={(v) => updateForm("estimateDate", v)} />
+                  <DateInput label="Start Date" value={form.startDate} onChange={(v) => updateForm("startDate", v)} />
+                  <DateInput label="Completed Date" value={form.completedDate} onChange={(v) => updateForm("completedDate", v)} />
                   <Input label="Deposit" value={form.depositAmount} onChange={(v) => updateForm("depositAmount", v)} />
                   <Input label="Paid" value={form.paymentAmount} onChange={(v) => updateForm("paymentAmount", v)} />
                   <Input label="Balance Due" value={form.balanceDue} onChange={(v) => updateForm("balanceDue", v)} />
-                  <Input label="Payment Method" value={form.paymentMethod} onChange={(v) => updateForm("paymentMethod", v)} />
+                  <SuggestInput label="Payment Method" value={form.paymentMethod} options={paymentMethodOptions} onChange={(v) => updateForm("paymentMethod", v)} />
                 </div>
               </details>
             </>
@@ -1848,13 +2177,15 @@ function taskList(clients) {
   return clients
     .flatMap((client) => {
       const tasks = [];
+      if (client.leadStatus === "New Lead") tasks.push({ client, label: "New lead needs contact" });
+      if (client.leadStatus === "Contacted" && !client.estimateIds?.length) tasks.push({ client, label: "Create estimate or follow up" });
+      if (client.leadStatus === "Estimate Booked") tasks.push({ client, label: "Estimate appointment booked" });
       if (client.followUpDate && client.followUpDate <= todayISO() && client.leadStatus !== "Lost") {
         tasks.push({ client, label: isFollowUpOverdue(client) ? "Follow-up overdue" : "Follow-up today" });
       }
       if (client.leadStatus === "Estimate Sent") tasks.push({ client, label: "Estimate waiting for response" });
       if (client.paymentStatus === "Balance Due") tasks.push({ client, label: "Balance due" });
       if (client.leadStatus === "Won" && client.projectStatus === "Not Scheduled") tasks.push({ client, label: "Won job not scheduled" });
-      if (client.leadStatus === "New Lead" && needsReminder(client)) tasks.push({ client, label: "New lead needs contact" });
       return tasks;
     })
     .sort((a, b) => (needsReminder(a.client) === needsReminder(b.client) ? 0 : needsReminder(a.client) ? -1 : 1));
@@ -1870,9 +2201,10 @@ function FollowUpTaskList({ tasks, openClient, quickAction }) {
             <p className="font-black">{task.client.name || "Unnamed Lead"}</p>
             <p className="text-sm font-bold text-amber-700">{task.label}</p>
           </button>
-          <div className="mt-2 flex gap-2">
+          <div className="mt-2 flex flex-wrap gap-2">
             <button onClick={() => quickAction(task.client, "call")} className="rounded-md bg-emerald-800 px-3 py-2 text-xs font-black text-white">Call</button>
             <button onClick={() => quickAction(task.client, "text")} className="rounded-md border border-slate-300 px-3 py-2 text-xs font-black">Text</button>
+            <button onClick={() => quickAction(task.client, "estimate")} className="rounded-md border border-emerald-800 bg-emerald-800 px-3 py-2 text-xs font-black text-white">Estimate</button>
             <button onClick={() => quickAction(task.client, "note")} className="rounded-md border border-slate-300 px-3 py-2 text-xs font-black">Note</button>
           </div>
         </article>
@@ -1903,25 +2235,69 @@ function WorkflowWarnings({ client }) {
 }
 
 function QuickActions({ client, quickAction, compact = false }) {
-  const actions = [
-    ["call", "Call"],
-    ["text", "Text"],
-    ["email", "Email"],
-    ["estimate", "Estimate"],
-    ["invoice", "Invoice"],
-    ["note", "Note"],
-  ];
+  const actions = compact
+    ? [
+        ["email", "Email"],
+        ["estimate", "Estimate"],
+        ["invoice", "Invoice"],
+        ["note", "Note"],
+      ]
+    : [
+        ["call", "Call"],
+        ["text", "Text"],
+        ["email", "Email"],
+        ["estimate", "Estimate"],
+        ["invoice", "Invoice"],
+        ["note", "Note"],
+      ];
   return (
-    <div className={`mt-3 grid gap-2 ${compact ? "grid-cols-3 md:grid-cols-6" : "grid-cols-3"}`}>
+    <div className={`mt-3 grid gap-2 ${compact ? "grid-cols-2 md:grid-cols-4" : "grid-cols-3"}`}>
       {actions.map(([action, label]) => (
         <button
           key={action}
           onClick={() => quickAction(client, action)}
-          className={`rounded-md border border-slate-300 bg-white px-2 py-2 text-xs font-black text-slate-800 ${action === "call" ? "border-emerald-800 bg-emerald-800 text-white" : ""}`}
+          className={`min-h-10 rounded-md border border-slate-300 bg-white px-2 py-2 text-center text-xs font-black leading-tight text-slate-800 ${action === "call" || action === "estimate" ? "border-emerald-800 bg-emerald-800 text-white" : ""}`}
         >
           <span>{label}</span>
         </button>
       ))}
+    </div>
+  );
+}
+
+function AttachedEstimates({ estimates = [] }) {
+  if (!estimates.length) {
+    return (
+      <p className="mt-3 rounded-md border border-dashed border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-500">
+        No saved estimate attached yet.
+      </p>
+    );
+  }
+
+  return (
+    <div className="mt-3 space-y-2">
+      {estimates.map((estimate) => {
+        const total = estimate.totals?.total || 0;
+        const date = String(estimate.updatedAt || estimate.savedAt || estimate.createdAt || estimate.date || "").slice(0, 10);
+        return (
+          <article key={estimate.id} className="rounded-md border border-slate-200 bg-white p-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-black">{estimate.quoteId || estimate.id || "Saved Estimate"}</p>
+                <p className="mt-0.5 text-xs font-bold text-slate-500">
+                  {date || "No date"} • {money(total)}
+                </p>
+              </div>
+              <Link
+                href={`/invoice-basic?id=${encodeURIComponent(estimate.id)}`}
+                className="shrink-0 rounded-md bg-slate-900 px-3 py-2 text-xs font-black text-white"
+              >
+                Open / Print
+              </Link>
+            </div>
+          </article>
+        );
+      })}
     </div>
   );
 }
@@ -1971,8 +2347,122 @@ function Input({ label, value, onChange, type = "text" }) {
         type={type}
         value={value || ""}
         onChange={(e) => onChange(e.target.value)}
+        autoComplete={label.toLowerCase().includes("address") ? "street-address" : undefined}
         className="mt-1 w-full rounded-md border border-slate-300 p-2.5 text-sm outline-none focus:border-emerald-800"
       />
+    </label>
+  );
+}
+
+function AddressInput({ label, value, onChange, onCityChange }) {
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    function initAutocomplete() {
+      const input = inputRef.current;
+      if (!input || input.dataset.googlePlacesReady === "yes") return;
+      if (!window.google || !window.google.maps?.places) return;
+
+      input.dataset.googlePlacesReady = "yes";
+      const autocomplete = new window.google.maps.places.Autocomplete(input, {
+        fields: ["address_components", "formatted_address"],
+        componentRestrictions: { country: "ca" },
+      });
+
+      autocomplete.addListener("place_changed", () => {
+        const place = autocomplete.getPlace();
+        const formattedAddress = place?.formatted_address || input.value;
+        if (formattedAddress) onChange(formattedAddress);
+
+        const components = place?.address_components || [];
+        const city =
+          components.find((part) => part.types?.includes("locality"))?.long_name ||
+          components.find((part) => part.types?.includes("postal_town"))?.long_name ||
+          components.find((part) => part.types?.includes("sublocality"))?.long_name ||
+          components.find((part) => part.types?.includes("administrative_area_level_3"))?.long_name ||
+          "";
+        if (city && onCityChange) onCityChange(city);
+      });
+    }
+
+    initAutocomplete();
+    window.addEventListener("epf-google-places-ready", initAutocomplete);
+    return () => window.removeEventListener("epf-google-places-ready", initAutocomplete);
+  }, [onChange, onCityChange]);
+
+  return (
+    <label className="block text-sm font-bold">
+      {label}
+      <input
+        ref={inputRef}
+        type="text"
+        value={value || ""}
+        onChange={(e) => onChange(e.target.value)}
+        autoComplete="street-address"
+        placeholder="Start typing and choose the Google address"
+        className="mt-1 w-full rounded-md border border-slate-300 p-2.5 text-sm outline-none focus:border-emerald-800"
+      />
+    </label>
+  );
+}
+
+function SuggestInput({ label, value, options, onChange }) {
+  const listId = `crm-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+  return (
+    <label className="block text-sm font-bold">
+      {label}
+      <input
+        type="text"
+        list={listId}
+        value={value || ""}
+        onChange={(e) => onChange(e.target.value)}
+        className="mt-1 w-full rounded-md border border-slate-300 p-2.5 text-sm outline-none focus:border-emerald-800"
+        placeholder="Choose or type custom work"
+      />
+      <datalist id={listId}>
+        {options.map((option) => (
+          <option key={option} value={option} />
+        ))}
+      </datalist>
+    </label>
+  );
+}
+
+function DateInput({ label, value, onChange }) {
+  const shortcuts = [
+    ["Today", todayISO()],
+    ["Tomorrow", addDaysISO(1)],
+    ["+2", addDaysISO(2)],
+    ["+7", addDaysISO(7)],
+  ];
+  return (
+    <label className="block text-sm font-bold">
+      {label}
+      <input
+        type="date"
+        value={value || ""}
+        onChange={(e) => onChange(e.target.value)}
+        className="mt-1 w-full rounded-md border border-slate-300 bg-white p-2.5 text-sm outline-none focus:border-emerald-800"
+      />
+      <div className="mt-1 flex flex-wrap gap-1">
+        {shortcuts.map(([text, date]) => (
+          <button
+            key={`${label}-${text}`}
+            type="button"
+            onClick={() => onChange(date)}
+            className="rounded-md border border-slate-300 bg-white px-2 py-1 text-[11px] font-black text-slate-700"
+          >
+            {text}
+          </button>
+        ))}
+        <button
+          type="button"
+          onClick={() => onChange("")}
+          className="rounded-md border border-slate-300 bg-white px-2 py-1 text-[11px] font-black text-slate-500"
+        >
+          Clear
+        </button>
+      </div>
     </label>
   );
 }
@@ -2020,7 +2510,7 @@ function Info({ label, value }) {
   );
 }
 
-function StatusBadge({ value }) {
+function StatusBadge({ value, label = "" }) {
   const classes = {
     "New Lead": "bg-blue-50 text-blue-800",
     Contacted: "bg-slate-100 text-slate-800",
@@ -2032,12 +2522,12 @@ function StatusBadge({ value }) {
   };
   return (
     <span className={`rounded-full px-2.5 py-1 text-[11px] font-black ${classes[value] || "bg-slate-100 text-slate-700"}`}>
-      {value || "-"}
+      {label ? `${label}: ` : ""}{value || "-"}
     </span>
   );
 }
 
-function PaymentBadge({ value }) {
+function PaymentBadge({ value, label = "" }) {
   const classes = {
     "No Invoice": "bg-slate-100 text-slate-700",
     "Deposit Due": "bg-amber-50 text-amber-800",
@@ -2047,7 +2537,21 @@ function PaymentBadge({ value }) {
   };
   return (
     <span className={`rounded-full px-2.5 py-1 text-[11px] font-black ${classes[value] || "bg-slate-100 text-slate-700"}`}>
-      {value || "-"}
+      {label ? `${label}: ` : ""}{value || "-"}
+    </span>
+  );
+}
+
+function ProjectBadge({ value, label = "" }) {
+  const classes = {
+    "Not Scheduled": "bg-slate-100 text-slate-700",
+    Scheduled: "bg-indigo-50 text-indigo-800",
+    "In Progress": "bg-blue-50 text-blue-800",
+    Completed: "bg-green-50 text-green-800",
+  };
+  return (
+    <span className={`rounded-full px-2.5 py-1 text-[11px] font-black ${classes[value] || "bg-slate-100 text-slate-700"}`}>
+      {label ? `${label}: ` : ""}{value || "-"}
     </span>
   );
 }

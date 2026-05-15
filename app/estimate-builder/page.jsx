@@ -10,6 +10,7 @@ import AdditionalServicesSection from "@/components/estimate/AdditionalServicesS
 import SERVICE_COST from "@/components/estimate/ServiceCost";
 import PrintLayout from "@/components/estimate/PrintLayout";
 const STATE_KEY = "epf.estimateState.v2";
+const CRM_STORAGE_KEY = "epf.crm.clients";
 const ES_LIST_KEY = "epf.eslist";
 const ES_COUNTER_KEY = "epf.es.counter";
 const CUSTOM_SERVICE_KEY = "epf.customServices.v1";
@@ -212,6 +213,83 @@ async function persistInvoiceRemote(record) {
     }
   } catch (err) {
     console.warn("Failed to sync invoice to server", err);
+  }
+}
+
+function parseStoredList(rawStr) {
+  if (!rawStr) return [];
+  try {
+    const parsed = JSON.parse(rawStr);
+    if (Array.isArray(parsed)) return parsed;
+    if (parsed && typeof parsed === "object") return [parsed];
+  } catch {}
+  return [];
+}
+
+async function attachEstimateToCrmClient(record) {
+  if (typeof window === "undefined" || !record?.crmClientId) return false;
+
+  let clients = parseStoredList(window.localStorage.getItem(CRM_STORAGE_KEY));
+
+  try {
+    const res = await fetch("/api/crm", { cache: "no-store" });
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data.items)) clients = data.items;
+    }
+  } catch (err) {
+    console.warn("Failed to fetch latest CRM before estimate attach", err);
+  }
+
+  const clientIndex = clients.findIndex((client) => client.id === record.crmClientId);
+  if (clientIndex === -1) return false;
+
+  const now = new Date().toISOString();
+  const currentClient = clients[clientIndex];
+  const estimateIds = [record.id, ...(currentClient.estimateIds || [])].filter(Boolean);
+  const total = Number(record.totals?.total || 0);
+  const totalLabel = new Intl.NumberFormat("en-CA", {
+    style: "currency",
+    currency: "CAD",
+    maximumFractionDigits: 0,
+  }).format(Number.isFinite(total) ? total : 0);
+  const estimateLabel = record.quoteId || record.id || "estimate";
+
+  const nextClient = {
+    ...currentClient,
+    estimateIds: [...new Set(estimateIds)],
+    estimateAmount: currentClient.estimateAmount || String(Math.round(Number.isFinite(total) ? total : 0)),
+    updatedAt: now,
+    communicationLog: [
+      {
+        id: `estimate-${record.id}-${Date.now()}`,
+        date: now,
+        type: "estimate",
+        direction: "internal",
+        content: `Estimate ${estimateLabel} saved for ${totalLabel}.`,
+        createdBy: "Estimate Builder",
+      },
+      ...(currentClient.communicationLog || []),
+    ],
+  };
+
+  const nextClients = [...clients];
+  nextClients[clientIndex] = nextClient;
+
+  try {
+    window.localStorage.setItem(CRM_STORAGE_KEY, JSON.stringify(nextClients));
+  } catch {}
+
+  try {
+    const res = await fetch("/api/crm", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ clients: nextClients }),
+    });
+    return res.ok;
+  } catch (err) {
+    console.warn("Failed to attach estimate to CRM client", err);
+    return false;
   }
 }
 
@@ -428,6 +506,7 @@ function saveInvoiceRecord(data) {
   }
 
   void persistInvoiceRemote(record);
+  void attachEstimateToCrmClient(record);
   return record;
 }
 
@@ -512,7 +591,7 @@ function scrapeEstimateFromDom(brandOverride) {
   };
   const ensureQuoteId = () => {
     const existing = val("#qid");
-    if (existing) return existing;
+    if (existing && existing !== "EPF-QUOTE") return existing;
     const randomSuffix = Math.floor(1000 + Math.random() * 9000);
     const generated = `EPF-${randomSuffix}`;
     const qidEl = document.querySelector("#qid");
@@ -544,6 +623,10 @@ function scrapeEstimateFromDom(brandOverride) {
     items: [],
     notes: val("#scope_notes") || defaultNotes,
     brandKey,
+    crmClientId:
+      window.__EPF_CRM_CLIENT_ID__ ||
+      new URLSearchParams(window.location.search || "").get("clientId") ||
+      "",
   };
 
   const sections = [];
@@ -641,14 +724,22 @@ function saveEstimateForLater(currentBrandKey = "epf") {
 export default function EstimateBuilderPage() {
   const [accessMode, setAccessMode] = useState(() => {
     if (typeof window === "undefined") return null;
+    if (new URLSearchParams(window.location.search || "").get("brandScope") === "calgary") {
+      return "team";
+    }
     const storedAccess = window.localStorage.getItem("epf.accessMode");
     return storedAccess === "alphaOnly" || storedAccess === "full"
       ? storedAccess
       : null;
-  }); // null | "full" | "alphaOnly"
+  }); // null | "full" | "alphaOnly" | "team"
   const [passInput, setPassInput] = useState("");
   const [brandKey, setBrandKeyState] = useState(() => {
     if (typeof window === "undefined") return "epf";
+    const params = new URLSearchParams(window.location.search || "");
+    if (params.get("brandScope") === "calgary") {
+      const requestedBrand = params.get("brand");
+      return requestedBrand === "alphaDrywall" ? "alphaDrywall" : "popcornCalgary";
+    }
     return window.localStorage.getItem("epf.accessMode") === "alphaOnly"
       ? "alphaDrywall"
       : "epf";
@@ -658,7 +749,11 @@ export default function EstimateBuilderPage() {
   const setBrandKey = useCallback(
     (nextKey) =>
       setBrandKeyState(
-        accessMode === "alphaOnly" ? "alphaDrywall" : nextKey || "epf"
+        accessMode === "alphaOnly"
+          ? "alphaDrywall"
+          : accessMode === "team" && nextKey === "epf"
+            ? "popcornCalgary"
+            : nextKey || (accessMode === "team" ? "popcornCalgary" : "epf")
       ),
     [accessMode]
   );
@@ -669,6 +764,19 @@ export default function EstimateBuilderPage() {
   useEffect(() => {
     brandKeyRef.current = brandKey;
   }, [brandKey]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search || "");
+    if (params.get("brandScope") !== "calgary") return;
+    window.__EPF_BRAND__ = brandKey === "alphaDrywall" ? "alphaDrywall" : "popcornCalgary";
+    if (accessMode !== "team" || brandKey === "epf") {
+      window.setTimeout(() => {
+        if (accessMode !== "team") setAccessMode("team");
+        if (brandKey === "epf") setBrandKey("popcornCalgary");
+      }, 0);
+    }
+  }, [accessMode, brandKey, setBrandKey]);
 
 
   // Prevent navigating away via back button when locked to Alpha-only
@@ -778,6 +886,10 @@ export default function EstimateBuilderPage() {
         g_place_id: $("#g_place_id")?.value || "",
         paint_dim_width: $("#paint_dim_width")?.value || "",
         paint_dim_depth: $("#paint_dim_depth")?.value || "",
+        crmClientId:
+          window.__EPF_CRM_CLIENT_ID__ ||
+          new URLSearchParams(window.location.search || "").get("clientId") ||
+          "",
       };
       return { sections, meta };
     }
@@ -804,6 +916,7 @@ export default function EstimateBuilderPage() {
       const brandProfile =
         BRAND_PROFILES[restoredBrand] || BRAND_PROFILES.epf;
       if (meta.date) setVal("#date", meta.date);
+      if (meta.crmClientId) window.__EPF_CRM_CLIENT_ID__ = meta.crmClientId;
       setVal("#client", meta.client || "[Full name]");
       setVal("#clientContact", meta.contact || "[Phone] • [Email]");
       const siteEl = document.querySelector("#site");
@@ -890,6 +1003,37 @@ export default function EstimateBuilderPage() {
 
       updateMapsLink();
       attachSectionControls(); // ensure per-section controls exist + totals
+    }
+
+    function applyCrmPrefillFromQuery() {
+      const params = new URLSearchParams(window.location.search || "");
+      if (params.get("source") !== "crm") return;
+      window.__EPF_CRM_CLIENT_ID__ = params.get("clientId") || "";
+
+      const setText = (sel, value) => {
+        const trimmed = String(value || "").trim();
+        if (!trimmed) return;
+        const el = document.querySelector(sel);
+        if (!el) return;
+        if ("value" in el && ["INPUT", "SELECT", "TEXTAREA"].includes(el.tagName)) {
+          el.value = trimmed;
+        } else {
+          el.textContent = trimmed;
+        }
+      };
+
+      setText("#client", params.get("client"));
+      setText("#clientContact", params.get("contact"));
+      setText("#site", params.get("site"));
+
+      const service = params.get("work") || params.get("service");
+      const size = params.get("size");
+      if (service || size) {
+        setText(
+          "#startWindow",
+          [service, size ? `Size: ${size}` : ""].filter(Boolean).join(" | ")
+        );
+      }
     }
 
     // autosave (JSON snapshot)
@@ -2366,6 +2510,7 @@ export default function EstimateBuilderPage() {
       initPopcornDefaults();
       attachSectionControls();
     }
+    applyCrmPrefillFromQuery();
     window.__EPF_RECALC__?.();
 
     /** ========= Google Places: Place ID link ========= */
@@ -2800,7 +2945,26 @@ export default function EstimateBuilderPage() {
           <div className="controls">
             <div className="brandSwitch" role="group" aria-label="Brand selection">
               <span className="text-xs text-slate-500">Brand:</span>
-              {accessMode !== "alphaOnly" ? (
+              {accessMode === "team" ? (
+                <>
+                  <button
+                    type="button"
+                    id="btnBrandCalgary"
+                    className={`btn ${brandKey === "popcornCalgary" ? "primary" : "ghost"}`}
+                    onClick={() => setBrandKey("popcornCalgary")}
+                  >
+                    Popcorn Ceiling Removal Calgary
+                  </button>
+                  <button
+                    type="button"
+                    id="btnBrandAlpha"
+                    className={`btn ${brandKey === "alphaDrywall" ? "primary" : "ghost"}`}
+                    onClick={() => setBrandKey("alphaDrywall")}
+                  >
+                    Alpha Drywall Finishing
+                  </button>
+                </>
+              ) : accessMode !== "alphaOnly" ? (
                 <>
                   <button
                     type="button"
