@@ -16,6 +16,36 @@ bun dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
+## CRM GPT Intake API
+
+Set `CRM_API_TOKEN` in the deployment environment before using the external CRM intake endpoint.
+
+- Lead endpoint: `POST /api/crm/gpt`
+- Custom GPT OpenAPI schema: `/api/crm/gpt/openapi`
+- Auth: `Authorization: Bearer <CRM_API_TOKEN>`
+
+Example request:
+
+```bash
+curl -X POST https://your-domain.com/api/crm/gpt \
+  -H "Authorization: Bearer $CRM_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "source": "manual",
+    "lead": {
+      "name": "John Smith",
+      "phone": "416-555-0199",
+      "email": "john@example.com",
+      "city": "Mississauga",
+      "service": "Popcorn Ceiling Removal",
+      "squareFootage": "1200 sqft",
+      "notes": "Client wants an estimate next week."
+    }
+  }'
+```
+
+The endpoint also accepts `leadText` for raw website forms, emails, or voicemail transcripts and extracts basic contact/project fields.
+
 You can start editing the page by modifying `app/page.js`. The page auto-updates as you edit the file.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.

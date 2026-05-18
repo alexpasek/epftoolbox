@@ -1,0 +1,141 @@
+import { NextResponse } from "next/server";
+
+export const runtime = "edge";
+export const dynamic = "force-dynamic";
+
+export async function GET(req) {
+  const url = new URL(req.url);
+  const origin = `${url.protocol}//${url.host}`;
+
+  return NextResponse.json({
+    openapi: "3.1.0",
+    info: {
+      title: "EPF CRM Intake API",
+      version: "1.0.0",
+      description: "Create CRM leads from a Custom GPT action.",
+    },
+    servers: [{ url: origin }],
+    paths: {
+      "/api/crm/gpt": {
+        post: {
+          operationId: "createCrmLead",
+          summary: "Create a CRM lead",
+          security: [{ bearerAuth: [] }],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  additionalProperties: false,
+                  properties: {
+                    leadText: {
+                      type: "string",
+                      description: "Raw lead text from a website form, voicemail transcript, email, or chat.",
+                    },
+                    source: {
+                      type: "string",
+                      description: "Lead source such as website, phone, email, referral, manual, paste, or voicemail.",
+                    },
+                    lead: {
+                      type: "object",
+                      additionalProperties: false,
+                      properties: {
+                        name: { type: "string" },
+                        phone: { type: "string" },
+                        email: { type: "string" },
+                        address: { type: "string" },
+                        city: { type: "string" },
+                        service: { type: "string" },
+                        assignedTo: { type: "string" },
+                        leadStatus: {
+                          type: "string",
+                          enum: ["New Lead", "Contacted", "Estimate Booked", "Estimate Sent", "Follow-Up", "Won", "Lost"],
+                        },
+                        projectStatus: {
+                          type: "string",
+                          enum: ["Not Scheduled", "Scheduled", "In Progress", "Completed"],
+                        },
+                        paymentStatus: {
+                          type: "string",
+                          enum: ["No Invoice", "Deposit Due", "Deposit Paid", "Balance Due", "Paid"],
+                        },
+                        estimateAmount: { type: "string" },
+                        estimateDate: { type: "string" },
+                        followUpDate: { type: "string" },
+                        requestedDate: { type: "string" },
+                        squareFootage: { type: "string" },
+                        workNeeded: { type: "string" },
+                        ceilingHeight: { type: "string" },
+                        asbestosStatus: { type: "string" },
+                        depositAmount: { type: "string" },
+                        paymentAmount: { type: "string" },
+                        balanceDue: { type: "string" },
+                        paymentMethod: { type: "string" },
+                        notes: { type: "string" },
+                      },
+                    },
+                  },
+                  anyOf: [
+                    { required: ["leadText"] },
+                    { required: ["lead"] },
+                  ],
+                },
+                examples: {
+                  structuredLead: {
+                    value: {
+                      source: "manual",
+                      lead: {
+                        name: "John Smith",
+                        phone: "416-555-0199",
+                        email: "john@example.com",
+                        city: "Mississauga",
+                        service: "Popcorn Ceiling Removal",
+                        squareFootage: "1200 sqft",
+                        notes: "Client wants an estimate next week.",
+                      },
+                    },
+                  },
+                  textLead: {
+                    value: {
+                      source: "website",
+                      leadText: "Name: Jane Lee\nPhone: 905-555-0123\nCity: Burlington\nService: drywall repair\nMessage: Ceiling damage in living room.",
+                    },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            "200": {
+              description: "CRM lead created",
+              content: {
+                "application/json": {
+                  schema: {
+                    type: "object",
+                    properties: {
+                      ok: { type: "boolean" },
+                      client: { type: "object" },
+                      count: { type: "integer" },
+                    },
+                  },
+                },
+              },
+            },
+            "400": { description: "Invalid or incomplete lead payload" },
+            "401": { description: "Unauthorized" },
+            "501": { description: "CRM_API_TOKEN is not configured" },
+          },
+        },
+      },
+    },
+    components: {
+      securitySchemes: {
+        bearerAuth: {
+          type: "http",
+          scheme: "bearer",
+        },
+      },
+    },
+  });
+}

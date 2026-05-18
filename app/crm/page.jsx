@@ -91,8 +91,12 @@ const cityKeywords = [
 ];
 
 const serviceKeywords = [
+  ["popcorn removed", "Popcorn Ceiling Removal"],
+  ["popcorn removal", "Popcorn Ceiling Removal"],
   ["popcorn ceiling removal", "Popcorn Ceiling Removal"],
   ["popcorn ceiling", "Popcorn Ceiling Removal"],
+  ["skim coat", "Ceiling skim coat"],
+  ["skimmed", "Ceiling skim coat"],
   ["ceiling repair", "Ceiling Repair"],
   ["painting", "Painting"],
   ["drywall", "Drywall"],
@@ -185,12 +189,31 @@ function extractLabeledValue(text, labels) {
   return "";
 }
 
+function extractLabeledBlock(text, labels) {
+  const labelPattern = labels.map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
+  const match = text.match(new RegExp(`^\\s*(?:${labelPattern})\\s*:\\s*([\\s\\S]*?)(?=^\\s*[A-Za-z][A-Za-z /-]{0,30}\\s*:|\\s*$)`, "im"));
+  return match?.[1]?.trim() || "";
+}
+
+function normalizePhone(value = "") {
+  const match = String(value).match(/(?:\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/);
+  return match?.[0]?.trim() || "";
+}
+
+function detectService(text = "") {
+  const lower = String(text || "").toLowerCase();
+  if (/\bpopcorn\b/.test(lower) && /\b(remov(?:e|ed|al|ing)?|scrap(?:e|ed|ing)?)\b/.test(lower)) {
+    return "Popcorn Ceiling Removal";
+  }
+  return serviceKeywords.find(([keyword]) => lower.includes(keyword))?.[1] || "";
+}
+
 function parseLeadText(inputText = "", source = "paste") {
   const text = String(inputText || "").trim();
   const lower = text.toLowerCase();
-  const phone = (
-    text.match(/(?:\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/) || [""]
-  )[0].trim();
+  const details = extractLabeledBlock(text, ["Details", "Message", "Notes", "Project", "Scope", "Description"]);
+  const labeledPhone = normalizePhone(extractLabeledValue(text, ["Phone", "Tel", "Telephone", "Mobile", "Cell"]));
+  const phone = labeledPhone || normalizePhone(text);
   const email = (text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i) || [""])[0];
   const labeledName = extractLabeledValue(text, ["Name", "From", "Client", "Customer"]);
   const spokenName =
@@ -201,7 +224,7 @@ function parseLeadText(inputText = "", source = "paste") {
     cityKeywords.find((cityName) => lower.includes(cityName.toLowerCase())) ||
     "";
   const labeledService = extractLabeledValue(text, ["Service", "Work", "Job"]);
-  const detectedService = serviceKeywords.find(([keyword]) => lower.includes(keyword))?.[1] || "";
+  const detectedService = detectService([details, text].filter(Boolean).join("\n"));
   const squareFootage =
     text.match(/\b\d{2,5}\s*(?:sq\.?\s*ft|sqft|square feet)\b/i)?.[0] ||
     text.match(/\b\d{1,3}\s*(?:x|by)\s*\d{1,3}\b/i)?.[0] ||
@@ -222,6 +245,7 @@ function parseLeadText(inputText = "", source = "paste") {
     email,
     city,
     service: labeledService || detectedService,
+    workNeeded: detectedService,
     notes: text,
     squareFootage,
     requestedDate,
@@ -1046,6 +1070,7 @@ export default function CrmPage() {
       address: parsed.address || form.address,
       city: parsed.city || form.city,
       service: parsed.service || (mode === "voicemail" ? "No service" : form.service),
+      workNeeded: parsed.workNeeded || form.workNeeded,
       squareFootage: parsed.squareFootage || form.squareFootage,
       requestedDate: parsed.requestedDate || form.requestedDate,
       notes: parsed.notes || form.notes,
