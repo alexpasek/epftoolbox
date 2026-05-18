@@ -94,6 +94,12 @@ Quote notes: Popcorn removal, skim coat, prime, and cleanup.
 
 When a `quote` object is included, the API saves a quote/invoice record, attaches it to the CRM client, and returns a printable quote link like `/invoice-basic?id=...`. Open that link and use **Print / Save PDF** to create the PDF.
 
+Quote formatting rules:
+
+- If GPT sends one quote `amount` and no detailed `items`, the API builds a toolbox-style bundled quote: the main service line has the price, and prep/skim/prime/paint/cleanup lines show as `Included`.
+- If GPT sends detailed quote `items` with `amount` or `rate`, each service line shows its own price instead of `Included`.
+- GPT quote totals default to no HST so the attached customer price stays equal to the price GPT was given, unless `taxNow: true` is sent.
+
 You can start editing the page by modifying `app/page.js`. The page auto-updates as you edit the file.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.

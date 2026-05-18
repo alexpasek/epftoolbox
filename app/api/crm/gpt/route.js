@@ -442,6 +442,108 @@ function normalizeQuoteItem(item = {}) {
   };
 }
 
+const popcornBundleLines = [
+  {
+    description: [
+      "Floor protection & masking",
+      "RamBoard / poly protection",
+      "Tape baseboards & stairs",
+      "Remove + reset coverings per day",
+    ].join("\n"),
+  },
+  {
+    description: [
+      "Level 5 skim coat",
+      "2-3 passes joint compound",
+      "Feather to edges + inspect with light",
+      "Final HEPA sand + dust removal",
+    ].join("\n"),
+  },
+  {
+    description: [
+      "Ceiling priming",
+      "Prime repairs/stains for uniformity",
+      "Back-roll for even coverage",
+      "Check for touch-ups before paint",
+    ].join("\n"),
+  },
+  {
+    description: [
+      "Ceiling paint (2 coats)",
+      "2 coats ceiling finish",
+      "Clean cut lines + even texture",
+      "Low-VOC coatings for occupied homes",
+    ].join("\n"),
+  },
+  {
+    description: [
+      "Cleanup & disposal",
+      "HEPA vacuum surfaces & vents",
+      "Bag debris + wipe touch points",
+      "Daily tidy + final walkthrough",
+    ].join("\n"),
+  },
+];
+
+function createBundledQuoteItems(client = {}, quote = {}) {
+  const baseAmount =
+    numberValue(quote.amount) ||
+    numberValue(quote.total) ||
+    numberValue(client.estimateAmount) ||
+    numberValue(quote.estimateAmount);
+  const serviceText = [client.service, client.workNeeded, quote.description].join(" ").toLowerCase();
+  const isPopcorn = serviceText.includes("popcorn") || serviceText.includes("stucco");
+  const mainDescription = [
+    quote.description ||
+      (isPopcorn
+        ? "Popcorn ceiling removal - unpainted"
+        : client.service || client.workNeeded || "Project work"),
+    isPopcorn ? "Dust-controlled texture removal" : "Professional labour and site preparation",
+    isPopcorn ? "HEPA sand ceilings smooth" : "Materials and work areas organized",
+    isPopcorn ? "Edges kept crisp" : "Daily cleanup included",
+    isPopcorn ? "Floors & openings sealed off" : "Final walkthrough included",
+  ].join("\n");
+
+  const includedLines = isPopcorn
+    ? popcornBundleLines
+    : [
+        { description: "Site protection & masking\nFloors and adjacent areas protected\nDaily cleanup included" },
+        { description: "Preparation & finishing\nSurface prep included\nReady-for-client walkthrough" },
+      ];
+
+  return [
+    normalizeQuoteItem({
+      description: mainDescription,
+      qty: quote.qty || 1,
+      unit: quote.unit || "job",
+      amount: baseAmount,
+      rate: baseAmount,
+      included: false,
+    }),
+    ...includedLines.map((item) =>
+      normalizeQuoteItem({
+        ...item,
+        qty: 1,
+        unit: "included",
+        amount: 0,
+        rate: 0,
+        included: true,
+      })
+    ),
+  ];
+}
+
+function createDetailedQuoteItems(items = []) {
+  return items.map((item) => {
+    const normalized = normalizeQuoteItem(item);
+    const hasExplicitPrice = numberValue(item.amount) > 0 || numberValue(item.rate) > 0;
+    return {
+      ...normalized,
+      included: item.included === true && !hasExplicitPrice,
+    };
+  });
+}
+
 function recalcInvoiceTotals(invoice = {}) {
   const labour = Array.isArray(invoice.items)
     ? invoice.items.reduce((sum, row) => sum + (row?.included ? 0 : numberValue(row?.amount)), 0)
@@ -460,22 +562,9 @@ function recalcInvoiceTotals(invoice = {}) {
 
 function createQuoteRecord(client = {}, quote = {}) {
   const now = nowISO();
-  const baseAmount =
-    numberValue(quote.amount) ||
-    numberValue(quote.total) ||
-    numberValue(client.estimateAmount) ||
-    numberValue(quote.estimateAmount);
   const items = Array.isArray(quote.items) && quote.items.length
-    ? quote.items.map(normalizeQuoteItem)
-    : [
-        normalizeQuoteItem({
-          description: quote.description || client.service || client.workNeeded || "Project work",
-          qty: quote.qty || 1,
-          unit: quote.unit || "job",
-          amount: baseAmount,
-          rate: baseAmount,
-        }),
-      ];
+    ? createDetailedQuoteItems(quote.items)
+    : createBundledQuoteItems(client, quote);
   const randomSuffix = Math.floor(1000 + Math.random() * 9000);
   const id = String(quote.id || quote.quoteId || `GPT-${randomSuffix}-${Date.now()}`);
   const contact = [client.phone, client.email].filter(Boolean).join(" / ");
@@ -491,7 +580,7 @@ function createQuoteRecord(client = {}, quote = {}) {
     date: quote.date || now.slice(0, 10),
     hstNumber: quote.hstNumber || "",
     taxRate: numberValue(quote.taxRate || 13),
-    taxNow: quote.taxNow !== false,
+    taxNow: quote.taxNow === true,
     matFixed: numberValue(quote.matFixed),
     matPct: numberValue(quote.matPct),
     materialsTaxMode: quote.materialsTaxMode || "taxable",

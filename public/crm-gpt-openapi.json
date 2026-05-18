@@ -342,7 +342,7 @@
           },
           "amount": {
             "type": "number",
-            "description": "Simple total/labour amount when no detailed line items are supplied."
+            "description": "One total quote price. When supplied without items, the API creates a builder-style bundled quote with included prep/finish lines."
           },
           "description": {
             "type": "string",
@@ -350,13 +350,17 @@
           },
           "items": {
             "type": "array",
+            "description": "Detailed priced service lines. If an item has amount or rate, it appears with a price instead of Included.",
             "items": {
               "$ref": "#/components/schemas/QuoteItem"
             }
           },
           "notes": { "type": "string" },
           "taxRate": { "type": "number" },
-          "taxNow": { "type": "boolean" },
+          "taxNow": {
+            "type": "boolean",
+            "description": "Defaults to false so the attached price stays as the displayed quote total unless explicitly true."
+          },
           "matFixed": { "type": "number" },
           "matPct": { "type": "number" },
           "materialsTaxMode": {
