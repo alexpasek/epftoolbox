@@ -8,7 +8,7 @@ export async function GET(req) {
   const origin = `${url.protocol}//${url.host}`;
 
   return NextResponse.json({
-    openapi: "3.1.0",
+    openapi: "3.0.3",
     info: {
       title: "EPF CRM Intake API",
       version: "1.0.0",
@@ -27,7 +27,6 @@ export async function GET(req) {
               "application/json": {
                 schema: {
                   type: "object",
-                  additionalProperties: false,
                   properties: {
                     leadText: {
                       type: "string",
@@ -39,7 +38,6 @@ export async function GET(req) {
                     },
                     lead: {
                       type: "object",
-                      additionalProperties: false,
                       properties: {
                         name: { type: "string" },
                         phone: { type: "string" },
@@ -76,10 +74,6 @@ export async function GET(req) {
                       },
                     },
                   },
-                  anyOf: [
-                    { required: ["leadText"] },
-                    { required: ["lead"] },
-                  ],
                 },
                 examples: {
                   structuredLead: {
