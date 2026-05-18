@@ -4,6 +4,7 @@ export const runtime = "edge";
 export const dynamic = "force-dynamic";
 
 const CRM_KEY = "crm-clients.json";
+const INVOICES_KEY = "invoices.json";
 const CRM_SCHEMA_VERSION = 2;
 
 const leadStatuses = [
@@ -139,6 +140,18 @@ async function getStorageBinding() {
   }
 }
 
+async function getInvoiceStorageBinding() {
+  if (typeof globalThis.INVOICES_BUCKET !== "undefined") return globalThis.INVOICES_BUCKET;
+  if (typeof globalThis.invoice2 !== "undefined") return globalThis.invoice2;
+  if (typeof globalThis.CRM_BUCKET !== "undefined") return globalThis.CRM_BUCKET;
+
+  try {
+    return process.env.INVOICES_BUCKET || process.env.invoice2 || process.env.CRM_BUCKET || null;
+  } catch {
+    return null;
+  }
+}
+
 async function readClients() {
   const storage = await getStorageBinding();
   if (!storage) return null;
@@ -172,6 +185,43 @@ async function writeClients(clients) {
     return true;
   } catch (err) {
     console.warn("CRM GPT storage write failed", err);
+    return false;
+  }
+}
+
+async function readInvoices() {
+  const storage = await getInvoiceStorageBinding();
+  if (!storage) return null;
+
+  try {
+    const record = await storage.get(INVOICES_KEY);
+    if (!record) return [];
+
+    const text = typeof record.text === "function" ? await record.text() : record;
+    const parsed = JSON.parse(text);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (err) {
+    console.warn("CRM GPT invoice read failed", err);
+    return null;
+  }
+}
+
+async function writeInvoices(invoices) {
+  const storage = await getInvoiceStorageBinding();
+  if (!storage) return false;
+
+  try {
+    const body = JSON.stringify(invoices);
+    if (storage.put.length >= 3) {
+      await storage.put(INVOICES_KEY, body, {
+        httpMetadata: { contentType: "application/json" },
+      });
+    } else {
+      await storage.put(INVOICES_KEY, body);
+    }
+    return true;
+  } catch (err) {
+    console.warn("CRM GPT invoice write failed", err);
     return false;
   }
 }
@@ -364,6 +414,115 @@ function makeTimelineEntry(content, type = "note", direction = "internal") {
   };
 }
 
+function numberValue(value) {
+  const number = Number(String(value || "").replace(/[^0-9.-]/g, ""));
+  return Number.isFinite(number) ? number : 0;
+}
+
+function money(value) {
+  return new Intl.NumberFormat("en-CA", {
+    style: "currency",
+    currency: "CAD",
+    maximumFractionDigits: 0,
+  }).format(numberValue(value));
+}
+
+function normalizeQuoteItem(item = {}) {
+  const qty = numberValue(item.qty || 1) || 1;
+  const amount = numberValue(item.amount);
+  const rate = numberValue(item.rate || amount / qty);
+
+  return {
+    description: String(item.description || item.service || "Project work").trim(),
+    qty,
+    unit: String(item.unit || "job").trim(),
+    rate,
+    amount: amount || qty * rate,
+    included: Boolean(item.included),
+  };
+}
+
+function recalcInvoiceTotals(invoice = {}) {
+  const labour = Array.isArray(invoice.items)
+    ? invoice.items.reduce((sum, row) => sum + (row?.included ? 0 : numberValue(row?.amount)), 0)
+    : 0;
+  const materials = numberValue(invoice.matFixed) + labour * (numberValue(invoice.matPct) / 100);
+  const beforeDiscount = labour + materials;
+  const discount = beforeDiscount * (numberValue(invoice.discPct) / 100);
+  const subtotal = beforeDiscount - discount;
+  const taxableBeforeDiscount = labour + (invoice.materialsTaxMode === "nonTaxable" ? 0 : materials);
+  const discountShare = beforeDiscount > 0 ? discount * (taxableBeforeDiscount / beforeDiscount) : 0;
+  const taxableSubtotal = Math.max(0, taxableBeforeDiscount - discountShare);
+  const tax = invoice.taxNow ? taxableSubtotal * (numberValue(invoice.taxRate || 13) / 100) : 0;
+  const total = subtotal + tax;
+  return { labour, materials, discount, subtotal, tax, total };
+}
+
+function createQuoteRecord(client = {}, quote = {}) {
+  const now = nowISO();
+  const baseAmount =
+    numberValue(quote.amount) ||
+    numberValue(quote.total) ||
+    numberValue(client.estimateAmount) ||
+    numberValue(quote.estimateAmount);
+  const items = Array.isArray(quote.items) && quote.items.length
+    ? quote.items.map(normalizeQuoteItem)
+    : [
+        normalizeQuoteItem({
+          description: quote.description || client.service || client.workNeeded || "Project work",
+          qty: quote.qty || 1,
+          unit: quote.unit || "job",
+          amount: baseAmount,
+          rate: baseAmount,
+        }),
+      ];
+  const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+  const id = String(quote.id || quote.quoteId || `GPT-${randomSuffix}-${Date.now()}`);
+  const contact = [client.phone, client.email].filter(Boolean).join(" / ");
+  const site = [client.address, client.city].filter(Boolean).join(", ");
+  const invoice = {
+    id,
+    quoteId: String(quote.quoteId || id),
+    crmClientId: client.id,
+    brandKey: quote.brandKey || "epf",
+    client: quote.client || client.name || "",
+    contact: quote.contact || contact,
+    site: quote.site || site,
+    date: quote.date || now.slice(0, 10),
+    hstNumber: quote.hstNumber || "",
+    taxRate: numberValue(quote.taxRate || 13),
+    taxNow: quote.taxNow !== false,
+    matFixed: numberValue(quote.matFixed),
+    matPct: numberValue(quote.matPct),
+    materialsTaxMode: quote.materialsTaxMode || "taxable",
+    materialsMode: quote.materialsMode || "exact",
+    discPct: numberValue(quote.discPct),
+    depositAmount: numberValue(quote.depositAmount),
+    items,
+    notes:
+      quote.notes ||
+      client.notes ||
+      "Quote created from GPT. Open this record and use Print / Save PDF to create the PDF file.",
+    createdAt: quote.createdAt || now,
+    updatedAt: now,
+    savedAt: now,
+    source: "invoice",
+  };
+
+  return {
+    ...invoice,
+    totals: recalcInvoiceTotals(invoice),
+  };
+}
+
+async function saveQuoteRecord(record) {
+  const invoices = await readInvoices();
+  if (!invoices) return false;
+
+  const next = [record, ...invoices.filter((invoice) => invoice?.id !== record.id)];
+  return writeInvoices(next);
+}
+
 function pickAllowedFields(input = {}) {
   return Object.fromEntries(
     allowedFields
@@ -474,7 +633,7 @@ export async function POST(req) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const client = createClient(payload);
+  let client = createClient(payload);
   if (!client.name && !client.phone && !client.email) {
     return NextResponse.json(
       { error: "Add at least one of name, phone, or email." },
@@ -490,6 +649,24 @@ export async function POST(req) {
     );
   }
 
+  let quote = null;
+  if (payload?.quote && typeof payload.quote === "object") {
+    quote = createQuoteRecord(client, payload.quote);
+    const quoteTotal = Math.round(numberValue(quote.totals?.total));
+    client = {
+      ...client,
+      leadStatus: "Estimate Sent",
+      estimateAmount: client.estimateAmount || String(quoteTotal),
+      estimateSentAt: nowISO(),
+      followUpDate: client.followUpDate || addDaysISO(2),
+      estimateIds: [quote.id],
+      communicationLog: [
+        makeTimelineEntry(`Estimate ${quote.quoteId || quote.id} saved for ${money(quote.totals?.total)}.`, "estimate"),
+        ...(client.communicationLog || []),
+      ],
+    };
+  }
+
   const merged = mergeClients(existing, [client]);
   const ok = await writeClients(merged);
   if (!ok) {
@@ -499,7 +676,23 @@ export async function POST(req) {
     );
   }
 
-  return NextResponse.json({ ok: true, client, count: merged.length });
+  if (quote) {
+    const quoteSaved = await saveQuoteRecord(quote);
+    if (!quoteSaved) {
+      return NextResponse.json(
+        { error: "CRM client saved, but quote storage failed. Check the invoice storage binding.", client },
+        { status: 500 }
+      );
+    }
+  }
+
+  return NextResponse.json({
+    ok: true,
+    client,
+    quote,
+    quoteUrl: quote ? `/invoice-basic?id=${encodeURIComponent(quote.id)}` : "",
+    count: merged.length,
+  });
 }
 
 export async function GET(req) {

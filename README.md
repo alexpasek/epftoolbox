@@ -29,7 +29,7 @@ Set `CRM_API_TOKEN` in the deployment environment before using the external CRM 
 Available GPT actions:
 
 - `listCrmClients`: search/list CRM clients and get client ids
-- `createCrmLead`: create a new CRM client or lead
+- `createCrmLead`: create a new CRM client or lead, optionally with an attached printable quote
 - `updateCrmClient`: edit client fields, statuses, payments, and notes by id or exact name
 - `deleteCrmClient`: soft-delete a client by id or exact name
 
@@ -79,6 +79,20 @@ curl -X POST https://epftoolbox.pages.dev/api/crm/gpt \
 ```
 
 The endpoint also accepts `leadText` for raw website forms, emails, or voicemail transcripts and extracts basic contact/project fields.
+
+Example GPT prompt for CRM + quote:
+
+```text
+Create a CRM lead and quote:
+Name: Jane Lee
+Phone: 905-555-0123
+City: Burlington
+Service: Popcorn Ceiling Removal
+Quote amount: 5200
+Quote notes: Popcorn removal, skim coat, prime, and cleanup.
+```
+
+When a `quote` object is included, the API saves a quote/invoice record, attaches it to the CRM client, and returns a printable quote link like `/invoice-basic?id=...`. Open that link and use **Print / Save PDF** to create the PDF.
 
 You can start editing the page by modifying `app/page.js`. The page auto-updates as you edit the file.
 

@@ -262,6 +262,9 @@
           },
           "lead": {
             "$ref": "#/components/schemas/ClientFields"
+          },
+          "quote": {
+            "$ref": "#/components/schemas/QuoteFields"
           }
         }
       },
@@ -309,7 +312,84 @@
           "client": {
             "$ref": "#/components/schemas/CrmClient"
           },
+          "quote": {
+            "$ref": "#/components/schemas/QuoteRecord"
+          },
+          "quoteUrl": {
+            "type": "string"
+          },
           "count": { "type": "integer" }
+        }
+      },
+      "QuoteItem": {
+        "type": "object",
+        "properties": {
+          "description": { "type": "string" },
+          "qty": { "type": "number" },
+          "unit": { "type": "string" },
+          "rate": { "type": "number" },
+          "amount": { "type": "number" },
+          "included": { "type": "boolean" }
+        }
+      },
+      "QuoteFields": {
+        "type": "object",
+        "properties": {
+          "quoteId": { "type": "string" },
+          "brandKey": {
+            "type": "string",
+            "enum": ["epf", "popcornCalgary", "alphaDrywall"]
+          },
+          "amount": {
+            "type": "number",
+            "description": "Simple total/labour amount when no detailed line items are supplied."
+          },
+          "description": {
+            "type": "string",
+            "description": "Simple quote line description when no detailed line items are supplied."
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/QuoteItem"
+            }
+          },
+          "notes": { "type": "string" },
+          "taxRate": { "type": "number" },
+          "taxNow": { "type": "boolean" },
+          "matFixed": { "type": "number" },
+          "matPct": { "type": "number" },
+          "materialsTaxMode": {
+            "type": "string",
+            "enum": ["taxable", "nonTaxable"]
+          },
+          "materialsMode": {
+            "type": "string",
+            "enum": ["exact", "approx", "included"]
+          },
+          "discPct": { "type": "number" },
+          "depositAmount": { "type": "number" }
+        }
+      },
+      "QuoteRecord": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "quoteId": { "type": "string" },
+          "crmClientId": { "type": "string" },
+          "brandKey": { "type": "string" },
+          "client": { "type": "string" },
+          "contact": { "type": "string" },
+          "site": { "type": "string" },
+          "date": { "type": "string" },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/QuoteItem"
+            }
+          },
+          "notes": { "type": "string" },
+          "totals": { "type": "object" }
         }
       },
       "DeleteClientResponse": {
