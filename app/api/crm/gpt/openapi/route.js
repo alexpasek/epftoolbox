@@ -3,6 +3,45 @@ import { NextResponse } from "next/server";
 export const runtime = "edge";
 export const dynamic = "force-dynamic";
 
+const clientFields = {
+  name: { type: "string" },
+  phone: { type: "string" },
+  email: { type: "string" },
+  address: { type: "string" },
+  city: { type: "string" },
+  service: { type: "string" },
+  source: {
+    type: "string",
+    enum: ["phone", "email", "website", "referral", "manual", "paste", "voicemail"],
+  },
+  assignedTo: { type: "string" },
+  leadStatus: {
+    type: "string",
+    enum: ["New Lead", "Contacted", "Estimate Booked", "Estimate Sent", "Follow-Up", "Won", "Lost"],
+  },
+  projectStatus: {
+    type: "string",
+    enum: ["Not Scheduled", "Scheduled", "In Progress", "Completed"],
+  },
+  paymentStatus: {
+    type: "string",
+    enum: ["No Invoice", "Deposit Due", "Deposit Paid", "Balance Due", "Paid"],
+  },
+  estimateAmount: { type: "string" },
+  estimateDate: { type: "string" },
+  followUpDate: { type: "string" },
+  requestedDate: { type: "string" },
+  squareFootage: { type: "string" },
+  workNeeded: { type: "string" },
+  ceilingHeight: { type: "string" },
+  asbestosStatus: { type: "string" },
+  depositAmount: { type: "string" },
+  paymentAmount: { type: "string" },
+  balanceDue: { type: "string" },
+  paymentMethod: { type: "string" },
+  notes: { type: "string" },
+};
+
 export async function GET(req) {
   const url = new URL(req.url);
   const origin = `${url.protocol}//${url.host}`;
@@ -10,121 +49,220 @@ export async function GET(req) {
   return NextResponse.json({
     openapi: "3.1.0",
     info: {
-      title: "EPF CRM Intake API",
-      version: "1.0.0",
-      description: "Create CRM leads from a Custom GPT action.",
+      title: "EPF CRM Control API",
+      version: "1.1.0",
+      description: "Create, search, update, and soft-delete EPF Toolbox CRM clients from a Custom GPT action.",
     },
     servers: [{ url: origin }],
     paths: {
       "/api/crm/gpt": {
+        get: {
+          operationId: "listCrmClients",
+          summary: "Search or list CRM clients",
+          security: [{ bearerAuth: [] }],
+          parameters: [
+            {
+              name: "q",
+              in: "query",
+              required: false,
+              schema: { type: "string" },
+              description: "Search text such as client name, phone, email, city, service, or status.",
+            },
+            {
+              name: "limit",
+              in: "query",
+              required: false,
+              schema: { type: "integer", minimum: 1, maximum: 100, default: 25 },
+            },
+            {
+              name: "includeDeleted",
+              in: "query",
+              required: false,
+              schema: { type: "boolean", default: false },
+            },
+          ],
+          responses: {
+            "200": {
+              description: "CRM clients returned",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/ClientListResponse" },
+                },
+              },
+            },
+            "401": { description: "Unauthorized" },
+          },
+        },
         post: {
           operationId: "createCrmLead",
-          summary: "Create a CRM lead",
+          summary: "Create a CRM client or lead",
           security: [{ bearerAuth: [] }],
           requestBody: {
             required: true,
             content: {
               "application/json": {
-                schema: {
-                  type: "object",
-                  properties: {
-                    leadText: {
-                      type: "string",
-                      description: "Raw lead text from a website form, voicemail transcript, email, or chat.",
-                    },
-                    source: {
-                      type: "string",
-                      description: "Lead source such as website, phone, email, referral, manual, paste, or voicemail.",
-                    },
-                    lead: {
-                      type: "object",
-                      properties: {
-                        name: { type: "string" },
-                        phone: { type: "string" },
-                        email: { type: "string" },
-                        address: { type: "string" },
-                        city: { type: "string" },
-                        service: { type: "string" },
-                        assignedTo: { type: "string" },
-                        leadStatus: {
-                          type: "string",
-                          enum: ["New Lead", "Contacted", "Estimate Booked", "Estimate Sent", "Follow-Up", "Won", "Lost"],
-                        },
-                        projectStatus: {
-                          type: "string",
-                          enum: ["Not Scheduled", "Scheduled", "In Progress", "Completed"],
-                        },
-                        paymentStatus: {
-                          type: "string",
-                          enum: ["No Invoice", "Deposit Due", "Deposit Paid", "Balance Due", "Paid"],
-                        },
-                        estimateAmount: { type: "string" },
-                        estimateDate: { type: "string" },
-                        followUpDate: { type: "string" },
-                        requestedDate: { type: "string" },
-                        squareFootage: { type: "string" },
-                        workNeeded: { type: "string" },
-                        ceilingHeight: { type: "string" },
-                        asbestosStatus: { type: "string" },
-                        depositAmount: { type: "string" },
-                        paymentAmount: { type: "string" },
-                        balanceDue: { type: "string" },
-                        paymentMethod: { type: "string" },
-                        notes: { type: "string" },
-                      },
-                    },
-                  },
-                },
-                examples: {
-                  structuredLead: {
-                    value: {
-                      source: "manual",
-                      lead: {
-                        name: "John Smith",
-                        phone: "416-555-0199",
-                        email: "john@example.com",
-                        city: "Mississauga",
-                        service: "Popcorn Ceiling Removal",
-                        squareFootage: "1200 sqft",
-                        notes: "Client wants an estimate next week.",
-                      },
-                    },
-                  },
-                  textLead: {
-                    value: {
-                      source: "website",
-                      leadText: "Name: Jane Lee\nPhone: 905-555-0123\nCity: Burlington\nService: drywall repair\nMessage: Ceiling damage in living room.",
-                    },
-                  },
-                },
+                schema: { $ref: "#/components/schemas/CreateClientRequest" },
               },
             },
           },
           responses: {
             "200": {
-              description: "CRM lead created",
+              description: "CRM client created",
               content: {
                 "application/json": {
-                  schema: {
-                    type: "object",
-                    properties: {
-                      ok: { type: "boolean" },
-                      client: { type: "object" },
-                      count: { type: "integer" },
-                    },
-                  },
+                  schema: { $ref: "#/components/schemas/ClientMutationResponse" },
                 },
               },
             },
             "400": { description: "Invalid or incomplete lead payload" },
             "401": { description: "Unauthorized" },
-            "501": { description: "CRM_API_TOKEN is not configured" },
+          },
+        },
+        patch: {
+          operationId: "updateCrmClient",
+          summary: "Update a CRM client by id or exact name",
+          security: [{ bearerAuth: [] }],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/UpdateClientRequest" },
+              },
+            },
+          },
+          responses: {
+            "200": {
+              description: "CRM client updated",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/ClientMutationResponse" },
+                },
+              },
+            },
+            "401": { description: "Unauthorized" },
+            "404": { description: "Client not found" },
+          },
+        },
+        delete: {
+          operationId: "deleteCrmClient",
+          summary: "Soft-delete a CRM client by id or exact name",
+          security: [{ bearerAuth: [] }],
+          parameters: [
+            {
+              name: "id",
+              in: "query",
+              required: false,
+              schema: { type: "string" },
+              description: "CRM client id. Prefer id over targetName.",
+            },
+            {
+              name: "targetName",
+              in: "query",
+              required: false,
+              schema: { type: "string" },
+              description: "Exact client name to delete if id is not available.",
+            },
+          ],
+          responses: {
+            "200": {
+              description: "CRM client soft-deleted",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/DeleteClientResponse" },
+                },
+              },
+            },
+            "401": { description: "Unauthorized" },
+            "404": { description: "Client not found" },
           },
         },
       },
     },
     components: {
-      schemas: {},
+      schemas: {
+        ClientFields: {
+          type: "object",
+          properties: clientFields,
+        },
+        CrmClient: {
+          allOf: [
+            { $ref: "#/components/schemas/ClientFields" },
+            {
+              type: "object",
+              properties: {
+                id: { type: "string" },
+                deletedAt: { type: "string" },
+                createdAt: { type: "string" },
+                updatedAt: { type: "string" },
+              },
+            },
+          ],
+        },
+        CreateClientRequest: {
+          type: "object",
+          properties: {
+            leadText: {
+              type: "string",
+              description: "Raw lead text from a website form, voicemail transcript, email, or chat.",
+            },
+            source: {
+              type: "string",
+              description: "Lead source such as website, phone, email, referral, manual, paste, or voicemail.",
+            },
+            lead: { $ref: "#/components/schemas/ClientFields" },
+          },
+        },
+        UpdateClientRequest: {
+          type: "object",
+          properties: {
+            id: {
+              type: "string",
+              description: "CRM client id. Use listCrmClients first if id is unknown.",
+            },
+            targetName: {
+              type: "string",
+              description: "Exact client name to update if id is not available.",
+            },
+            changes: { $ref: "#/components/schemas/ClientFields" },
+            note: {
+              type: "string",
+              description: "Optional note to add to the client timeline and notes.",
+            },
+            appendNote: {
+              type: "boolean",
+              description: "When true, append notes instead of replacing notes.",
+            },
+          },
+        },
+        ClientListResponse: {
+          type: "object",
+          properties: {
+            ok: { type: "boolean" },
+            count: { type: "integer" },
+            items: {
+              type: "array",
+              items: { $ref: "#/components/schemas/CrmClient" },
+            },
+          },
+        },
+        ClientMutationResponse: {
+          type: "object",
+          properties: {
+            ok: { type: "boolean" },
+            client: { $ref: "#/components/schemas/CrmClient" },
+            count: { type: "integer" },
+          },
+        },
+        DeleteClientResponse: {
+          type: "object",
+          properties: {
+            ok: { type: "boolean" },
+            deleted: { type: "boolean" },
+            client: { $ref: "#/components/schemas/CrmClient" },
+            count: { type: "integer" },
+          },
+        },
+      },
       securitySchemes: {
         bearerAuth: {
           type: "http",

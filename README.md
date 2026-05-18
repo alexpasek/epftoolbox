@@ -20,14 +20,48 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 
 Set `CRM_API_TOKEN` in the deployment environment before using the external CRM intake endpoint.
 
-- Lead endpoint: `POST /api/crm/gpt`
-- Custom GPT OpenAPI schema: `/api/crm/gpt/openapi`
+- Live CRM page: `https://epftoolbox.pages.dev/crm/`
+- Lead endpoint: `POST https://epftoolbox.pages.dev/api/crm/gpt`
+- Custom GPT OpenAPI schema: `https://raw.githubusercontent.com/alexpasek/epftoolbox/main/public/crm-gpt-openapi.json`
+- Privacy policy: `https://epftoolbox.pages.dev/privacy-policy`
 - Auth: `Authorization: Bearer <CRM_API_TOKEN>`
+
+Available GPT actions:
+
+- `listCrmClients`: search/list CRM clients and get client ids
+- `createCrmLead`: create a new CRM client or lead
+- `updateCrmClient`: edit client fields, statuses, payments, and notes by id or exact name
+- `deleteCrmClient`: soft-delete a client by id or exact name
+
+Custom GPT Action setup:
+
+1. In GPT Builder, go to **Configure** -> **Actions**.
+2. Click **Create new action**.
+3. Click **Import from URL**.
+4. Paste:
+
+```text
+https://raw.githubusercontent.com/alexpasek/epftoolbox/main/public/crm-gpt-openapi.json
+```
+
+5. Set authentication:
+
+```text
+Authentication: API Key
+Auth Type: Bearer
+API Key: <CRM_API_TOKEN>
+```
+
+6. Set privacy policy URL:
+
+```text
+https://epftoolbox.pages.dev/privacy-policy
+```
 
 Example request:
 
 ```bash
-curl -X POST https://your-domain.com/api/crm/gpt \
+curl -X POST https://epftoolbox.pages.dev/api/crm/gpt \
   -H "Authorization: Bearer $CRM_API_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{

@@ -85,6 +85,12 @@ const serviceKeywords = [
 const makeId = () => `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 const nowISO = () => new Date().toISOString();
 
+function addDaysISO(days, from = new Date()) {
+  const date = new Date(from);
+  date.setDate(date.getDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
 function env(name) {
   try {
     return process.env[name] || "";
@@ -188,6 +194,69 @@ function mergeClients(existing, incoming) {
   });
 
   return [...byId.values()].sort((a, b) => recordTime(b) - recordTime(a));
+}
+
+function searchableText(client = {}) {
+  return [
+    client.id,
+    client.name,
+    client.phone,
+    client.email,
+    client.address,
+    client.city,
+    client.service,
+    client.source,
+    client.assignedTo,
+    client.leadStatus,
+    client.projectStatus,
+    client.paymentStatus,
+    client.notes,
+    ...(client.communicationLog || []).map((entry) => entry.content),
+  ]
+    .join(" ")
+    .toLowerCase();
+}
+
+function summarizeClient(client = {}) {
+  return {
+    id: client.id || "",
+    name: client.name || "",
+    phone: client.phone || "",
+    email: client.email || "",
+    address: client.address || "",
+    city: client.city || "",
+    service: client.service || "",
+    source: client.source || "",
+    assignedTo: client.assignedTo || "",
+    leadStatus: client.leadStatus || "",
+    projectStatus: client.projectStatus || "",
+    paymentStatus: client.paymentStatus || "",
+    estimateAmount: client.estimateAmount || "",
+    estimateDate: client.estimateDate || "",
+    followUpDate: client.followUpDate || "",
+    requestedDate: client.requestedDate || "",
+    squareFootage: client.squareFootage || "",
+    workNeeded: client.workNeeded || "",
+    depositAmount: client.depositAmount || "",
+    paymentAmount: client.paymentAmount || "",
+    balanceDue: client.balanceDue || "",
+    paymentMethod: client.paymentMethod || "",
+    notes: client.notes || "",
+    deletedAt: client.deletedAt || "",
+    createdAt: client.createdAt || "",
+    updatedAt: client.updatedAt || "",
+  };
+}
+
+function findClientIndex(clients = [], { id = "", targetName = "" } = {}) {
+  if (id) {
+    const index = clients.findIndex((client) => String(client.id) === String(id));
+    if (index >= 0) return index;
+  }
+
+  const name = String(targetName || "").trim().toLowerCase();
+  if (!name) return -1;
+  return clients.findIndex((client) => String(client.name || "").trim().toLowerCase() === name);
 }
 
 function normalizePhone(value = "") {
@@ -303,6 +372,47 @@ function pickAllowedFields(input = {}) {
   );
 }
 
+function normalizeUpdates(updates = {}) {
+  const picked = pickAllowedFields(updates);
+  if (Object.prototype.hasOwnProperty.call(picked, "source")) {
+    picked.source = normalizeSource(picked.source);
+  }
+  if (Object.prototype.hasOwnProperty.call(picked, "leadStatus")) {
+    picked.leadStatus = normalizeChoice(picked.leadStatus, leadStatuses, "");
+    if (!picked.leadStatus) delete picked.leadStatus;
+  }
+  if (Object.prototype.hasOwnProperty.call(picked, "projectStatus")) {
+    picked.projectStatus = normalizeChoice(picked.projectStatus, projectStatuses, "");
+    if (!picked.projectStatus) delete picked.projectStatus;
+  }
+  if (Object.prototype.hasOwnProperty.call(picked, "paymentStatus")) {
+    picked.paymentStatus = normalizeChoice(picked.paymentStatus, paymentStatuses, "");
+    if (!picked.paymentStatus) delete picked.paymentStatus;
+  }
+  return picked;
+}
+
+function applyDerivedStatusFields(client = {}, updates = {}) {
+  const next = { ...updates };
+  if (updates.leadStatus === "Estimate Sent") {
+    next.estimateSentAt = client.estimateSentAt || nowISO();
+    next.followUpDate = updates.followUpDate || client.followUpDate || addDaysISO(2);
+  }
+  if (updates.leadStatus === "Won") {
+    next.estimateAcceptedAt = client.estimateAcceptedAt || nowISO();
+  }
+  if (updates.leadStatus === "Lost") {
+    next.followUpDate = "";
+  }
+  if (updates.projectStatus === "Completed") {
+    next.completedDate = client.completedDate || nowISO().slice(0, 10);
+  }
+  if (updates.paymentStatus === "Paid") {
+    next.balanceDue = "";
+  }
+  return next;
+}
+
 function createClient(payload = {}) {
   const textLead = typeof payload.leadText === "string" ? parseLeadText(payload.leadText, payload.source || "manual") : {};
   const lead = payload.lead && typeof payload.lead === "object" ? pickAllowedFields(payload.lead) : {};
@@ -390,4 +500,144 @@ export async function POST(req) {
   }
 
   return NextResponse.json({ ok: true, client, count: merged.length });
+}
+
+export async function GET(req) {
+  const auth = authorize(req);
+  if (!auth.ok) return auth.response;
+
+  const url = new URL(req.url);
+  const query = String(url.searchParams.get("q") || "").trim().toLowerCase();
+  const includeDeleted = url.searchParams.get("includeDeleted") === "true";
+  const limit = Math.min(Math.max(Number(url.searchParams.get("limit") || 25), 1), 100);
+
+  const clients = await readClients();
+  if (!clients) {
+    return NextResponse.json(
+      { error: "Failed to read CRM clients. Check the Cloudflare storage binding." },
+      { status: 500 }
+    );
+  }
+
+  const items = clients
+    .filter((client) => includeDeleted || !client.deletedAt)
+    .filter((client) => !query || searchableText(client).includes(query))
+    .sort((a, b) => recordTime(b) - recordTime(a))
+    .slice(0, limit)
+    .map(summarizeClient);
+
+  return NextResponse.json({ ok: true, count: items.length, items });
+}
+
+export async function PATCH(req) {
+  const auth = authorize(req);
+  if (!auth.ok) return auth.response;
+
+  let payload = null;
+  try {
+    payload = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+
+  const clients = await readClients();
+  if (!clients) {
+    return NextResponse.json(
+      { error: "Failed to read CRM clients. Check the Cloudflare storage binding." },
+      { status: 500 }
+    );
+  }
+
+  const index = findClientIndex(clients, payload);
+  if (index < 0) {
+    return NextResponse.json({ error: "Client not found. Use listCrmClients first to get the client id." }, { status: 404 });
+  }
+
+  const current = clients[index];
+  const changes = normalizeUpdates(payload.changes || payload.lead || payload);
+  delete changes.id;
+  delete changes.targetName;
+  delete changes.appendNote;
+  delete changes.note;
+
+  const note = String(payload.note || "").trim();
+  const appendNote = Boolean(payload.appendNote || note);
+  const nextNotes = appendNote && (note || changes.notes)
+    ? [current.notes, note || changes.notes].filter(Boolean).join("\n\n")
+    : changes.notes ?? current.notes;
+
+  const derivedChanges = applyDerivedStatusFields(current, {
+    ...changes,
+    notes: nextNotes,
+  });
+  const updated = {
+    ...current,
+    ...derivedChanges,
+    updatedAt: nowISO(),
+    communicationLog: [
+      makeTimelineEntry(
+        note ? `GPT note: ${note}` : `GPT updated CRM fields: ${Object.keys(changes).join(", ") || "record"}`,
+        note ? "note" : "status_change"
+      ),
+      ...(current.communicationLog || []),
+    ],
+  };
+
+  const nextClients = [...clients];
+  nextClients[index] = updated;
+  const merged = mergeClients([], nextClients);
+  const ok = await writeClients(merged);
+  if (!ok) {
+    return NextResponse.json(
+      { error: "Failed to save CRM client. Check the Cloudflare storage binding." },
+      { status: 500 }
+    );
+  }
+
+  return NextResponse.json({ ok: true, client: summarizeClient(updated), count: merged.length });
+}
+
+export async function DELETE(req) {
+  const auth = authorize(req);
+  if (!auth.ok) return auth.response;
+
+  const url = new URL(req.url);
+  const id = String(url.searchParams.get("id") || "").trim();
+  const targetName = String(url.searchParams.get("targetName") || "").trim();
+
+  const clients = await readClients();
+  if (!clients) {
+    return NextResponse.json(
+      { error: "Failed to read CRM clients. Check the Cloudflare storage binding." },
+      { status: 500 }
+    );
+  }
+
+  const index = findClientIndex(clients, { id, targetName });
+  if (index < 0) {
+    return NextResponse.json({ error: "Client not found. Use listCrmClients first to get the client id." }, { status: 404 });
+  }
+
+  const current = clients[index];
+  const deleted = {
+    ...current,
+    deletedAt: current.deletedAt || nowISO(),
+    updatedAt: nowISO(),
+    communicationLog: [
+      makeTimelineEntry("Client soft-deleted by GPT API.", "status_change"),
+      ...(current.communicationLog || []),
+    ],
+  };
+  const nextClients = [...clients];
+  nextClients[index] = deleted;
+  const merged = mergeClients([], nextClients);
+  const ok = await writeClients(merged);
+  if (!ok) {
+    return NextResponse.json(
+      { error: "Failed to delete CRM client. Check the Cloudflare storage binding." },
+      { status: 500 }
+    );
+  }
+
+  return NextResponse.json({ ok: true, deleted: true, client: summarizeClient(deleted), count: merged.length });
 }
