@@ -144,6 +144,15 @@ function createInvoiceHref(client = {}) {
   return `/invoice-basic?${params.toString()}`;
 }
 
+function compactServiceLabel(client = {}) {
+  const text = [client.service, client.workNeeded, client.notes].filter(Boolean).join(" ").toLowerCase();
+  if (text.includes("popcorn") || text.includes("stucco")) return "Popcorn / Stucco Removal";
+  if (text.includes("skim")) return "Ceiling skim coat";
+  if (text.includes("drywall")) return "Drywall repair / installation";
+  if (text.includes("paint")) return "Interior painting";
+  return String(client.service || client.workNeeded || "Project work").slice(0, 80).trim();
+}
+
 function createEstimateHref(client = {}, salesTeamMode = false) {
   const params = new URLSearchParams({ source: "crm" });
   if (salesTeamMode) {
@@ -156,8 +165,9 @@ function createEstimateHref(client = {}, salesTeamMode = false) {
   if (contact) params.set("contact", contact);
   const site = [client.address, client.city].filter(Boolean).join(", ");
   if (site) params.set("site", site);
-  if (client.service) params.set("service", client.service);
-  if (client.workNeeded) params.set("work", client.workNeeded);
+  const compactService = compactServiceLabel(client);
+  if (compactService) params.set("service", compactService);
+  if (compactService) params.set("work", compactService);
   if (client.city) params.set("city", client.city);
   if (client.squareFootage) params.set("size", client.squareFootage);
   if (client.estimateAmount) {

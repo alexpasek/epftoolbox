@@ -427,6 +427,18 @@ function money(value) {
   }).format(numberValue(value));
 }
 
+function cleanQuoteText(value = "") {
+  return String(value || "")
+    .replace(/\(?\s*\$[\d,]+(?:\.\d{1,2})?\s*\)?/g, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
+function isSummaryQuoteItem(item = {}) {
+  const text = [item.title, item.service, item.description].filter(Boolean).join(" ").toLowerCase();
+  return /\bhst\b|\btax\b|\bsubtotal\b|\btotal\b|\bbalance\b|\bdeposit\b/.test(text);
+}
+
 function normalizeQuoteItem(item = {}) {
   const qty = numberValue(item.qty || 1) || 1;
   const amount = numberValue(item.amount);
@@ -436,12 +448,12 @@ function normalizeQuoteItem(item = {}) {
     ...(Array.isArray(item.scope) ? item.scope : []),
     item.notes || "",
   ]
-    .map((line) => String(line || "").trim())
+    .map(cleanQuoteText)
     .filter(Boolean);
-  const description = String(item.description || item.service || item.title || "Project work").trim();
+  const description = cleanQuoteText(item.description || item.service || item.title || "Project work");
 
   return {
-    title: String(item.title || item.service || description.split("\n")[0] || "Project work").trim(),
+    title: cleanQuoteText(item.title || item.service || description.split("\n")[0] || "Project work"),
     description: detailLines.length ? [description, ...detailLines].join("\n") : description,
     details: detailLines,
     qty,
@@ -544,7 +556,7 @@ function createBundledQuoteItems(client = {}, quote = {}) {
 }
 
 function createDetailedQuoteItems(items = []) {
-  return items.map((item) => {
+  return items.filter((item) => !isSummaryQuoteItem(item)).map((item) => {
     const normalized = normalizeQuoteItem(item);
     const hasExplicitPrice = numberValue(item.amount) > 0 || numberValue(item.rate) > 0;
     return {

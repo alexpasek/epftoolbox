@@ -1088,6 +1088,31 @@ export default function EstimateBuilderPage() {
         .filter(Boolean);
     }
 
+    function shortServiceLabel(value = "") {
+      const text = String(value || "").trim();
+      const lower = text.toLowerCase();
+      if (lower.includes("popcorn") || lower.includes("stucco")) return "Popcorn / Stucco Removal";
+      if (lower.includes("skim")) return "Ceiling skim coat";
+      if (lower.includes("drywall")) return "Drywall repair / installation";
+      if (lower.includes("paint")) return "Interior painting";
+      return text.length > 80 ? text.slice(0, 80).trim() : text;
+    }
+
+    function extractPretaxTotal(text = "") {
+      const match = String(text || "").match(/\b(\d[\d,]*(?:\.\d{1,2})?)\s*(?:\+|plus)\s*hst\b/i);
+      if (!match?.[1]) return 0;
+      const value = Number(match[1].replace(/,/g, ""));
+      return Number.isFinite(value) ? value : 0;
+    }
+
+    function isSummaryPriceLine(title = "") {
+      const clean = String(title || "").toLowerCase();
+      return (
+        /\bhst\b|\btax\b|\bsubtotal\b|\btotal\b|\bbalance\b|\bdeposit\b/.test(clean) ||
+        !/[a-z]/i.test(clean)
+      );
+    }
+
     function parsePricedItemsFromText(text = "", totalAmount = 0) {
       const source = String(text || "")
         .replace(/\s+/g, " ")
@@ -1103,6 +1128,7 @@ export default function EstimateBuilderPage() {
           .replace(/^(and|plus|include|includes|included)\s+/i, "")
           .replace(/\b(area|service|item)\s*$/i, "")
           .trim();
+        if (isSummaryPriceLine(title)) continue;
         const amount = Number(String(match[2] || "").replace(/,/g, ""));
         if (title && Number.isFinite(amount) && amount > 0) {
           pricedItems.push({
@@ -1122,10 +1148,11 @@ export default function EstimateBuilderPage() {
       const baseDetails = splitDescriptionLines(textWithoutPricedParts)
         .flatMap((line) => line.split(/,\s+(?=(?:floor|dust|ceiling|skim|sanding|primer|repair|kitchen|washroom|interior|baseboards|cleanup|paint)\b)/i))
         .map(cleanPriceFromText)
-        .filter(Boolean)
+        .filter((line) => line && !isSummaryPriceLine(line))
         .slice(0, 8);
       const pricedTotal = pricedItems.reduce((sum, item) => sum + Number(item.amount || 0), 0);
-      const baseAmount = Number(totalAmount || 0) > pricedTotal ? Number(totalAmount) - pricedTotal : 0;
+      const sourceTotal = Number(totalAmount || 0) || extractPretaxTotal(source);
+      const baseAmount = sourceTotal > pricedTotal ? sourceTotal - pricedTotal : 0;
 
       if (baseDetails.length || baseAmount > 0) {
         pricedItems.unshift({
@@ -1169,7 +1196,7 @@ export default function EstimateBuilderPage() {
       window.__EPF_CRM_CLIENT_ID__ = params.get("clientId") || "";
       setCrmClientId(window.__EPF_CRM_CLIENT_ID__);
       const quoteAmount = Number(String(params.get("amount") || "").replace(/[^0-9.]/g, ""));
-      const service = params.get("work") || params.get("service");
+      const service = shortServiceLabel(params.get("work") || params.get("service"));
       const size = params.get("size");
       const notes = params.get("notes") || "";
 
@@ -1198,7 +1225,7 @@ export default function EstimateBuilderPage() {
         const brandProfile = BRAND_PROFILES[brand] || BRAND_PROFILES.epf;
         setText("#preparedBy", `${assignedTo} — ${brandProfile.name}`);
       }
-      if (service || size) {
+      if (service || size || estimateDate) {
         setText(
           "#startWindow",
           [service, size ? `Size: ${size}` : "", estimateDate ? `Date: ${estimateDate}` : ""]
@@ -1699,8 +1726,8 @@ export default function EstimateBuilderPage() {
           <div class="rowActions">
             <button class="btn ghost mini moveUp" type="button" title="Move up" aria-label="Move row up">↑</button>
             <button class="btn ghost mini moveDown" type="button" title="Move down" aria-label="Move row down">↓</button>
-            <button class="btn ghost chooseService" type="button" title="Pick service">⋯</button>
-            <button class="btn del" type="button" title="Remove">✕</button>
+            <button class="btn del rowDelete" type="button" title="Delete this item">Delete</button>
+            <button class="btn ghost chooseService" type="button" title="Edit service">⋯</button>
           </div>
         </td>
       `;

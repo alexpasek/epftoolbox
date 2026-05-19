@@ -295,11 +295,11 @@ export async function GET(req) {
             },
             description: {
               type: "string",
-              description: "Simple quote line description when no detailed line items are supplied.",
+              description: "Simple quote line description when no detailed line items are supplied. Do not include tax totals or summary prices here.",
             },
             items: {
               type: "array",
-              description: "Detailed priced service lines. If an item has amount or rate, it appears with a price instead of Included.",
+              description: "Detailed estimator service lines. Put the short service name in title, scope text without prices in details, and the price only in rate/amount. Do not add subtotal, HST, tax, or total summary rows as items.",
               items: { $ref: "#/components/schemas/QuoteItem" },
             },
             notes: { type: "string" },

@@ -872,6 +872,13 @@
     border-radius: 999px;
 }
 
+.epf .rowActions .rowDelete {
+    border-color: #fecdd3;
+    background: #fff1f2;
+    color: #be123c;
+    font-weight: 700;
+}
+
 
 /* Totals */
 
@@ -2329,6 +2336,13 @@ body.customer .epf .sec .roomHeader {
 .epf .btn.del {
     padding: 4px 8px;
     border-radius: 999px;
+}
+
+.epf .rowActions .rowDelete {
+    border-color: #fecdd3;
+    background: #fff1f2;
+    color: #be123c;
+    font-weight: 700;
 }
 
 
