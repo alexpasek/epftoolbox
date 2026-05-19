@@ -1006,7 +1006,164 @@ export default function EstimateBuilderPage() {
       attachSectionControls(); // ensure per-section controls exist + totals
     }
 
-    function applyCrmPrefillFromQuery() {
+    async function loadInvoiceRecordById(id) {
+      const quoteId = String(id || "").trim();
+      if (!quoteId) return null;
+
+      const localKeys = ["epf.invoices", "epf.eslist"];
+      for (const key of localKeys) {
+        const localRecord = parseStoredList(window.localStorage.getItem(key)).find(
+          (item) => String(item?.id) === quoteId || String(item?.quoteId) === quoteId
+        );
+        if (localRecord) return localRecord;
+      }
+
+      try {
+        const res = await fetch(`/api/invoices?id=${encodeURIComponent(quoteId)}`, {
+          cache: "no-store",
+        });
+        if (!res.ok) return null;
+        return await res.json();
+      } catch (err) {
+        console.warn("Failed to load CRM quote record", err);
+        return null;
+      }
+    }
+
+    function cleanPriceFromText(value = "") {
+      return String(value || "")
+        .replace(/\(?\s*\$[\d,]+(?:\.\d{1,2})?\s*\)?/g, "")
+        .replace(/\s{2,}/g, " ")
+        .replace(/\s+([.,;:])/g, "$1")
+        .trim();
+    }
+
+    function splitDescriptionLines(value = "") {
+      return String(value || "")
+        .replace(/<br\s*\/?>/gi, "\n")
+        .split(/\n+/)
+        .map((line) => cleanPriceFromText(line))
+        .filter(Boolean);
+    }
+
+    function softSplitDescription(value = "") {
+      const lines = splitDescriptionLines(value);
+      if (!lines.length) return { title: "Project work", details: [] };
+      const first = lines[0];
+      if (first.length <= 90) {
+        return { title: first, details: lines.slice(1) };
+      }
+      const parts = first
+        .split(/(?<=[.!?])\s+|,\s+(?=(?:include|includes|included|floor|dust|ceiling|skim|sanding|primer|repair|kitchen|washroom|interior|baseboards|cleanup|paint)\b)/i)
+        .map(cleanPriceFromText)
+        .filter(Boolean);
+      if (parts.length > 1) {
+        return { title: parts[0], details: [...parts.slice(1), ...lines.slice(1)] };
+      }
+      return { title: first.slice(0, 90).trim(), details: [first.slice(90).trim(), ...lines.slice(1)].filter(Boolean) };
+    }
+
+    function quoteItemTitle(item = {}) {
+      const split = softSplitDescription(item.description || item.desc || "");
+      return cleanPriceFromText(
+        item.title ||
+        item.service ||
+        split.title ||
+        "Project work"
+      );
+    }
+
+    function quoteItemDetails(item = {}) {
+      const split = softSplitDescription(item.description || item.desc || "");
+      const explicitDetails = [
+        ...(Array.isArray(item.details) ? item.details : []),
+        ...(Array.isArray(item.scope) ? item.scope : []),
+        item.notes || "",
+      ]
+        .flatMap((value) => splitDescriptionLines(value))
+        .filter(Boolean);
+      const fromDescription = split.details;
+      return [...fromDescription, ...explicitDetails]
+        .map(cleanPriceFromText)
+        .filter(Boolean);
+    }
+
+    function parsePricedItemsFromText(text = "", totalAmount = 0) {
+      const source = String(text || "")
+        .replace(/\s+/g, " ")
+        .replace(/\s+\$/g, " $")
+        .trim();
+      if (!source) return [];
+
+      const pricedItems = [];
+      const priceRegex = /([^.$;:()]{4,180}?)\s+\$([\d,]+(?:\.\d{1,2})?)/g;
+      let match;
+      while ((match = priceRegex.exec(source))) {
+        const title = cleanPriceFromText(match[1])
+          .replace(/^(and|plus|include|includes|included)\s+/i, "")
+          .replace(/\b(area|service|item)\s*$/i, "")
+          .trim();
+        const amount = Number(String(match[2] || "").replace(/,/g, ""));
+        if (title && Number.isFinite(amount) && amount > 0) {
+          pricedItems.push({
+            title,
+            details: [],
+            qty: 1,
+            unit: "job",
+            rate: amount,
+            amount,
+          });
+        }
+      }
+
+      if (!pricedItems.length) return [];
+
+      const textWithoutPricedParts = cleanPriceFromText(source.replace(priceRegex, " "));
+      const baseDetails = splitDescriptionLines(textWithoutPricedParts)
+        .flatMap((line) => line.split(/,\s+(?=(?:floor|dust|ceiling|skim|sanding|primer|repair|kitchen|washroom|interior|baseboards|cleanup|paint)\b)/i))
+        .map(cleanPriceFromText)
+        .filter(Boolean)
+        .slice(0, 8);
+      const pricedTotal = pricedItems.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+      const baseAmount = Number(totalAmount || 0) > pricedTotal ? Number(totalAmount) - pricedTotal : 0;
+
+      if (baseDetails.length || baseAmount > 0) {
+        pricedItems.unshift({
+          title: baseDetails[0] || "Project work",
+          details: baseDetails.slice(1),
+          qty: 1,
+          unit: "job",
+          rate: baseAmount,
+          amount: baseAmount,
+          included: baseAmount <= 0,
+        });
+      }
+
+      return pricedItems;
+    }
+
+    function normalizeQuoteItems(record = {}, fallback = {}) {
+      const recordItems = Array.isArray(record.items) ? record.items.filter(Boolean) : [];
+      const first = recordItems[0];
+      const firstDescription = first?.description || "";
+      const embeddedPriceItems = parsePricedItemsFromText(
+        [firstDescription, record.notes, fallback.notes].filter(Boolean).join(" "),
+        fallback.amount || record.totals?.total || first?.amount || 0
+      );
+      if (embeddedPriceItems.length > 1) {
+        return [
+          ...embeddedPriceItems,
+          ...recordItems.slice(1).filter((item) => {
+            const amount = Number(item?.amount || item?.rate || 0) || 0;
+            return item?.included === true || item?.zeroLabel === "included" || amount <= 0;
+          }),
+        ];
+      }
+
+      return recordItems;
+    }
+
+    async function applyCrmPrefillFromQuery() {
       const params = new URLSearchParams(window.location.search || "");
       if (params.get("source") !== "crm") return;
       window.__EPF_CRM_CLIENT_ID__ = params.get("clientId") || "";
@@ -1050,7 +1207,33 @@ export default function EstimateBuilderPage() {
         );
       }
 
-      if (Number.isFinite(quoteAmount) && quoteAmount > 0) {
+      const invoiceRecord = await loadInvoiceRecordById(params.get("estimateId"));
+      const quoteItems = invoiceRecord
+        ? normalizeQuoteItems(invoiceRecord, { amount: quoteAmount, notes })
+        : parsePricedItemsFromText(notes, quoteAmount);
+
+      if (invoiceRecord) {
+        setText("#qid", invoiceRecord.quoteId || invoiceRecord.id);
+        setText("#scope_notes", cleanPriceFromText(invoiceRecord.notes || notes));
+        const taxNow = document.getElementById("cbTaxNow");
+        if (taxNow) taxNow.checked = invoiceRecord.taxNow === true;
+        const matFixed = document.getElementById("mat_fixed");
+        if (matFixed) matFixed.value = String(invoiceRecord.matFixed || 0);
+        const matPct = document.getElementById("mat_pct");
+        if (matPct) matPct.value = String(invoiceRecord.matPct || 0);
+        const matDisplay = document.getElementById("mat_display");
+        if (matDisplay) matDisplay.value = invoiceRecord.materialsMode || "included";
+      }
+
+      if (quoteItems.length) {
+        buildCrmQuoteSection({
+          amount: quoteAmount || invoiceRecord?.totals?.total || 0,
+          service,
+          size,
+          notes: invoiceRecord?.notes || notes,
+          items: quoteItems,
+        });
+      } else if (Number.isFinite(quoteAmount) && quoteAmount > 0) {
         buildCrmQuoteSection({
           amount: quoteAmount,
           service,
@@ -1103,7 +1286,7 @@ export default function EstimateBuilderPage() {
       return `<strong>${escapeHtml(title)}</strong>${detailList ? `<ul>${detailList}</ul>` : ""}`;
     }
 
-    function buildCrmQuoteSection({ amount = 0, service = "", size = "", notes = "" } = {}) {
+    function buildCrmQuoteSection({ amount = 0, service = "", size = "", notes = "", items = [] } = {}) {
       const existing = document.getElementById("sec-crm-quote");
       if (existing) existing.remove();
 
@@ -1111,6 +1294,31 @@ export default function EstimateBuilderPage() {
       const lowerService = String(service || "").toLowerCase();
       const isPopcorn = lowerService.includes("popcorn") || lowerService.includes("stucco");
       const mainTitle = service || (isPopcorn ? "Popcorn ceiling removal - unpainted" : "Project work");
+      const hasDetailedItems = Array.isArray(items) && items.length > 0;
+
+      if (hasDetailedItems) {
+        items.forEach((item) => {
+          const itemAmount = Number(item.amount || 0) || Number(item.rate || 0) || 0;
+          const included = item.included === true || item.zeroLabel === "included" || itemAmount <= 0;
+          const details = quoteItemDetails(item);
+          addRow(sec, {
+            descHTML: buildDetailsHtml(quoteItemTitle(item), details),
+            qty: item.qty || 1,
+            unit: item.unit || "job",
+            rate: included ? 0 : itemAmount / (Number(item.qty || 1) || 1),
+            zeroLabel: included ? "included" : "",
+          });
+        });
+
+        const taxNow = document.getElementById("cbTaxNow");
+        if (taxNow) taxNow.checked = false;
+        const matDisplay = document.getElementById("mat_display");
+        if (matDisplay) matDisplay.value = "included";
+        if (notes) setTextValue("#scope_notes", cleanPriceFromText(notes));
+        window.__EPF_RECALC__?.();
+        return;
+      }
+
       const mainDetails = isPopcorn
         ? [
             "Dust-controlled texture removal",
@@ -1174,7 +1382,7 @@ export default function EstimateBuilderPage() {
       if (taxNow) taxNow.checked = false;
       const matDisplay = document.getElementById("mat_display");
       if (matDisplay) matDisplay.value = "included";
-      if (notes) setTextValue("#scope_notes", notes);
+      if (notes) setTextValue("#scope_notes", cleanPriceFromText(notes));
       window.__EPF_RECALC__?.();
     }
 
@@ -2692,7 +2900,9 @@ export default function EstimateBuilderPage() {
         attachSectionControls();
       }
     }
-    applyCrmPrefillFromQuery();
+    void applyCrmPrefillFromQuery().finally(() => {
+      window.__EPF_RECALC__?.();
+    });
     window.__EPF_RECALC__?.();
 
     /** ========= Google Places: Place ID link ========= */

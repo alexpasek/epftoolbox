@@ -167,6 +167,8 @@ function createEstimateHref(client = {}, salesTeamMode = false) {
       params.set("autoAttach", "1");
     }
   }
+  const estimateId = Array.isArray(client.estimateIds) ? client.estimateIds.filter(Boolean)[0] : "";
+  if (estimateId) params.set("estimateId", estimateId);
   if (client.estimateDate) params.set("estimateDate", client.estimateDate);
   if (client.requestedDate) params.set("requestedDate", client.requestedDate);
   if (client.followUpDate) params.set("followUpDate", client.followUpDate);

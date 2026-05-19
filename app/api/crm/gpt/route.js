@@ -431,9 +431,19 @@ function normalizeQuoteItem(item = {}) {
   const qty = numberValue(item.qty || 1) || 1;
   const amount = numberValue(item.amount);
   const rate = numberValue(item.rate || amount / qty);
+  const detailLines = [
+    ...(Array.isArray(item.details) ? item.details : []),
+    ...(Array.isArray(item.scope) ? item.scope : []),
+    item.notes || "",
+  ]
+    .map((line) => String(line || "").trim())
+    .filter(Boolean);
+  const description = String(item.description || item.service || item.title || "Project work").trim();
 
   return {
-    description: String(item.description || item.service || "Project work").trim(),
+    title: String(item.title || item.service || description.split("\n")[0] || "Project work").trim(),
+    description: detailLines.length ? [description, ...detailLines].join("\n") : description,
+    details: detailLines,
     qty,
     unit: String(item.unit || "job").trim(),
     rate,

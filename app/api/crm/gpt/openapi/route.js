@@ -259,7 +259,21 @@ export async function GET(req) {
         QuoteItem: {
           type: "object",
           properties: {
+            title: {
+              type: "string",
+              description: "Short service name shown as the quote row title, without price.",
+            },
             description: { type: "string" },
+            details: {
+              type: "array",
+              description: "Scope details for this service line, without prices.",
+              items: { type: "string" },
+            },
+            scope: {
+              type: "array",
+              description: "Alternative field for scope details, without prices.",
+              items: { type: "string" },
+            },
             qty: { type: "number" },
             unit: { type: "string" },
             rate: { type: "number" },
