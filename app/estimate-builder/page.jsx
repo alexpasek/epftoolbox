@@ -760,6 +760,7 @@ export default function EstimateBuilderPage() {
   const [printSnapshot, setPrintSnapshot] = useState(null);
   const [previewVisible, setPreviewVisible] = useState(false);
   const [isPrinting, setIsPrinting] = useState(false);
+  const [crmClientId, setCrmClientId] = useState("");
   const activeBrand = BRAND_PROFILES[brandKey] || BRAND_PROFILES.epf;
   useEffect(() => {
     brandKeyRef.current = brandKey;
@@ -1009,6 +1010,7 @@ export default function EstimateBuilderPage() {
       const params = new URLSearchParams(window.location.search || "");
       if (params.get("source") !== "crm") return;
       window.__EPF_CRM_CLIENT_ID__ = params.get("clientId") || "";
+      setCrmClientId(window.__EPF_CRM_CLIENT_ID__);
       const quoteAmount = Number(String(params.get("amount") || "").replace(/[^0-9.]/g, ""));
       const service = params.get("work") || params.get("service");
       const size = params.get("size");
@@ -1105,7 +1107,7 @@ export default function EstimateBuilderPage() {
       const existing = document.getElementById("sec-crm-quote");
       if (existing) existing.remove();
 
-      const sec = createCustomSection("CRM Quote", "sec-crm-quote");
+      const sec = createCustomSection("Quote", "sec-crm-quote");
       const lowerService = String(service || "").toLowerCase();
       const isPopcorn = lowerService.includes("popcorn") || lowerService.includes("stucco");
       const mainTitle = service || (isPopcorn ? "Popcorn ceiling removal - unpainted" : "Project work");
@@ -2818,6 +2820,36 @@ export default function EstimateBuilderPage() {
     }, 200);
   }
 
+  function saveCurrentEstimateToCrm() {
+    const snapshot = capturePrintSnapshot(brandKeyRef.current || brandKey);
+    if (!snapshot) return null;
+    const saveFn =
+      snapshot.brandKey === "alphaDrywall" ? saveEsRecord : saveInvoiceRecord;
+    const saved = saveFn(snapshot);
+    if (saved?.id) {
+      window.alert(
+        `Saved and attached quote "${saved.quoteId || saved.id}" to CRM.\n\nUse Print / Save PDF when you need the PDF file.`
+      );
+    }
+    return saved;
+  }
+
+  function resetCrmBuilderQuote() {
+    if (typeof window === "undefined") return;
+    const ok = window.confirm(
+      "Reset this builder quote? This clears the builder draft and reloads a blank CRM quote from the CRM client info."
+    );
+    if (!ok) return;
+    try {
+      window.localStorage.removeItem(STATE_KEY);
+      const clientId = window.__EPF_CRM_CLIENT_ID__ || crmClientId || "crm";
+      Object.keys(window.sessionStorage)
+        .filter((key) => key.startsWith(`epf.crm.autoAttach.${clientId}.`))
+        .forEach((key) => window.sessionStorage.removeItem(key));
+    } catch {}
+    window.location.reload();
+  }
+
   const locked = accessMode === null;
 
   if (locked) {
@@ -3200,6 +3232,37 @@ export default function EstimateBuilderPage() {
               >
                 JSFIX
               </button>
+            ) : null}
+            {crmClientId ? (
+              <>
+                <Link
+                  href={`/crm?client=${encodeURIComponent(crmClientId)}`}
+                  className="btn ghost"
+                >
+                  Back to CRM
+                </Link>
+                <button
+                  type="button"
+                  className="btn primary"
+                  onClick={saveCurrentEstimateToCrm}
+                >
+                  Save to CRM
+                </button>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => triggerPrint(brandKeyRef.current || brandKey)}
+                >
+                  Save to CRM / PDF
+                </button>
+                <button
+                  type="button"
+                  className="btn del"
+                  onClick={resetCrmBuilderQuote}
+                >
+                  Reset Builder
+                </button>
+              </>
             ) : null}
             {brandKey === "alphaDrywall" ? (
               <button
