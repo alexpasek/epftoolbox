@@ -160,6 +160,18 @@ function createEstimateHref(client = {}, salesTeamMode = false) {
   if (client.workNeeded) params.set("work", client.workNeeded);
   if (client.city) params.set("city", client.city);
   if (client.squareFootage) params.set("size", client.squareFootage);
+  if (client.estimateAmount) {
+    const estimateAmount = String(client.estimateAmount || "").replace(/[^0-9.]/g, "");
+    if (estimateAmount) {
+      params.set("amount", estimateAmount);
+      params.set("autoAttach", "1");
+    }
+  }
+  if (client.estimateDate) params.set("estimateDate", client.estimateDate);
+  if (client.requestedDate) params.set("requestedDate", client.requestedDate);
+  if (client.followUpDate) params.set("followUpDate", client.followUpDate);
+  if (client.assignedTo) params.set("assignedTo", client.assignedTo);
+  if (client.notes) params.set("notes", client.notes);
   return `/estimate-builder?${params.toString()}`;
 }
 

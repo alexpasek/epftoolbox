@@ -1009,6 +1009,10 @@ export default function EstimateBuilderPage() {
       const params = new URLSearchParams(window.location.search || "");
       if (params.get("source") !== "crm") return;
       window.__EPF_CRM_CLIENT_ID__ = params.get("clientId") || "";
+      const quoteAmount = Number(String(params.get("amount") || "").replace(/[^0-9.]/g, ""));
+      const service = params.get("work") || params.get("service");
+      const size = params.get("size");
+      const notes = params.get("notes") || "";
 
       const setText = (sel, value) => {
         const trimmed = String(value || "").trim();
@@ -1025,14 +1029,162 @@ export default function EstimateBuilderPage() {
       setText("#client", params.get("client"));
       setText("#clientContact", params.get("contact"));
       setText("#site", params.get("site"));
+      setText("#scope_notes", notes);
 
-      const service = params.get("work") || params.get("service");
-      const size = params.get("size");
+      const estimateDate = params.get("estimateDate") || params.get("requestedDate");
+      if (estimateDate) setText("#startWindow", estimateDate);
+      if (params.get("assignedTo")) {
+        const assignedTo = params.get("assignedTo");
+        const brand = params.get("brand") || window.__EPF_BRAND__ || "epf";
+        const brandProfile = BRAND_PROFILES[brand] || BRAND_PROFILES.epf;
+        setText("#preparedBy", `${assignedTo} — ${brandProfile.name}`);
+      }
       if (service || size) {
         setText(
           "#startWindow",
-          [service, size ? `Size: ${size}` : ""].filter(Boolean).join(" | ")
+          [service, size ? `Size: ${size}` : "", estimateDate ? `Date: ${estimateDate}` : ""]
+            .filter(Boolean)
+            .join(" | ")
         );
+      }
+
+      if (Number.isFinite(quoteAmount) && quoteAmount > 0) {
+        buildCrmQuoteSection({
+          amount: quoteAmount,
+          service,
+          size,
+          notes,
+        });
+      }
+
+      if (params.get("autoAttach") === "1" && window.__EPF_CRM_CLIENT_ID__) {
+        const key = `epf.crm.autoAttach.${window.__EPF_CRM_CLIENT_ID__}.${Math.round(quoteAmount || 0)}`;
+        if (!window.sessionStorage.getItem(key)) {
+          window.sessionStorage.setItem(key, "1");
+          window.setTimeout(() => {
+            try {
+              const data = scrapeEstimateFromDom(
+                (typeof window !== "undefined" && window.__EPF_BRAND__) || "epf"
+              );
+              if (!data) return;
+              const { gPlaceId, ...safe } = data;
+              const record =
+                safe.brandKey === "alphaDrywall" ? saveEsRecord(safe) : saveInvoiceRecord(safe);
+              if (record?.id) {
+                console.debug("CRM estimate auto-attached", {
+                  clientId: window.__EPF_CRM_CLIENT_ID__,
+                  estimateId: record.id,
+                });
+              }
+            } catch (err) {
+              console.warn("Failed to auto-attach CRM estimate", err);
+            }
+          }, 250);
+        }
+      }
+    }
+
+    function escapeHtml(value = "") {
+      return String(value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+
+    function buildDetailsHtml(title, details = []) {
+      const detailList = details
+        .filter(Boolean)
+        .map((detail) => `<li>${escapeHtml(detail)}</li>`)
+        .join("");
+      return `<strong>${escapeHtml(title)}</strong>${detailList ? `<ul>${detailList}</ul>` : ""}`;
+    }
+
+    function buildCrmQuoteSection({ amount = 0, service = "", size = "", notes = "" } = {}) {
+      const existing = document.getElementById("sec-crm-quote");
+      if (existing) existing.remove();
+
+      const sec = createCustomSection("CRM Quote", "sec-crm-quote");
+      const lowerService = String(service || "").toLowerCase();
+      const isPopcorn = lowerService.includes("popcorn") || lowerService.includes("stucco");
+      const mainTitle = service || (isPopcorn ? "Popcorn ceiling removal - unpainted" : "Project work");
+      const mainDetails = isPopcorn
+        ? [
+            "Dust-controlled texture removal",
+            "HEPA sand ceilings smooth",
+            "Edges kept crisp",
+            "Floors & openings sealed off",
+          ]
+        : [
+            "Professional labour and site preparation",
+            "Materials and work areas organized",
+            "Daily cleanup included",
+            "Final walkthrough included",
+          ];
+
+      addRow(sec, {
+        descHTML: buildDetailsHtml(size ? `${mainTitle} (${size})` : mainTitle, mainDetails),
+        qty: 1,
+        unit: "job",
+        rate: amount,
+      });
+
+      const includedRows = isPopcorn
+        ? [
+            [
+              "Floor protection & masking",
+              ["RamBoard / poly protection", "Tape baseboards & stairs", "Remove + reset coverings per day"],
+            ],
+            [
+              "Level 5 skim coat",
+              ["2-3 passes joint compound", "Feather to edges + inspect with light", "Final HEPA sand + dust removal"],
+            ],
+            [
+              "Ceiling priming",
+              ["Prime repairs/stains for uniformity", "Back-roll for even coverage", "Check for touch-ups before paint"],
+            ],
+            [
+              "Ceiling paint (2 coats)",
+              ["2 coats ceiling finish", "Clean cut lines + even texture", "Low-VOC coatings for occupied homes"],
+            ],
+            [
+              "Cleanup & disposal",
+              ["HEPA vacuum surfaces & vents", "Bag debris + wipe touch points", "Daily tidy + final walkthrough"],
+            ],
+          ]
+        : [
+            ["Site protection & masking", ["Floors and adjacent areas protected", "Daily cleanup included"]],
+            ["Preparation & finishing", ["Surface prep included", "Ready-for-client walkthrough"]],
+          ];
+
+      includedRows.forEach(([title, details]) => {
+        addRow(sec, {
+          descHTML: buildDetailsHtml(title, details),
+          qty: 1,
+          unit: "job",
+          rate: 0,
+          zeroLabel: "included",
+        });
+      });
+
+      const taxNow = document.getElementById("cbTaxNow");
+      if (taxNow) taxNow.checked = false;
+      const matDisplay = document.getElementById("mat_display");
+      if (matDisplay) matDisplay.value = "included";
+      if (notes) setTextValue("#scope_notes", notes);
+      window.__EPF_RECALC__?.();
+    }
+
+    function setTextValue(sel, value) {
+      const trimmed = String(value || "").trim();
+      if (!trimmed) return;
+      const el = document.querySelector(sel);
+      if (!el) return;
+      if ("value" in el && ["INPUT", "SELECT", "TEXTAREA"].includes(el.tagName)) {
+        el.value = trimmed;
+      } else {
+        el.textContent = trimmed;
       }
     }
 
