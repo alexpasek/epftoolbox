@@ -1188,6 +1188,27 @@ export default function EstimateBuilderPage() {
       }
     }
 
+    function resetEstimateToBlankForCrm() {
+      const coreIds = new Set(["sec-popcorn", "sec-paint", "sec-add"]);
+      document.querySelectorAll(".sec").forEach((sec) => {
+        if (!coreIds.has(sec.id)) {
+          sec.remove();
+          return;
+        }
+        sec.setAttribute("data-enabled", "0");
+        sec.setAttribute("data-hide-customer", "0");
+        const tb = sec.querySelector("tbody");
+        if (tb) tb.innerHTML = "";
+        const hideCb = sec.querySelector(".hideSec");
+        if (hideCb) hideCb.checked = false;
+      });
+      document.querySelectorAll(".svc").forEach((checkbox) => {
+        checkbox.checked = false;
+      });
+      attachSectionControls();
+      window.__EPF_RECALC__?.();
+    }
+
     // autosave (JSON snapshot)
     let draftTimer = null;
     function scheduleDraftSave() {
@@ -2647,20 +2668,27 @@ export default function EstimateBuilderPage() {
     const d = $("#date");
     if (d && !d.value) d.value = new Date().toISOString().slice(0, 10);
 
-    // try restore JSON
-    try {
-      const raw = window.localStorage.getItem(STATE_KEY);
-      if (raw) {
-        const state = JSON.parse(raw);
-        restoreEstimate(state);
-      } else {
-        // first-time defaults
+    const initialParams = new URLSearchParams(window.location.search || "");
+    const isCrmEstimate = initialParams.get("source") === "crm";
+
+    // try restore JSON, except CRM estimate opens must start blank
+    if (isCrmEstimate) {
+      resetEstimateToBlankForCrm();
+    } else {
+      try {
+        const raw = window.localStorage.getItem(STATE_KEY);
+        if (raw) {
+          const state = JSON.parse(raw);
+          restoreEstimate(state);
+        } else {
+          // first-time defaults
+          initPopcornDefaults();
+          attachSectionControls(); // add totals + controls under built-in sections
+        }
+      } catch {
         initPopcornDefaults();
-        attachSectionControls(); // add totals + controls under built-in sections
+        attachSectionControls();
       }
-    } catch {
-      initPopcornDefaults();
-      attachSectionControls();
     }
     applyCrmPrefillFromQuery();
     window.__EPF_RECALC__?.();
