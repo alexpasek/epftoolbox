@@ -116,6 +116,69 @@ function addDaysISO(days, from = new Date()) {
   return date.toISOString().slice(0, 10);
 }
 
+function dateTimeForICS(dateISO = addDaysISO(2), hour = 9) {
+  const compactDate = String(dateISO || addDaysISO(2)).replace(/-/g, "");
+  return `${compactDate}T${String(hour).padStart(2, "0")}0000`;
+}
+
+function escapeICS(value = "") {
+  return String(value)
+    .replace(/\\/g, "\\\\")
+    .replace(/\n/g, "\\n")
+    .replace(/,/g, "\\,")
+    .replace(/;/g, "\\;");
+}
+
+function createFollowUpMessage(client = {}) {
+  const firstName = String(client.name || "").trim().split(/\s+/)[0] || "there";
+  const service = compactServiceLabel(client).toLowerCase();
+  const city = client.city ? ` in ${client.city}` : "";
+  const estimate = numberValue(client.estimateAmount) ? ` The estimate is ${money(client.estimateAmount)}.` : "";
+  return `Hi ${firstName}, just following up about the ${service}${city}.${estimate} Let me know if you have any questions or if you would like to book the next step.`;
+}
+
+function downloadFollowUpCalendar(client = {}, dateISO = addDaysISO(2), message = "") {
+  if (typeof window === "undefined") return;
+  const title = `Follow up: ${client.name || client.phone || "CRM lead"}`;
+  const description = [
+    message,
+    client.phone ? `Phone: ${client.phone}` : "",
+    client.email ? `Email: ${client.email}` : "",
+    client.service ? `Service: ${client.service}` : "",
+    client.address ? `Address: ${client.address}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+  const location = [client.address, client.city].filter(Boolean).join(", ");
+  const ics = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//EPF Toolbox//CRM Follow Up//EN",
+    "CALSCALE:GREGORIAN",
+    "BEGIN:VEVENT",
+    `UID:${escapeICS(client.id || makeId())}-${dateISO}@epf-toolbox`,
+    `DTSTAMP:${dateTimeForICS(todayISO(), 12)}Z`,
+    `DTSTART:${dateTimeForICS(dateISO, 9)}`,
+    `DTEND:${dateTimeForICS(dateISO, 9).replace("090000", "093000")}`,
+    `SUMMARY:${escapeICS(title)}`,
+    `DESCRIPTION:${escapeICS(description)}`,
+    location ? `LOCATION:${escapeICS(location)}` : "",
+    "END:VEVENT",
+    "END:VCALENDAR",
+  ]
+    .filter(Boolean)
+    .join("\r\n");
+
+  const blob = new Blob([ics], { type: "text/calendar;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  const safeName = String(client.name || client.phone || "lead").replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "");
+  link.href = url;
+  link.download = `${safeName || "lead"}-follow-up-${dateISO}.ics`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 function money(value) {
   const number = Number(String(value || "").replace(/[^0-9.-]/g, ""));
   if (!Number.isFinite(number) || number === 0) return value ? String(value) : "$0";
@@ -941,6 +1004,8 @@ export default function CrmPage() {
         );
       })
       .sort((a, b) => {
+        if (a.leadStatus === "Lost" && b.leadStatus !== "Lost") return 1;
+        if (a.leadStatus !== "Lost" && b.leadStatus === "Lost") return -1;
         if (needsReminder(a) && !needsReminder(b)) return -1;
         if (!needsReminder(a) && needsReminder(b)) return 1;
         return new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime();
@@ -1344,6 +1409,21 @@ export default function CrmPage() {
       }, 50);
     }
     if (action === "estimateSent") addCommunication(client.id, "Estimate Sent");
+    if (action === "followUp") {
+      const followUpDate = addDaysISO(2);
+      const message = createFollowUpMessage(client);
+      updateClient(
+        client.id,
+        { leadStatus: "Follow-Up", followUpDate },
+        makeTimelineEntry({
+          type: "follow_up",
+          direction: "outbound",
+          content: `Follow-up scheduled for ${followUpDate}.\n\nMessage: ${message}`,
+          createdBy: "CRM",
+        })
+      );
+      downloadFollowUpCalendar(client, followUpDate, message);
+    }
     if (action === "invoice") {
       updateClient(
         client.id,
@@ -1381,11 +1461,11 @@ export default function CrmPage() {
             type="password"
             value={accessPin}
             onChange={(e) => setAccessPin(e.target.value)}
-            className="mt-4 w-full rounded-md border border-slate-300 p-3 text-sm outline-none focus:border-emerald-800"
+            className="mt-4 w-full rounded-md border border-slate-300 p-3 text-sm outline-none focus:border-blue-700"
             autoFocus
           />
           {accessError && <p className="mt-2 text-sm font-bold text-red-600">{accessError}</p>}
-          <button className="mt-4 w-full rounded-md bg-emerald-800 px-4 py-3 text-sm font-black text-white">
+          <button className="mt-4 w-full rounded-md bg-blue-700 px-4 py-3 text-sm font-black text-white hover:bg-blue-800">
             Unlock CRM
           </button>
         </form>
@@ -1410,7 +1490,7 @@ export default function CrmPage() {
         <header className="sticky top-0 z-20 -mx-3 border-b border-slate-200 bg-slate-100/95 px-3 py-3 backdrop-blur md:static md:mx-0 md:border-0 md:bg-transparent md:px-0">
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
-              <Link href="/" className="text-xs font-bold text-emerald-800 hover:underline">
+              <Link href="/" className="text-xs font-bold text-blue-700 hover:underline">
                 Back to menu
               </Link>
               <h1 className="truncate text-xl font-black md:text-3xl">
@@ -1439,7 +1519,7 @@ export default function CrmPage() {
                 <button
                   type="button"
                   onClick={() => setLeadMenuOpen((open) => !open)}
-                  className="rounded-md bg-emerald-800 px-3 py-2 text-sm font-black text-white"
+                  className="rounded-md bg-blue-700 px-3 py-2 text-sm font-black text-white hover:bg-blue-800"
                 >
                   Add Lead
                 </button>
@@ -1584,7 +1664,7 @@ function DesktopTabs({ activeView, setActiveView }) {
           key={item}
           onClick={() => setActiveView(item)}
           className={`flex-1 rounded-md px-4 py-2 text-sm font-black ${
-            activeView === item ? "bg-emerald-800 text-white" : "text-slate-600 hover:bg-slate-100"
+            activeView === item ? "bg-blue-700 text-white" : "text-slate-600 hover:bg-slate-100"
           }`}
         >
           {item}
@@ -1601,7 +1681,7 @@ function BottomNav({ activeView, setActiveView }) {
         <button
           key={item}
           onClick={() => setActiveView(item)}
-          className={`px-1 py-2 text-[11px] font-black ${activeView === item ? "text-emerald-800" : "text-slate-500"}`}
+          className={`px-1 py-2 text-[11px] font-black ${activeView === item ? "text-blue-700" : "text-slate-500"}`}
         >
           <span className="block text-base leading-none">{item.slice(0, 1)}</span>
           {item}
@@ -1652,7 +1732,7 @@ function Dashboard({ stats, clients, setActiveView, openClient, quickAction }) {
         <section className="rounded-lg bg-white p-3 shadow-sm">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-black">My Tasks</h2>
-            <button onClick={() => setActiveView("Clients")} className="text-sm font-bold text-emerald-800">
+            <button onClick={() => setActiveView("Clients")} className="text-sm font-bold text-blue-700">
               All clients
             </button>
           </div>
@@ -1697,8 +1777,14 @@ function Pipeline({ clients, openClient, changeStatus }) {
       <div className="flex flex-col gap-3 pb-2 md:flex-row md:overflow-x-auto">
         {leadStatuses.map((stage) => {
           const stageClients = clients.filter((client) => client.leadStatus === stage);
+          const isLostStage = stage === "Lost";
           return (
-            <section key={stage} className="rounded-lg bg-white p-3 shadow-sm md:min-w-[240px] md:flex-1">
+            <section
+              key={stage}
+              className={`rounded-lg bg-white p-3 shadow-sm ${
+                isLostStage ? "md:min-w-[180px] md:max-w-[220px]" : "md:min-w-[240px] md:flex-1"
+              }`}
+            >
               <div className="sticky top-0 z-10 mb-3 flex items-center justify-between bg-white py-1">
                 <h3 className="text-sm font-black">{stage}</h3>
                 <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-black text-slate-600">
@@ -1710,6 +1796,7 @@ function Pipeline({ clients, openClient, changeStatus }) {
                   <PipelineCard
                     key={client.id}
                     client={client}
+                    compact={isLostStage}
                     openClient={openClient}
                     changeStatus={changeStatus}
                   />
@@ -1728,18 +1815,18 @@ function Pipeline({ clients, openClient, changeStatus }) {
   );
 }
 
-function PipelineCard({ client, openClient, changeStatus }) {
+function PipelineCard({ client, openClient, changeStatus, compact = false }) {
   return (
-    <article className={`rounded-md border bg-white p-3 ${needsReminder(client) ? "border-amber-400" : "border-slate-200"}`}>
+    <article className={`rounded-md border bg-white ${compact ? "p-2" : "p-3"} ${needsReminder(client) ? "border-amber-400" : "border-slate-200"}`}>
       <button onClick={() => openClient(client)} className="w-full text-left">
         <p className="font-black text-slate-950">{client.name || "Unnamed Lead"}</p>
-        <p className="mt-1 text-sm font-semibold text-slate-600">{client.service || "No service"}</p>
-        <p className="text-xs font-bold text-slate-500">{client.city || "No city"}</p>
+        {!compact && <p className="mt-1 text-sm font-semibold text-slate-600">{client.service || "No service"}</p>}
+        <p className="text-xs font-bold text-slate-500">{[compact ? client.service : "", client.city].filter(Boolean).join(" - ") || "No city"}</p>
       </button>
-      <div className="mt-2 grid grid-cols-2 gap-2 text-xs font-bold text-slate-600">
+      <div className={`mt-2 grid gap-2 text-xs font-bold text-slate-600 ${compact ? "grid-cols-1" : "grid-cols-2"}`}>
         <p>{money(client.estimateAmount)}</p>
-        <p>Next: {client.followUpDate || "-"}</p>
-        <p className="col-span-2">Last: {lastContactDate(client) || "-"}</p>
+        {!compact && <p>Next: {client.followUpDate || "-"}</p>}
+        <p className={compact ? "" : "col-span-2"}>Last: {lastContactDate(client) || "-"}</p>
       </div>
       <select
         value={client.leadStatus}
@@ -1755,23 +1842,68 @@ function PipelineCard({ client, openClient, changeStatus }) {
 }
 
 function ClientsView({ clients, savedInvoices, filters, setFilters, filterOptions, search, setSearch, openClient, editClient, deleteClient, quickAction }) {
+  const [controlsOpen, setControlsOpen] = useState(false);
+  const activeFilterCount =
+    (search.trim() ? 1 : 0) +
+    Object.values(filters).filter((value) => value && value !== "All").length;
+
   return (
     <section className="space-y-3">
       <div className="rounded-lg bg-white p-3 shadow-sm">
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="w-full rounded-md border border-slate-300 p-3 text-sm outline-none focus:border-emerald-800"
-          placeholder="Search name, phone, email, city, notes..."
-        />
-        <div className="mt-3 grid gap-2 md:grid-cols-6">
-          <Filter label="Status" value={filters.status} options={["All", ...leadStatuses]} onChange={(v) => setFilters({ ...filters, status: v })} />
-          <Filter label="Salesperson" value={filters.salesperson} options={["All", ...filterOptions.salesperson]} onChange={(v) => setFilters({ ...filters, salesperson: v })} />
-          <Filter label="City" value={filters.city} options={["All", ...filterOptions.city]} onChange={(v) => setFilters({ ...filters, city: v })} />
-          <Filter label="Service" value={filters.service} options={["All", ...filterOptions.service]} onChange={(v) => setFilters({ ...filters, service: v })} />
-          <Filter label="Payment" value={filters.paymentStatus} options={["All", ...paymentStatuses]} onChange={(v) => setFilters({ ...filters, paymentStatus: v })} />
-          <Filter label="Special" value={filters.special} options={["All", "Follow-up overdue", "Balance due", "Completed unpaid"]} onChange={(v) => setFilters({ ...filters, special: v })} />
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 className="text-lg font-black">Clients</h2>
+            <p className="text-xs font-bold text-slate-500">
+              {clients.length} shown{activeFilterCount ? ` • ${activeFilterCount} search/filter active` : ""}
+            </p>
+          </div>
+          <div className="flex gap-2">
+            {activeFilterCount > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearch("");
+                  setFilters({
+                    status: "All",
+                    salesperson: "All",
+                    city: "All",
+                    service: "All",
+                    paymentStatus: "All",
+                    special: "All",
+                  });
+                }}
+                className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-bold"
+              >
+                Clear
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setControlsOpen((open) => !open)}
+              className="rounded-md bg-blue-700 px-3 py-2 text-sm font-black text-white hover:bg-blue-800"
+            >
+              Search / Filters
+            </button>
+          </div>
         </div>
+        {controlsOpen && (
+          <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full rounded-md border border-slate-300 p-3 text-sm outline-none focus:border-blue-700"
+              placeholder="Search name, phone, email, city, notes..."
+            />
+            <div className="mt-3 grid gap-2 md:grid-cols-6">
+              <Filter label="Status" value={filters.status} options={["All", ...leadStatuses]} onChange={(v) => setFilters({ ...filters, status: v })} />
+              <Filter label="Salesperson" value={filters.salesperson} options={["All", ...filterOptions.salesperson]} onChange={(v) => setFilters({ ...filters, salesperson: v })} />
+              <Filter label="City" value={filters.city} options={["All", ...filterOptions.city]} onChange={(v) => setFilters({ ...filters, city: v })} />
+              <Filter label="Service" value={filters.service} options={["All", ...filterOptions.service]} onChange={(v) => setFilters({ ...filters, service: v })} />
+              <Filter label="Payment" value={filters.paymentStatus} options={["All", ...paymentStatuses]} onChange={(v) => setFilters({ ...filters, paymentStatus: v })} />
+              <Filter label="Special" value={filters.special} options={["All", "Follow-up overdue", "Balance due", "Completed unpaid"]} onChange={(v) => setFilters({ ...filters, special: v })} />
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="grid gap-3 lg:grid-cols-2">
@@ -1821,11 +1953,14 @@ function ClientCard({ client, estimates = [], openClient, editClient, deleteClie
       <WorkflowWarnings client={client} />
 
       <div className="mt-3 flex flex-wrap gap-2">
-        <button onClick={() => quickAction(client, "call")} className="rounded-md bg-emerald-800 px-3 py-2 text-sm font-black text-white">
+        <button onClick={() => quickAction(client, "call")} className="rounded-md bg-blue-700 px-3 py-2 text-sm font-black text-white hover:bg-blue-800">
           Call
         </button>
         <button onClick={() => quickAction(client, "text")} className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-bold">
           Text
+        </button>
+        <button onClick={() => quickAction(client, "followUp")} className="rounded-md border border-blue-700 bg-blue-700 px-3 py-2 text-sm font-black text-white hover:bg-blue-800">
+          Follow Up
         </button>
         <button onClick={() => openClient(client)} className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-bold">
           Open
@@ -1905,7 +2040,7 @@ function InvoicesView({ clients, openClient, quickAction }) {
             <Info label="Balance" value={money(client.balanceDue)} />
           </div>
           <div className="mt-3 flex gap-2">
-            <button onClick={() => quickAction(client, "invoice")} className="rounded-md bg-emerald-800 px-3 py-2 text-sm font-black text-white">
+            <button onClick={() => quickAction(client, "invoice")} className="rounded-md bg-blue-700 px-3 py-2 text-sm font-black text-white hover:bg-blue-800">
               Create Invoice
             </button>
             <button onClick={() => quickAction(client, "paid")} className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-bold">
@@ -1945,7 +2080,7 @@ function ClientDetail({ client, savedInvoices = [], close, editClient, updateCli
           <div className="mt-3 grid grid-cols-3 gap-2">
             <button
               onClick={() => quickAction(client, "call")}
-              className="rounded-md bg-emerald-800 px-3 py-3 text-sm font-black text-white shadow-sm"
+              className="rounded-md bg-blue-700 px-3 py-3 text-sm font-black text-white shadow-sm hover:bg-blue-800"
             >
               Call
             </button>
@@ -2006,7 +2141,7 @@ function ClientDetail({ client, savedInvoices = [], close, editClient, updateCli
                 Create the estimate first, then mark it sent after you send it to the client.
               </p>
               <div className="mt-3 grid grid-cols-2 gap-2">
-                <button onClick={() => quickAction(client, "estimate")} className="min-h-11 rounded-md bg-emerald-800 px-3 py-2 text-sm font-black leading-tight text-white">
+                <button onClick={() => quickAction(client, "estimate")} className="min-h-11 rounded-md bg-blue-700 px-3 py-2 text-sm font-black leading-tight text-white hover:bg-blue-800">
                   Create Estimate
                 </button>
                 <button onClick={() => quickAction(client, "estimateSent")} className="rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-black text-amber-900">
@@ -2046,7 +2181,7 @@ function ClientDetail({ client, savedInvoices = [], close, editClient, updateCli
               <Info label="Balance" value={money(client.balanceDue)} />
             </div>
             {client.paymentStatus === "Paid" && (
-              <button onClick={() => quickAction(client, "note")} className="mt-3 rounded-md bg-emerald-800 px-3 py-2 text-sm font-black text-white">
+              <button onClick={() => quickAction(client, "note")} className="mt-3 rounded-md bg-blue-700 px-3 py-2 text-sm font-black text-white hover:bg-blue-800">
                 Request Review
               </button>
             )}
@@ -2111,7 +2246,7 @@ function ClientForm({
               <textarea
                 value={smartLeadText}
                 onChange={(e) => setSmartLeadText(e.target.value)}
-                className="min-h-44 w-full rounded-md border border-slate-300 p-3 text-sm outline-none focus:border-emerald-800"
+                className="min-h-44 w-full rounded-md border border-slate-300 p-3 text-sm outline-none focus:border-blue-700"
                 placeholder={
                   mode === "voicemail"
                     ? "Hi this is Peter, my phone is 416..., I need popcorn ceiling removal in Oakville."
@@ -2119,11 +2254,11 @@ function ClientForm({
                 }
               />
               <div className="flex flex-wrap gap-2">
-                <button onClick={() => applyParsedLead()} className="rounded-md bg-emerald-800 px-4 py-2 text-sm font-black text-white">
+                <button onClick={() => applyParsedLead()} className="rounded-md bg-blue-700 px-4 py-2 text-sm font-black text-white hover:bg-blue-800">
                   Extract Lead
                 </button>
                 {smartLeadParsed && (
-                  <p className="rounded-md bg-emerald-50 px-3 py-2 text-sm font-bold text-emerald-900">
+                  <p className="rounded-md bg-blue-50 px-3 py-2 text-sm font-bold text-blue-900">
                     Create lead from this information? Review fields below, then save.
                   </p>
                 )}
@@ -2137,7 +2272,7 @@ function ClientForm({
               <Input label="Name" value={form.name} onChange={(v) => updateForm("name", v)} />
               <label className="block text-sm font-bold">
                 Note
-                <textarea value={form.notes || ""} onChange={(e) => updateForm("notes", e.target.value)} className="mt-1 min-h-24 w-full rounded-md border border-slate-300 p-3 text-sm outline-none focus:border-emerald-800" />
+                <textarea value={form.notes || ""} onChange={(e) => updateForm("notes", e.target.value)} className="mt-1 min-h-24 w-full rounded-md border border-slate-300 p-3 text-sm outline-none focus:border-blue-700" />
               </label>
             </FormGroup>
           ) : (
@@ -2165,7 +2300,7 @@ function ClientForm({
                 </div>
                 <label className="mt-3 block text-sm font-black">
                   Notes
-                  <textarea value={form.notes || ""} onChange={(e) => updateForm("notes", e.target.value)} className="mt-1 min-h-24 w-full rounded-md border border-slate-300 p-3 text-sm outline-none focus:border-emerald-800" />
+                  <textarea value={form.notes || ""} onChange={(e) => updateForm("notes", e.target.value)} className="mt-1 min-h-24 w-full rounded-md border border-slate-300 p-3 text-sm outline-none focus:border-blue-700" />
                 </label>
               </FormGroup>
 
@@ -2213,7 +2348,7 @@ function ClientForm({
 
         <div className="sticky bottom-0 flex gap-2 border-t border-slate-200 bg-white p-3">
           <button onClick={close} className="rounded-md border border-slate-300 px-4 py-3 text-sm font-bold">Cancel</button>
-          <button onClick={saveClient} className="flex-1 rounded-md bg-emerald-800 px-4 py-3 text-sm font-black text-white">
+          <button onClick={saveClient} className="flex-1 rounded-md bg-blue-700 px-4 py-3 text-sm font-black text-white hover:bg-blue-800">
             {editing ? "Update Client" : "Save Lead"}
           </button>
         </div>
@@ -2251,9 +2386,10 @@ function FollowUpTaskList({ tasks, openClient, quickAction }) {
             <p className="text-sm font-bold text-amber-700">{task.label}</p>
           </button>
           <div className="mt-2 flex flex-wrap gap-2">
-            <button onClick={() => quickAction(task.client, "call")} className="rounded-md bg-emerald-800 px-3 py-2 text-xs font-black text-white">Call</button>
+            <button onClick={() => quickAction(task.client, "call")} className="rounded-md bg-blue-700 px-3 py-2 text-xs font-black text-white hover:bg-blue-800">Call</button>
             <button onClick={() => quickAction(task.client, "text")} className="rounded-md border border-slate-300 px-3 py-2 text-xs font-black">Text</button>
-            <button onClick={() => quickAction(task.client, "estimate")} className="rounded-md border border-emerald-800 bg-emerald-800 px-3 py-2 text-xs font-black text-white">Estimate</button>
+            <button onClick={() => quickAction(task.client, "estimate")} className="rounded-md border border-blue-700 bg-blue-700 px-3 py-2 text-xs font-black text-white hover:bg-blue-800">Estimate</button>
+            <button onClick={() => quickAction(task.client, "followUp")} className="rounded-md border border-blue-700 bg-blue-700 px-3 py-2 text-xs font-black text-white hover:bg-blue-800">Follow Up</button>
             <button onClick={() => quickAction(task.client, "note")} className="rounded-md border border-slate-300 px-3 py-2 text-xs font-black">Note</button>
           </div>
         </article>
@@ -2288,6 +2424,7 @@ function QuickActions({ client, quickAction, compact = false }) {
     ? [
         ["email", "Email"],
         ["estimate", "Estimate"],
+        ["followUp", "Follow Up"],
         ["invoice", "Invoice"],
         ["note", "Note"],
       ]
@@ -2296,16 +2433,17 @@ function QuickActions({ client, quickAction, compact = false }) {
         ["text", "Text"],
         ["email", "Email"],
         ["estimate", "Estimate"],
+        ["followUp", "Follow Up"],
         ["invoice", "Invoice"],
         ["note", "Note"],
       ];
   return (
-    <div className={`mt-3 grid gap-2 ${compact ? "grid-cols-2 md:grid-cols-4" : "grid-cols-3"}`}>
+    <div className={`mt-3 grid gap-2 ${compact ? "grid-cols-2 md:grid-cols-5" : "grid-cols-3"}`}>
       {actions.map(([action, label]) => (
         <button
           key={action}
           onClick={() => quickAction(client, action)}
-          className={`min-h-10 rounded-md border border-slate-300 bg-white px-2 py-2 text-center text-xs font-black leading-tight text-slate-800 ${action === "call" || action === "estimate" ? "border-emerald-800 bg-emerald-800 text-white" : ""}`}
+          className={`min-h-10 rounded-md border border-slate-300 bg-white px-2 py-2 text-center text-xs font-black leading-tight text-slate-800 ${action === "call" || action === "estimate" || action === "followUp" ? "border-blue-700 bg-blue-700 text-white hover:bg-blue-800" : ""}`}
         >
           <span>{label}</span>
         </button>
@@ -2397,7 +2535,7 @@ function Input({ label, value, onChange, type = "text" }) {
         value={value || ""}
         onChange={(e) => onChange(e.target.value)}
         autoComplete={label.toLowerCase().includes("address") ? "street-address" : undefined}
-        className="mt-1 w-full rounded-md border border-slate-300 p-2.5 text-sm outline-none focus:border-emerald-800"
+        className="mt-1 w-full rounded-md border border-slate-300 p-2.5 text-sm outline-none focus:border-blue-700"
       />
     </label>
   );
@@ -2449,7 +2587,7 @@ function AddressInput({ label, value, onChange, onCityChange }) {
         onChange={(e) => onChange(e.target.value)}
         autoComplete="street-address"
         placeholder="Start typing and choose the Google address"
-        className="mt-1 w-full rounded-md border border-slate-300 p-2.5 text-sm outline-none focus:border-emerald-800"
+        className="mt-1 w-full rounded-md border border-slate-300 p-2.5 text-sm outline-none focus:border-blue-700"
       />
     </label>
   );
@@ -2465,7 +2603,7 @@ function SuggestInput({ label, value, options, onChange }) {
         list={listId}
         value={value || ""}
         onChange={(e) => onChange(e.target.value)}
-        className="mt-1 w-full rounded-md border border-slate-300 p-2.5 text-sm outline-none focus:border-emerald-800"
+        className="mt-1 w-full rounded-md border border-slate-300 p-2.5 text-sm outline-none focus:border-blue-700"
         placeholder="Choose or type custom work"
       />
       <datalist id={listId}>
@@ -2491,7 +2629,7 @@ function DateInput({ label, value, onChange }) {
         type="date"
         value={value || ""}
         onChange={(e) => onChange(e.target.value)}
-        className="mt-1 w-full rounded-md border border-slate-300 bg-white p-2.5 text-sm outline-none focus:border-emerald-800"
+        className="mt-1 w-full rounded-md border border-slate-300 bg-white p-2.5 text-sm outline-none focus:border-blue-700"
       />
       <div className="mt-1 flex flex-wrap gap-1">
         {shortcuts.map(([text, date]) => (
@@ -2523,7 +2661,7 @@ function Select({ label, value, options, onChange }) {
       <select
         value={value || ""}
         onChange={(e) => onChange(e.target.value)}
-        className="mt-1 w-full rounded-md border border-slate-300 bg-white p-2.5 text-sm outline-none focus:border-emerald-800"
+        className="mt-1 w-full rounded-md border border-slate-300 bg-white p-2.5 text-sm outline-none focus:border-blue-700"
       >
         {options.map((option) => (
           <option key={option} value={option}>{option || "-"}</option>
@@ -2566,7 +2704,7 @@ function StatusBadge({ value, label = "" }) {
     "Estimate Booked": "bg-indigo-50 text-indigo-800",
     "Estimate Sent": "bg-amber-50 text-amber-800",
     "Follow-Up": "bg-amber-100 text-amber-900",
-    Won: "bg-green-50 text-green-800",
+    Won: "bg-sky-50 text-sky-800",
     Lost: "bg-red-50 text-red-700",
   };
   return (
@@ -2582,7 +2720,7 @@ function PaymentBadge({ value, label = "" }) {
     "Deposit Due": "bg-amber-50 text-amber-800",
     "Deposit Paid": "bg-blue-50 text-blue-800",
     "Balance Due": "bg-red-50 text-red-700",
-    Paid: "bg-green-50 text-green-800",
+    Paid: "bg-cyan-50 text-cyan-800",
   };
   return (
     <span className={`rounded-full px-2.5 py-1 text-[11px] font-black ${classes[value] || "bg-slate-100 text-slate-700"}`}>
@@ -2596,7 +2734,7 @@ function ProjectBadge({ value, label = "" }) {
     "Not Scheduled": "bg-slate-100 text-slate-700",
     Scheduled: "bg-indigo-50 text-indigo-800",
     "In Progress": "bg-blue-50 text-blue-800",
-    Completed: "bg-green-50 text-green-800",
+    Completed: "bg-sky-50 text-sky-800",
   };
   return (
     <span className={`rounded-full px-2.5 py-1 text-[11px] font-black ${classes[value] || "bg-slate-100 text-slate-700"}`}>
