@@ -1095,6 +1095,16 @@ export default function CrmPage() {
     [clients, effectiveAccessMode]
   );
 
+  const dailyClients = useMemo(
+    () => activeClients.filter((client) => client.leadStatus !== "Lost"),
+    [activeClients]
+  );
+
+  const archivedClients = useMemo(
+    () => activeClients.filter((client) => client.leadStatus === "Lost"),
+    [activeClients]
+  );
+
   const visibleClientIds = useMemo(
     () => new Set(activeClients.map((client) => client.id)),
     [activeClients]
@@ -1108,24 +1118,25 @@ export default function CrmPage() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     const clientId = new URLSearchParams(window.location.search || "").get("client");
-    if (clientId && activeClients.some((client) => client.id === clientId)) {
+    const urlClient = activeClients.find((client) => client.id === clientId);
+    if (urlClient) {
       setSelectedClientId(clientId);
-      setActiveView("Clients");
+      setActiveView(urlClient.leadStatus === "Lost" ? "Archive" : "Clients");
     }
   }, [activeClients]);
 
   const filterOptions = useMemo(() => {
-    const unique = (field) => [...new Set(activeClients.map((client) => client[field]).filter(Boolean))].sort();
+    const unique = (field) => [...new Set(dailyClients.map((client) => client[field]).filter(Boolean))].sort();
     return {
       salesperson: unique("assignedTo"),
       city: unique("city"),
       service: unique("service"),
     };
-  }, [activeClients]);
+  }, [dailyClients]);
 
   const filteredClients = useMemo(() => {
     const query = search.toLowerCase();
-    return activeClients
+    return dailyClients
       .filter((client) => {
         const notes = [
           client.notes,
@@ -1159,17 +1170,17 @@ export default function CrmPage() {
         if (!needsReminder(a) && needsReminder(b)) return 1;
         return new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime();
       });
-  }, [activeClients, filters, search]);
+  }, [dailyClients, filters, search]);
 
   const stats = useMemo(() => {
     const thisMonth = monthISO();
-    const byLead = (status) => activeClients.filter((client) => client.leadStatus === status);
-    const balanceDue = activeClients.filter((client) => client.paymentStatus === "Balance Due");
-    const completed = activeClients.filter((client) => client.projectStatus === "Completed");
-    const followUpsToday = activeClients.filter(
+    const byLead = (status) => dailyClients.filter((client) => client.leadStatus === status);
+    const balanceDue = dailyClients.filter((client) => client.paymentStatus === "Balance Due");
+    const completed = dailyClients.filter((client) => client.projectStatus === "Completed");
+    const followUpsToday = dailyClients.filter(
       (client) => client.followUpDate && client.followUpDate <= todayISO() && client.leadStatus !== "Lost"
     );
-    const wonThisMonth = activeClients.filter(
+    const wonThisMonth = dailyClients.filter(
       (client) => client.leadStatus === "Won" && (client.estimateAcceptedAt || client.updatedAt || "").slice(0, 7) === thisMonth
     );
 
@@ -1181,7 +1192,7 @@ export default function CrmPage() {
       { label: "Balance Due", count: balanceDue.length, amount: balanceDue.reduce((sum, c) => sum + numberValue(c.balanceDue || c.estimateAmount), 0) },
       { label: "Completed Jobs", count: completed.length, amount: completed.reduce((sum, c) => sum + numberValue(c.estimateAmount), 0) },
     ];
-  }, [activeClients]);
+  }, [dailyClients]);
 
   const updateClientList = useCallback((mutator) => {
     setClients((current) => {
@@ -1741,6 +1752,19 @@ export default function CrmPage() {
         makeTimelineEntry({ type: "invoice", content: "Payment marked paid. Request review.", createdBy: "Sales" })
       );
     }
+    if (action === "remarket") {
+      updateClient(
+        client.id,
+        { leadStatus: "Follow-Up", followUpDate: todayISO() },
+        makeTimelineEntry({
+          type: "status_change",
+          content: "Moved from Archive to Follow-Up for remarketing.",
+          createdBy: "CRM",
+        })
+      );
+      setActiveView("Clients");
+      setSelectedClientId(client.id);
+    }
   }
 
   function updateForm(field, value) {
@@ -1814,6 +1838,13 @@ export default function CrmPage() {
                   {masterPreviewLimited ? "Watching Team" : "Sales Team Watch"}
                 </button>
               )}
+              <button
+                type="button"
+                onClick={() => setActiveView("Archive")}
+                className="hidden rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-bold md:inline-flex"
+              >
+                Archive ({archivedClients.length})
+              </button>
               <div className="relative min-w-0">
                 <button
                   type="button"
@@ -1883,6 +1914,9 @@ export default function CrmPage() {
                       {masterPreviewLimited ? "Watching Team" : "Sales Team Watch"}
                     </button>
                   )}
+                  <button onClick={() => setActiveView("Archive")} className="min-h-11 rounded-md px-3 py-2 text-left text-sm font-bold hover:bg-slate-100">
+                    Archive ({archivedClients.length})
+                  </button>
                   {accessMode === "master" && (
                     <>
                       <button onClick={exportBackup} className="min-h-11 rounded-md px-3 py-2 text-left text-sm font-bold hover:bg-slate-100">
@@ -1911,7 +1945,7 @@ export default function CrmPage() {
         {activeView === "Dashboard" && (
           <Dashboard
             stats={stats}
-            clients={activeClients}
+            clients={dailyClients}
             savedInvoices={visibleSavedInvoices}
             setActiveView={setActiveView}
             openClient={(client) => setSelectedClientId(client.id)}
@@ -1946,11 +1980,19 @@ export default function CrmPage() {
         )}
 
         {activeView === "Calendar" && (
-          <CalendarView clients={activeClients} openClient={(client) => setSelectedClientId(client.id)} />
+          <CalendarView clients={dailyClients} openClient={(client) => setSelectedClientId(client.id)} />
         )}
 
         {activeView === "Invoices" && (
-          <InvoicesView clients={activeClients} savedInvoices={visibleSavedInvoices} openClient={(client) => setSelectedClientId(client.id)} quickAction={quickAction} />
+          <InvoicesView clients={dailyClients} savedInvoices={visibleSavedInvoices} openClient={(client) => setSelectedClientId(client.id)} quickAction={quickAction} />
+        )}
+
+        {activeView === "Archive" && (
+          <ArchiveView
+            clients={archivedClients}
+            openClient={(client) => setSelectedClientId(client.id)}
+            quickAction={quickAction}
+          />
         )}
 
         {showForm && (
@@ -2032,8 +2074,11 @@ function DesktopTabs({ activeView, setActiveView }) {
 function BottomNav({ activeView, setActiveView }) {
   return (
     <nav
-      className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-slate-200 bg-white md:hidden"
-      style={{ paddingBottom: "max(env(safe-area-inset-bottom), 0.5rem)" }}
+      className="fixed inset-x-0 bottom-0 z-30 grid border-t border-slate-200 bg-white md:hidden"
+      style={{
+        gridTemplateColumns: `repeat(${navItems.length}, minmax(0, 1fr))`,
+        paddingBottom: "max(env(safe-area-inset-bottom), 0.5rem)",
+      }}
     >
       {navItems.map((item) => (
         <button
@@ -2290,6 +2335,67 @@ function immediateActionPriority(client = {}) {
   return 9;
 }
 
+function dailyQueueReason(client = {}) {
+  if (client.leadStatus === "New Lead") return "New lead needs first contact";
+  if (client.followUpDate && client.followUpDate <= todayISO()) return "Follow-up due";
+  if (shouldMoveEstimateToFollowUp(client)) return "Estimate is waiting";
+  if (client.leadStatus === "Estimate Sent") return "Estimate sent";
+  if (client.leadStatus === "Won" && client.projectStatus === "Not Scheduled") return "Won job needs schedule";
+  if (client.paymentStatus === "Balance Due") return "Balance due";
+  return nextClientStep(client);
+}
+
+function DashboardQueue({ title, subtitle, clients, emptyText, openClient, quickAction, primaryAction = "open", tone = "slate" }) {
+  const toneClass =
+    tone === "red"
+      ? "border-red-200 bg-red-50 text-red-800"
+      : tone === "amber"
+        ? "border-amber-200 bg-amber-50 text-amber-800"
+        : "border-slate-200 bg-slate-50 text-slate-700";
+
+  return (
+    <section className={`rounded-lg p-3 ${crmPanelClass}`}>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-black">{title}</h2>
+          <p className="text-xs font-bold text-slate-500">{subtitle}</p>
+        </div>
+        <span className={`rounded-full border px-2.5 py-1 text-xs font-black ${toneClass}`}>{clients.length}</span>
+      </div>
+      <div className="mt-3 space-y-2">
+        {clients.slice(0, 5).map((client) => (
+          <article key={`${title}-${client.id}`} className="rounded-md border border-slate-200 bg-white p-3 shadow-sm">
+            <button onClick={() => openClient(client)} className="w-full min-w-0 text-left">
+              <div className="flex items-start justify-between gap-3">
+                <span className="min-w-0">
+                  <span className="block truncate font-black text-slate-950">{client.name || client.phone || "Unnamed lead"}</span>
+                  <span className="block truncate text-xs font-semibold text-slate-500">
+                    {[client.service, client.city, client.assignedTo || "Unassigned"].filter(Boolean).join(" - ")}
+                  </span>
+                </span>
+                <span className="shrink-0 text-sm font-black text-slate-700">{money(client.estimateAmount)}</span>
+              </div>
+              <p className="mt-1 text-sm font-bold text-slate-700">{dailyQueueReason(client)}</p>
+            </button>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <button
+                onClick={() => quickAction(client, primaryAction === "followUp" ? "followUp" : primaryAction === "invoice" ? "invoice" : "call")}
+                className="min-h-11 rounded-md bg-blue-700 px-3 py-2 text-sm font-black text-white"
+              >
+                {primaryAction === "followUp" ? "Follow Up" : primaryAction === "invoice" ? "Invoice" : "Call"}
+              </button>
+              <button onClick={() => openClient(client)} className="min-h-11 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-bold">
+                Open
+              </button>
+            </div>
+          </article>
+        ))}
+        {!clients.length && <p className="rounded-md border border-dashed border-slate-200 p-3 text-sm font-bold text-slate-500">{emptyText}</p>}
+      </div>
+    </section>
+  );
+}
+
 function ImmediateActionPanel({ clients, openClient, quickAction, setActiveView }) {
   const urgentClients = clients
     .map((client) => ({ client, reason: immediateActionReason(client) }))
@@ -2342,15 +2448,27 @@ function ImmediateActionPanel({ clients, openClient, quickAction, setActiveView 
 }
 
 function Dashboard({ stats, clients, savedInvoices = [], setActiveView, openClient, quickAction }) {
-  const tasks = taskList(clients).slice(0, 8);
   const openLeads = clients.filter((client) => !["Won", "Lost"].includes(client.leadStatus));
   const wonClients = clients.filter((client) => client.leadStatus === "Won");
   const sentEstimates = clients.filter((client) => client.leadStatus === "Estimate Sent" || client.estimateIds?.length);
   const overdueFollowUps = clients.filter(isFollowUpOverdue);
+  const newLeadQueue = clients
+    .filter((client) => client.leadStatus === "New Lead")
+    .sort((a, b) => new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime());
+  const followUpQueue = clients
+    .filter((client) => client.followUpDate && client.followUpDate <= todayISO() && !["Won", "Lost"].includes(client.leadStatus))
+    .sort((a, b) => String(a.followUpDate || "").localeCompare(String(b.followUpDate || "")));
+  const estimateQueue = clients
+    .filter((client) => client.leadStatus === "Estimate Sent" || shouldMoveEstimateToFollowUp(client))
+    .sort((a, b) => new Date(a.estimateSentAt || a.updatedAt || 0).getTime() - new Date(b.estimateSentAt || b.updatedAt || 0).getTime());
+  const moneyQueue = clients
+    .filter((client) => client.paymentStatus === "Balance Due" || (client.projectStatus === "Completed" && client.paymentStatus !== "Paid"))
+    .sort((a, b) => numberValue(b.balanceDue || b.estimateAmount) - numberValue(a.balanceDue || a.estimateAmount));
   const pipelineValue = openLeads.reduce((sum, client) => sum + numberValue(client.estimateAmount), 0);
   const closeRate = sentEstimates.length ? Math.round((wonClients.length / sentEstimates.length) * 100) : 0;
   const invoiceValue = savedInvoices.reduce((sum, invoice) => sum + invoiceTotal(invoice), 0);
   const invoiceTotalDue = clients.reduce((sum, client) => sum + numberValue(client.balanceDue), 0);
+  const actionCount = newLeadQueue.length + followUpQueue.length + estimateQueue.length + moneyQueue.length;
   const ownerRows = [...new Set(clients.map((client) => client.assignedTo || "Unassigned"))]
     .map((owner) => ({
       owner,
@@ -2362,109 +2480,139 @@ function Dashboard({ stats, clients, savedInvoices = [], setActiveView, openClie
     }))
     .sort((a, b) => b.due - a.due || b.leads - a.leads)
     .slice(0, 4);
-  const todayFocus = [
-    {
-      label: "Follow-ups due today",
-      count: clients.filter((client) => client.followUpDate && client.followUpDate <= todayISO() && client.leadStatus !== "Lost").length,
-    },
-    {
-      label: "Won jobs not scheduled",
-      count: clients.filter((client) => client.leadStatus === "Won" && client.projectStatus === "Not Scheduled").length,
-    },
-    {
-      label: "Balance due",
-      count: clients.filter((client) => client.paymentStatus === "Balance Due").length,
-    },
-    {
-      label: "Estimates waiting",
-      count: clients.filter((client) => client.leadStatus === "Estimate Sent").length,
-    },
-  ];
-
   return (
     <section className="space-y-4">
+      <section className={`rounded-lg p-3 ${crmPanelClass}`}>
+        <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+          <div>
+            <p className="text-xs font-black uppercase text-blue-700">Daily Command Center</p>
+            <h2 className="text-2xl font-black text-slate-950">{actionCount ? `${actionCount} active action(s)` : "No urgent CRM actions"}</h2>
+            <p className="mt-1 text-sm font-bold text-slate-500">
+              Work top to bottom: new leads, follow-ups, estimates, then money.
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:min-w-[520px]">
+            <button onClick={() => setActiveView("Clients")} className="rounded-md border border-slate-200 bg-slate-50 p-3 text-left shadow-sm">
+              <p className="text-xl font-black">{newLeadQueue.length}</p>
+              <p className="text-xs font-bold text-slate-500">New leads</p>
+            </button>
+            <button onClick={() => setActiveView("Clients")} className="rounded-md border border-red-200 bg-red-50 p-3 text-left shadow-sm">
+              <p className="text-xl font-black text-red-800">{followUpQueue.length}</p>
+              <p className="text-xs font-bold text-red-700">Follow-ups</p>
+            </button>
+            <button onClick={() => setActiveView("Pipeline")} className="rounded-md border border-amber-200 bg-amber-50 p-3 text-left shadow-sm">
+              <p className="text-xl font-black text-amber-900">{estimateQueue.length}</p>
+              <p className="text-xs font-bold text-amber-800">Estimates</p>
+            </button>
+            <button onClick={() => setActiveView("Invoices")} className="rounded-md border border-slate-200 bg-slate-50 p-3 text-left shadow-sm">
+              <p className="text-xl font-black">{moneyQueue.length}</p>
+              <p className="text-xs font-bold text-slate-500">Money</p>
+            </button>
+          </div>
+        </div>
+      </section>
+
       <ImmediateActionPanel clients={clients} openClient={openClient} quickAction={quickAction} setActiveView={setActiveView} />
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
-        {stats.map((stat) => (
-          <button
-            key={stat.label}
-            onClick={() => setActiveView(stat.label === "Balance Due" ? "Invoices" : "Clients")}
-            className={`rounded-lg p-3 text-left transition hover:border-blue-300 hover:shadow-lg ${crmCardClass}`}
-          >
-            <p className="text-xs font-black uppercase text-slate-500">{stat.label}</p>
-            <p className="mt-1 text-2xl font-black">{stat.count}</p>
-            <p className="text-sm font-bold text-slate-500">{money(stat.amount)}</p>
-          </button>
-        ))}
+      <div className="grid gap-4 xl:grid-cols-4">
+        <DashboardQueue
+          title="1. New Leads"
+          subtitle="Contact first. Oldest first."
+          clients={newLeadQueue}
+          emptyText="No untouched new leads."
+          openClient={openClient}
+          quickAction={quickAction}
+          primaryAction="call"
+        />
+        <DashboardQueue
+          title="2. Follow-Ups"
+          subtitle="Due today or overdue."
+          clients={followUpQueue}
+          emptyText="No follow-ups due."
+          openClient={openClient}
+          quickAction={quickAction}
+          primaryAction="followUp"
+          tone="red"
+        />
+        <DashboardQueue
+          title="3. Estimates"
+          subtitle="Sent estimates waiting for answer."
+          clients={estimateQueue}
+          emptyText="No estimates waiting."
+          openClient={openClient}
+          quickAction={quickAction}
+          primaryAction="followUp"
+          tone="amber"
+        />
+        <DashboardQueue
+          title="4. Money"
+          subtitle="Invoices and balances to collect."
+          clients={moneyQueue}
+          emptyText="No balance due."
+          openClient={openClient}
+          quickAction={quickAction}
+          primaryAction="invoice"
+        />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
         <section className={`rounded-lg p-3 ${crmPanelClass}`}>
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-black">My Tasks</h2>
-            <button onClick={() => setActiveView("Clients")} className="text-sm font-bold text-blue-700">
-              All clients
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-lg font-black">Pipeline Health</h2>
+            <button onClick={() => setActiveView("Pipeline")} className="text-sm font-bold text-blue-700">
+              Board
             </button>
           </div>
-          <FollowUpTaskList tasks={tasks} openClient={openClient} quickAction={quickAction} />
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <button onClick={() => setActiveView("Pipeline")} className="rounded-md border border-slate-200 bg-slate-50 p-3 text-left shadow-sm">
+              <p className="text-xl font-black">{money(pipelineValue)}</p>
+              <p className="text-xs font-bold text-slate-500">Open pipeline</p>
+            </button>
+            <button onClick={() => setActiveView("Clients")} className="rounded-md border border-slate-200 bg-slate-50 p-3 text-left shadow-sm">
+              <p className="text-xl font-black">{closeRate}%</p>
+              <p className="text-xs font-bold text-slate-500">Won / estimated</p>
+            </button>
+            <button onClick={() => setActiveView("Clients")} className="rounded-md border border-slate-200 bg-slate-50 p-3 text-left shadow-sm">
+              <p className="text-xl font-black">{overdueFollowUps.length}</p>
+              <p className="text-xs font-bold text-slate-500">Overdue follow-ups</p>
+            </button>
+            <button onClick={() => setActiveView("Invoices")} className="rounded-md border border-slate-200 bg-slate-50 p-3 text-left shadow-sm">
+              <p className="text-xl font-black">{money(invoiceTotalDue || invoiceValue)}</p>
+              <p className="text-xs font-bold text-slate-500">Invoice exposure</p>
+            </button>
+          </div>
+          <div className="mt-3 space-y-2">
+            {leadStatuses.filter((status) => status !== "Lost").map((status) => {
+              const count = clients.filter((client) => client.leadStatus === status).length;
+              const pct = clients.length ? Math.round((count / clients.length) * 100) : 0;
+              return (
+                <div key={status}>
+                  <div className="flex justify-between text-xs font-black text-slate-600">
+                    <span>{status}</span>
+                    <span>{count}</span>
+                  </div>
+                  <div className="mt-1 h-2 overflow-hidden rounded-full bg-slate-100">
+                    <div className="h-full rounded-full bg-blue-700" style={{ width: `${pct}%` }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </section>
 
         <section className="space-y-4">
-          <div className={`rounded-lg p-3 ${crmPanelClass}`}>
-            <div className="flex items-center justify-between gap-3">
-              <h2 className="text-lg font-black">Pipeline Health</h2>
-              <button onClick={() => setActiveView("Pipeline")} className="text-sm font-bold text-blue-700">
-                Board
+          <div className="grid grid-cols-2 gap-3">
+            {stats.slice(0, 4).map((stat) => (
+              <button
+                key={stat.label}
+                onClick={() => setActiveView(stat.label === "Balance Due" ? "Invoices" : "Clients")}
+                className={`rounded-lg p-3 text-left transition hover:border-blue-300 hover:shadow-lg ${crmCardClass}`}
+              >
+                <p className="text-xs font-black uppercase text-slate-500">{stat.label}</p>
+                <p className="mt-1 text-2xl font-black">{stat.count}</p>
+                <p className="text-sm font-bold text-slate-500">{money(stat.amount)}</p>
               </button>
-            </div>
-            <div className="mt-3 grid grid-cols-2 gap-2">
-              <button onClick={() => setActiveView("Pipeline")} className="rounded-md border border-slate-200 bg-slate-50 p-3 text-left shadow-sm">
-                <p className="text-xl font-black">{money(pipelineValue)}</p>
-                <p className="text-xs font-bold text-slate-500">Open pipeline</p>
-              </button>
-              <button onClick={() => setActiveView("Clients")} className="rounded-md border border-slate-200 bg-slate-50 p-3 text-left shadow-sm">
-                <p className="text-xl font-black">{closeRate}%</p>
-                <p className="text-xs font-bold text-slate-500">Won / estimated</p>
-              </button>
-              <button onClick={() => setActiveView("Clients")} className="rounded-md border border-slate-200 bg-slate-50 p-3 text-left shadow-sm">
-                <p className="text-xl font-black">{overdueFollowUps.length}</p>
-                <p className="text-xs font-bold text-slate-500">Overdue follow-ups</p>
-              </button>
-              <button onClick={() => setActiveView("Invoices")} className="rounded-md border border-slate-200 bg-slate-50 p-3 text-left shadow-sm">
-                <p className="text-xl font-black">{money(invoiceTotalDue || invoiceValue)}</p>
-                <p className="text-xs font-bold text-slate-500">Invoice exposure</p>
-              </button>
-            </div>
-            <div className="mt-3 space-y-2">
-              {leadStatuses.filter((status) => status !== "Lost").map((status) => {
-                const count = clients.filter((client) => client.leadStatus === status).length;
-                const pct = clients.length ? Math.round((count / clients.length) * 100) : 0;
-                return (
-                  <div key={status}>
-                    <div className="flex justify-between text-xs font-black text-slate-600">
-                      <span>{status}</span>
-                      <span>{count}</span>
-                    </div>
-                    <div className="mt-1 h-2 overflow-hidden rounded-full bg-slate-100">
-                      <div className="h-full rounded-full bg-blue-700" style={{ width: `${pct}%` }} />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className={`rounded-lg p-3 ${crmPanelClass}`}>
-            <h2 className="text-lg font-black">Today Focus</h2>
-            <div className="mt-3 grid grid-cols-2 gap-2">
-              {todayFocus.map((item) => (
-                <button key={item.label} onClick={() => setActiveView("Clients")} className="rounded-md border border-slate-200 bg-slate-50 p-3 text-left shadow-sm">
-                  <p className="text-xl font-black">{item.count}</p>
-                  <p className="text-xs font-bold text-slate-500">{item.label}</p>
-                </button>
-              ))}
-            </div>
+            ))}
           </div>
 
           <div className={`rounded-lg p-3 ${crmPanelClass}`}>
@@ -2492,6 +2640,8 @@ function Dashboard({ stats, clients, savedInvoices = [], setActiveView, openClie
 }
 
 function Pipeline({ clients, openClient, changeStatus }) {
+  const pipelineStatuses = leadStatuses.filter((status) => status !== "Lost");
+
   return (
     <section className="space-y-3">
       <div className="flex items-end justify-between">
@@ -2501,15 +2651,12 @@ function Pipeline({ clients, openClient, changeStatus }) {
         </div>
       </div>
       <div className="flex flex-col gap-3 pb-2 md:flex-row md:overflow-x-auto">
-        {leadStatuses.map((stage) => {
+        {pipelineStatuses.map((stage) => {
           const stageClients = clients.filter((client) => client.leadStatus === stage);
-          const isLostStage = stage === "Lost";
           return (
             <section
               key={stage}
-              className={`rounded-lg p-3 ${crmPanelClass} ${
-                isLostStage ? "md:min-w-[180px] md:max-w-[220px]" : "md:min-w-[240px] md:flex-1"
-              }`}
+              className={`rounded-lg p-3 md:min-w-[240px] md:flex-1 ${crmPanelClass}`}
             >
               <div className="sticky top-0 z-10 mb-3 flex items-center justify-between bg-white py-1">
                 <h3 className="text-sm font-black">{stage}</h3>
@@ -2522,7 +2669,6 @@ function Pipeline({ clients, openClient, changeStatus }) {
                   <PipelineCard
                     key={client.id}
                     client={client}
-                    compact={isLostStage}
                     openClient={openClient}
                     changeStatus={changeStatus}
                   />
@@ -2621,7 +2767,7 @@ function ClientsView({ clients, savedInvoices, filters, setFilters, filterOption
               placeholder="Search name, phone, email, city, notes..."
             />
             <div className="mt-3 grid gap-2 md:grid-cols-6">
-              <Filter label="Status" value={filters.status} options={["All", ...leadStatuses]} onChange={(v) => setFilters({ ...filters, status: v })} />
+              <Filter label="Status" value={filters.status} options={["All", ...leadStatuses.filter((status) => status !== "Lost")]} onChange={(v) => setFilters({ ...filters, status: v })} />
               <Filter label="Salesperson" value={filters.salesperson} options={["All", ...filterOptions.salesperson]} onChange={(v) => setFilters({ ...filters, salesperson: v })} />
               <Filter label="City" value={filters.city} options={["All", ...filterOptions.city]} onChange={(v) => setFilters({ ...filters, city: v })} />
               <Filter label="Service" value={filters.service} options={["All", ...filterOptions.service]} onChange={(v) => setFilters({ ...filters, service: v })} />
@@ -2794,6 +2940,70 @@ function InvoicesView({ clients, savedInvoices = [], openClient, quickAction }) 
       );
       })}
       {!invoiceClients.length && <p className={`rounded-lg p-8 text-center text-sm font-bold text-slate-500 ${crmPanelClass}`}>No invoices yet.</p>}
+    </section>
+  );
+}
+
+function ArchiveView({ clients, openClient, quickAction }) {
+  const archivedValue = clients.reduce((sum, client) => sum + numberValue(client.estimateAmount), 0);
+
+  return (
+    <section className="space-y-3">
+      <section className={`rounded-lg p-3 ${crmPanelClass}`}>
+        <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+          <div>
+            <h2 className="text-xl font-black">Archive</h2>
+            <p className="text-sm font-bold text-slate-500">
+              Lost clients are hidden from daily dashboard, clients, calendar, invoices, and pipeline views.
+            </p>
+          </div>
+          <div className="rounded-md border border-slate-200 bg-slate-50 p-3 text-left sm:text-right">
+            <p className="text-xs font-black uppercase text-slate-500">Remarketing pool</p>
+            <p className="text-lg font-black text-slate-950">{clients.length} / {money(archivedValue)}</p>
+          </div>
+        </div>
+      </section>
+
+      <div className="grid gap-3 lg:grid-cols-2">
+        {clients.map((client) => (
+          <article key={client.id} className={`rounded-lg p-3 ${crmCardClass}`}>
+            <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
+              <button onClick={() => openClient(client)} className="min-w-0 text-left">
+                <h3 className="truncate text-lg font-black">{client.name || "Unnamed Lead"}</h3>
+                <p className="mt-1 break-words text-sm font-semibold text-slate-600">
+                  {[client.service, client.city].filter(Boolean).join(" - ") || "No service"}
+                </p>
+              </button>
+              <StatusBadge value={client.leadStatus} />
+            </div>
+
+            <div className="mt-3 grid grid-cols-2 gap-2 text-sm md:grid-cols-4">
+              <Info label="Phone" value={client.phone} />
+              <Info label="Estimate" value={money(client.estimateAmount)} />
+              <Info label="Lost Since" value={(client.updatedAt || client.createdAt || "").slice(0, 10) || "-"} />
+              <Info label="Sales" value={client.assignedTo || "-"} />
+            </div>
+
+            <div className="mt-3 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+              <button onClick={() => quickAction(client, "remarket")} className="min-h-11 rounded-md bg-blue-700 px-3 py-2 text-sm font-black text-white hover:bg-blue-800">
+                Reopen for Remarketing
+              </button>
+              <button onClick={() => openClient(client)} className="min-h-11 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-bold">
+                Open
+              </button>
+              <button onClick={() => quickAction(client, "note")} className="min-h-11 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-bold">
+                Add Note
+              </button>
+            </div>
+          </article>
+        ))}
+      </div>
+
+      {!clients.length && (
+        <div className="rounded-lg border border-dashed border-slate-300 bg-white p-8 text-center text-sm font-bold text-slate-500">
+          No archived lost clients.
+        </div>
+      )}
     </section>
   );
 }
