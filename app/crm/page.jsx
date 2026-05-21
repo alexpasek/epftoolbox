@@ -70,6 +70,13 @@ const workNeededOptions = [
 const paymentMethodOptions = ["Cash", "e-Transfer", "Check"];
 
 const navItems = ["Dashboard", "Pipeline", "Clients", "Calendar", "Invoices"];
+const mobileNavLabels = {
+  Dashboard: "Dash",
+  Pipeline: "Pipe",
+  Clients: "Clients",
+  Calendar: "Cal",
+  Invoices: "Bills",
+};
 const CRM_SCHEMA_VERSION = 2;
 const crmPanelClass = "border border-slate-300 bg-white shadow-md shadow-slate-300/50";
 const crmCardClass = "border border-slate-300 bg-white shadow-md shadow-slate-300/50";
@@ -631,6 +638,25 @@ function getClientEstimates(client = {}, invoices = []) {
     .sort((a, b) => new Date(b.updatedAt || b.savedAt || b.createdAt || 0).getTime() - new Date(a.updatedAt || a.savedAt || a.createdAt || 0).getTime());
 }
 
+function invoiceTotal(invoice = {}) {
+  const total = numberValue(invoice.totals?.total);
+  if (total) return total;
+  return (invoice.items || []).reduce((sum, item) => sum + numberValue(item?.amount), 0);
+}
+
+function invoiceLabel(invoice = {}) {
+  return invoice.quoteId || invoice.id || "invoice";
+}
+
+function summarizeClientInvoices(client = {}, invoices = []) {
+  const attached = getClientEstimates(client, invoices);
+  const total = attached.reduce((sum, invoice) => sum + invoiceTotal(invoice), 0);
+  const latest = attached[0] || null;
+  const paid = numberValue(client.paymentAmount);
+  const balance = Math.max(0, total - paid);
+  return { attached, total, latest, paid, balance };
+}
+
 function isLimitedClient(client = {}) {
   const assigned = String(client.assignedTo || "").toLowerCase();
   if (assigned === LIMITED_ASSIGNEE.toLowerCase()) return true;
@@ -799,6 +825,15 @@ const sampleClients = [
 function isFollowUpOverdue(client) {
   if (client.leadStatus === "Lost" || client.leadStatus === "Won") return false;
   return Boolean(client.followUpDate && client.followUpDate < todayISO());
+}
+
+function daysSinceISO(dateISO = "") {
+  if (!dateISO) return 0;
+  const start = new Date(`${String(dateISO).slice(0, 10)}T00:00:00`);
+  const end = new Date(`${todayISO()}T00:00:00`);
+  const diff = end.getTime() - start.getTime();
+  if (!Number.isFinite(diff)) return 0;
+  return Math.max(0, Math.floor(diff / 86400000));
 }
 
 function needsReminder(client) {
@@ -1157,6 +1192,68 @@ export default function CrmPage() {
   }, [syncClients]);
 
   useEffect(() => {
+    if (!isUnlocked || !savedInvoices.length) return;
+
+    updateClientList((current) => {
+      let changed = false;
+      const next = current.map((client) => {
+        if (client.deletedAt) return client;
+        const summary = summarizeClientInvoices(client, savedInvoices);
+        if (!summary.attached.length) return client;
+
+        const estimateIds = [
+          ...(client.estimateIds || []),
+          ...summary.attached.map((invoice) => invoice.id).filter(Boolean),
+        ];
+        const uniqueEstimateIds = [...new Set(estimateIds)];
+        const updates = {};
+        const timeline = [];
+        const totalRounded = Math.round(summary.total);
+        const balanceRounded = Math.round(summary.balance);
+
+        if (uniqueEstimateIds.length !== (client.estimateIds || []).length) {
+          updates.estimateIds = uniqueEstimateIds;
+        }
+        if (!numberValue(client.estimateAmount) && totalRounded > 0) {
+          updates.estimateAmount = String(totalRounded);
+        }
+        if (client.paymentStatus === "No Invoice") {
+          updates.paymentStatus = balanceRounded > 0 ? "Balance Due" : "Paid";
+        }
+        if (client.paymentStatus !== "Paid" && balanceRounded > 0 && numberValue(client.balanceDue) !== balanceRounded) {
+          updates.balanceDue = String(balanceRounded);
+        }
+
+        if (!Object.keys(updates).length) return client;
+
+        const latestLabel = invoiceLabel(summary.latest);
+        const alreadyLogged = (client.communicationLog || []).some((entry) =>
+          String(entry.content || "").includes(`Invoice reconciliation: ${latestLabel}`)
+        );
+        if (!alreadyLogged) {
+          timeline.push(
+            makeTimelineEntry({
+              type: "invoice",
+              content: `Invoice reconciliation: ${latestLabel} linked for ${money(summary.total)}. Balance due ${money(summary.balance)}.`,
+              createdBy: "CRM",
+            })
+          );
+        }
+
+        changed = true;
+        return normalizeClient({
+          ...client,
+          ...updates,
+          updatedAt: nowISO(),
+          communicationLog: [...timeline, ...(client.communicationLog || [])],
+        });
+      });
+
+      return changed ? next : current;
+    });
+  }, [isUnlocked, savedInvoices, updateClientList]);
+
+  useEffect(() => {
     if (!isUnlocked) return;
     if (!clients.some(shouldMoveEstimateToFollowUp)) return;
 
@@ -1495,32 +1592,47 @@ export default function CrmPage() {
     setShowSettings(false);
   }
 
-  function scheduleFollowUp(client, message, messages, action = "ics", channel = "text") {
+  async function scheduleFollowUp(client, message, messages, action = "calendar", channel = "text") {
     const followUpDate = addDaysISO(2);
     const description = createFollowUpCalendarDescription(client, message, messages, appSettings);
+    const shouldCreateCalendar = ["calendar", "ics", "google"].includes(action);
+    const shouldLogCommunication = ["textLog", "emailLog", "text", "email"].includes(action);
+    const actionLabel =
+      action === "copy"
+        ? "Follow-up message copied"
+        : shouldLogCommunication
+          ? `${channel.toUpperCase()} handoff opened with template`
+          : "Follow-up scheduled";
     updateClient(
       client.id,
       { leadStatus: "Follow-Up", followUpDate },
       makeTimelineEntry({
         type: "follow_up",
         direction: "outbound",
-        content: `Follow-up scheduled for ${followUpDate}.\n\nSelected ${channel} message:\n${message}\n\n${description}`,
+        content: `${actionLabel} for ${followUpDate}.\n\nSelected ${channel} message:\n${message}\n\n${description}`,
         createdBy: "CRM",
       })
     );
-    if (action === "ics" || action === "text" || action === "email") {
+    if (action === "copy") {
+      try {
+        await navigator.clipboard.writeText(message);
+      } catch {
+        window.prompt("Copy this follow-up message", message);
+      }
+    }
+    if (shouldCreateCalendar && action !== "google") {
       downloadFollowUpCalendar(client, followUpDate, message, messages, appSettings);
     }
     setFollowUpClientId(null);
     if (action === "google") {
       window.open(googleCalendarHref(client, followUpDate, description), "_blank", "noopener,noreferrer");
     }
-    if (action === "text" && client.phone) {
+    if ((action === "textLog" || action === "text") && client.phone) {
       window.setTimeout(() => {
         window.location.href = `sms:${client.phone}&body=${encodeURIComponent(message)}`;
       }, 50);
     }
-    if (action === "email" && client.email) {
+    if ((action === "emailLog" || action === "email") && client.email) {
       const subject = encodeURIComponent(messages.emailSubject || `${appSettings.company} follow-up`);
       window.setTimeout(() => {
         window.location.href = `mailto:${client.email}?subject=${subject}&body=${encodeURIComponent(message)}`;
@@ -1589,6 +1701,22 @@ export default function CrmPage() {
       }, 50);
     }
     if (action === "estimateSent") addCommunication(client.id, "Estimate Sent");
+    if (action === "acceptInvoice") {
+      const balance = numberValue(client.balanceDue || client.estimateAmount);
+      updateClient(
+        client.id,
+        {
+          leadStatus: "Won",
+          estimateAcceptedAt: client.estimateAcceptedAt || nowISO(),
+          paymentStatus: client.paymentStatus === "Paid" ? "Paid" : "Balance Due",
+          balanceDue: client.paymentStatus === "Paid" ? "" : balance ? String(Math.round(balance)) : client.balanceDue,
+        },
+        makeTimelineEntry({ type: "estimate", content: "Estimate accepted. Invoice opened.", createdBy: "Sales" })
+      );
+      window.setTimeout(() => {
+        window.location.href = createInvoiceHref({ ...client, leadStatus: "Won" });
+      }, 50);
+    }
     if (action === "followUp") {
       setFollowUpClientId(client.id);
     }
@@ -1621,7 +1749,7 @@ export default function CrmPage() {
 
   if (!isUnlocked) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-slate-100 p-4 text-slate-900">
+      <main className="flex min-h-dvh items-center justify-center overflow-x-hidden bg-slate-100 p-4 text-slate-900">
         <form onSubmit={unlockCrm} className="w-full max-w-sm rounded-lg bg-white p-5 shadow">
           <p className="text-sm font-bold text-slate-500">Contractor CRM</p>
           <h1 className="mt-1 text-2xl font-black text-slate-950">Enter CRM PIN</h1>
@@ -1642,7 +1770,10 @@ export default function CrmPage() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-100 pb-20 text-slate-900">
+    <main
+      className="min-h-dvh overflow-x-hidden bg-slate-100 text-slate-900 md:pb-20"
+      style={{ paddingBottom: "calc(5.75rem + env(safe-area-inset-bottom))" }}
+    >
       <Script
         src={`https://maps.googleapis.com/maps/api/js?key=${
           process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY ?? ""
@@ -1654,9 +1785,9 @@ export default function CrmPage() {
           }
         }}
       />
-      <div className="mx-auto max-w-7xl p-3 md:p-5">
+      <div className="mx-auto w-full max-w-7xl px-3 py-3 md:p-5">
         <header className="sticky top-0 z-20 -mx-3 border-b border-slate-200 bg-slate-100/95 px-3 py-3 backdrop-blur md:static md:mx-0 md:border-0 md:bg-transparent md:px-0">
-          <div className="flex items-start justify-between gap-3">
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div className="min-w-0">
               <Link href="/" className="text-xs font-bold text-blue-700 hover:underline">
                 Back to menu
@@ -1669,12 +1800,12 @@ export default function CrmPage() {
                 {syncStatus}
               </p>
             </div>
-            <div className="flex max-w-[58vw] shrink-0 flex-wrap items-center justify-end gap-1.5 md:max-w-none md:gap-2">
+            <div className="grid w-full grid-cols-[minmax(0,1fr)_auto_auto] items-start gap-2 md:flex md:w-auto md:max-w-none md:flex-wrap md:justify-end">
               {accessMode === "master" && (
                 <button
                   type="button"
                   onClick={toggleSalesTeamWatch}
-                  className={`rounded-md border px-3 py-2 text-sm font-black ${
+                  className={`hidden rounded-md border px-3 py-2 text-sm font-black md:inline-flex ${
                     masterPreviewLimited
                       ? "border-amber-300 bg-amber-50 text-amber-900"
                       : "border-slate-300 bg-white text-slate-800"
@@ -1683,33 +1814,33 @@ export default function CrmPage() {
                   {masterPreviewLimited ? "Watching Team" : "Sales Team Watch"}
                 </button>
               )}
-              <div className="relative">
+              <div className="relative min-w-0">
                 <button
                   type="button"
                   onClick={() => setLeadMenuOpen((open) => !open)}
-                  className="rounded-md bg-blue-700 px-3 py-2 text-sm font-black text-white hover:bg-blue-800"
+                  className="min-h-11 w-full rounded-md bg-blue-700 px-3 py-2 text-sm font-black text-white hover:bg-blue-800 md:w-auto"
                 >
                   Add Lead
                 </button>
                 {leadMenuOpen && (
-                  <div className="absolute right-0 z-30 mt-2 w-56 rounded-lg border border-slate-200 bg-white p-2 shadow-xl">
-                  <button onClick={() => openNewClient("manual")} className="block w-full rounded-md px-3 py-2 text-left text-sm font-bold hover:bg-slate-100">
+                  <div className="absolute left-0 right-0 z-30 mt-2 rounded-lg border border-slate-200 bg-white p-2 shadow-xl md:left-auto md:w-56">
+                  <button onClick={() => openNewClient("manual")} className="block min-h-11 w-full rounded-md px-3 py-2 text-left text-sm font-bold hover:bg-slate-100">
                     Manual Lead
                   </button>
-                  <button onClick={() => openNewClient("paste")} className="block w-full rounded-md px-3 py-2 text-left text-sm font-bold hover:bg-slate-100">
+                  <button onClick={() => openNewClient("paste")} className="block min-h-11 w-full rounded-md px-3 py-2 text-left text-sm font-bold hover:bg-slate-100">
                     Paste Lead / Email
                   </button>
-                  <button onClick={() => openNewClient("voicemail")} className="block w-full rounded-md px-3 py-2 text-left text-sm font-bold hover:bg-slate-100">
+                  <button onClick={() => openNewClient("voicemail")} className="block min-h-11 w-full rounded-md px-3 py-2 text-left text-sm font-bold hover:bg-slate-100">
                     Voicemail Lead
                   </button>
-                  <button onClick={() => openNewClient("phone")} className="block w-full rounded-md px-3 py-2 text-left text-sm font-bold hover:bg-slate-100">
+                  <button onClick={() => openNewClient("phone")} className="block min-h-11 w-full rounded-md px-3 py-2 text-left text-sm font-bold hover:bg-slate-100">
                     Quick Phone Lead
                   </button>
                   </div>
                 )}
               </div>
               {accessMode === "master" && (
-                <div className="relative">
+                <div className="relative hidden md:block">
                   <button
                     type="button"
                     onClick={() => setBackupMenuOpen((open) => !open)}
@@ -1730,12 +1861,44 @@ export default function CrmPage() {
                   )}
                 </div>
               )}
-              <button onClick={() => setShowSettings(true)} className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-bold">
+              <button onClick={() => setShowSettings(true)} className="min-h-11 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-bold">
                 Settings
               </button>
-              <button onClick={lockCrm} className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-bold">
+              <button onClick={lockCrm} className="hidden rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-bold md:inline-flex">
                 Lock
               </button>
+              <details className="relative md:hidden">
+                <summary className="min-h-11 cursor-pointer list-none rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-bold">
+                  More
+                </summary>
+                <div className="absolute right-0 z-30 mt-2 grid w-56 gap-1 rounded-lg border border-slate-200 bg-white p-2 shadow-xl">
+                  {accessMode === "master" && (
+                    <button
+                      type="button"
+                      onClick={toggleSalesTeamWatch}
+                      className={`min-h-11 rounded-md px-3 py-2 text-left text-sm font-bold ${
+                        masterPreviewLimited ? "bg-amber-50 text-amber-900" : "hover:bg-slate-100"
+                      }`}
+                    >
+                      {masterPreviewLimited ? "Watching Team" : "Sales Team Watch"}
+                    </button>
+                  )}
+                  {accessMode === "master" && (
+                    <>
+                      <button onClick={exportBackup} className="min-h-11 rounded-md px-3 py-2 text-left text-sm font-bold hover:bg-slate-100">
+                        Export Backup
+                      </button>
+                      <label className="block min-h-11 cursor-pointer rounded-md px-3 py-2 text-sm font-bold hover:bg-slate-100">
+                        Import Backup
+                        <input type="file" accept="application/json,.json" className="hidden" onChange={(e) => importBackup(e.target.files?.[0])} />
+                      </label>
+                    </>
+                  )}
+                  <button onClick={lockCrm} className="min-h-11 rounded-md px-3 py-2 text-left text-sm font-bold hover:bg-slate-100">
+                    Lock
+                  </button>
+                </div>
+              </details>
             </div>
           </div>
           <p className="mt-2 text-xs font-semibold text-amber-700">
@@ -1749,6 +1912,7 @@ export default function CrmPage() {
           <Dashboard
             stats={stats}
             clients={activeClients}
+            savedInvoices={visibleSavedInvoices}
             setActiveView={setActiveView}
             openClient={(client) => setSelectedClientId(client.id)}
             quickAction={quickAction}
@@ -1786,7 +1950,7 @@ export default function CrmPage() {
         )}
 
         {activeView === "Invoices" && (
-          <InvoicesView clients={activeClients} openClient={(client) => setSelectedClientId(client.id)} quickAction={quickAction} />
+          <InvoicesView clients={activeClients} savedInvoices={visibleSavedInvoices} openClient={(client) => setSelectedClientId(client.id)} quickAction={quickAction} />
         )}
 
         {showForm && (
@@ -1867,15 +2031,18 @@ function DesktopTabs({ activeView, setActiveView }) {
 
 function BottomNav({ activeView, setActiveView }) {
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-slate-200 bg-white md:hidden">
+    <nav
+      className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-slate-200 bg-white md:hidden"
+      style={{ paddingBottom: "max(env(safe-area-inset-bottom), 0.5rem)" }}
+    >
       {navItems.map((item) => (
         <button
           key={item}
           onClick={() => setActiveView(item)}
-          className={`px-1 py-2 text-[11px] font-black ${activeView === item ? "text-blue-700" : "text-slate-500"}`}
+          className={`min-h-14 px-1 pt-2 text-[10px] font-black leading-tight ${activeView === item ? "text-blue-700" : "text-slate-500"}`}
         >
           <span className="block text-base leading-none">{item.slice(0, 1)}</span>
-          {item}
+          <span className="block truncate">{mobileNavLabels[item] || item}</span>
         </button>
       ))}
     </nav>
@@ -1931,21 +2098,41 @@ function LongPressCalendarButton({ client, message, messages, label, action, lon
   );
 }
 
+function FollowUpActionButton({ primary = false, disabled = false, onClick, children }) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className={
+        primary
+          ? "min-h-11 rounded-md bg-blue-700 px-3 py-2 text-sm font-black text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-45"
+          : "min-h-11 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-black text-slate-900 disabled:cursor-not-allowed disabled:opacity-45"
+      }
+    >
+      {children}
+    </button>
+  );
+}
+
 function FollowUpChooser({ client, settings, close, scheduleFollowUp }) {
   const messages = createFollowUpMessages(client, settings);
   const androidDevice = isAndroidDevice();
   const calendarAction = androidDevice ? "google" : "ics";
   const calendarLongPressAction = androidDevice ? "ics" : "google";
   const calendarLabel = androidDevice ? "Android Calendar" : "iPhone Calendar";
-  const calendarLongPressLabel = androidDevice ? "Long press for iPhone file" : "Long press for Android";
+  const calendarLongPressLabel = androidDevice ? "Google calendar opens by default." : "iPhone calendar file downloads by default.";
   const options = [
-    ["checkIn", "Option 1", "Friendly check-in", messages.textCheckIn],
-    ["estimate", "Option 2", "Estimate / booking follow-up", messages.textEstimate],
+    ["checkIn", "Option 1", "Friendly check-in", messages.textCheckIn, messages.emailCheckIn],
+    ["estimate", "Option 2", "Estimate / booking follow-up", messages.textEstimate, messages.emailEstimate],
   ];
 
   return (
-    <aside className="fixed inset-0 z-50 bg-slate-950/50 p-2 md:p-5">
-      <section className="mx-auto flex max-h-full max-w-3xl flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-2xl">
+    <aside className="fixed inset-0 z-50 h-dvh overflow-hidden bg-slate-950/50 p-2 md:p-5">
+      <section
+        className="mx-auto flex h-full max-w-3xl flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-2xl"
+        style={{ maxHeight: "calc(100dvh - 2.5rem)" }}
+      >
         <header className="shrink-0 border-b border-slate-200 p-3 md:p-4">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
@@ -1961,12 +2148,12 @@ function FollowUpChooser({ client, settings, close, scheduleFollowUp }) {
           </div>
         </header>
 
-        <div className="grid gap-3 overflow-auto p-3 pb-8 md:grid-cols-2 md:p-4">
-          {options.map(([key, eyebrow, title, textMessage]) => (
+        <div className="grid gap-3 overflow-auto p-3 md:grid-cols-2 md:p-4" style={{ paddingBottom: "calc(2rem + env(safe-area-inset-bottom))" }}>
+          {options.map(([key, eyebrow, title, textMessage, emailMessage]) => (
             <article key={key} className="rounded-lg border border-slate-300 bg-slate-50 p-3 shadow-sm">
               <p className="text-xs font-black uppercase text-slate-500">{eyebrow}</p>
               <h3 className="mt-1 text-base font-black text-slate-950">{title}</h3>
-              <div className="mt-3 grid gap-2">
+              <div className="mt-3 grid grid-cols-2 gap-2">
                 <LongPressCalendarButton
                   client={client}
                   message={textMessage}
@@ -1976,14 +2163,22 @@ function FollowUpChooser({ client, settings, close, scheduleFollowUp }) {
                   longPressAction={calendarLongPressAction}
                   scheduleFollowUp={scheduleFollowUp}
                 />
-                <button
-                  type="button"
+                <FollowUpActionButton
+                  primary
                   disabled={!client.phone}
-                  onClick={() => scheduleFollowUp(client, textMessage, messages, "text", "text")}
-                  className="min-h-11 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-black text-slate-900 disabled:cursor-not-allowed disabled:opacity-45"
+                  onClick={() => scheduleFollowUp(client, textMessage, messages, "textLog", "text")}
                 >
-                  Calendar + Text
-                </button>
+                  Text + Log
+                </FollowUpActionButton>
+                <FollowUpActionButton
+                  disabled={!client.email}
+                  onClick={() => scheduleFollowUp(client, emailMessage, messages, "emailLog", "email")}
+                >
+                  Email + Log
+                </FollowUpActionButton>
+                <FollowUpActionButton onClick={() => scheduleFollowUp(client, textMessage, messages, "copy", "text")}>
+                  Copy Message
+                </FollowUpActionButton>
               </div>
               <p className="mt-3 whitespace-pre-wrap rounded-md border border-slate-200 bg-white p-3 text-sm font-semibold leading-6 text-slate-800">
                 {textMessage}
@@ -2001,20 +2196,23 @@ function SettingsPanel({ settings, close, saveSettings }) {
   const updateDraft = (field, value) => setDraft((current) => ({ ...current, [field]: value }));
 
   return (
-    <aside className="fixed inset-0 z-50 bg-slate-950/50 p-3 md:p-5">
-      <section className="mx-auto flex max-h-full max-w-2xl flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-2xl">
+    <aside className="fixed inset-0 z-50 h-dvh overflow-hidden bg-slate-950/50 p-2 md:p-5">
+      <section
+        className="mx-auto flex h-full max-w-2xl flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-2xl"
+        style={{ maxHeight: "calc(100dvh - 2.5rem)" }}
+      >
         <header className="border-b border-slate-200 p-4">
           <div className="flex items-center justify-between gap-3">
-            <div>
+            <div className="min-w-0">
               <p className="text-xs font-black uppercase text-blue-700">CRM Settings</p>
-              <h2 className="text-xl font-black">App Adjustments</h2>
+              <h2 className="truncate text-xl font-black">App Adjustments</h2>
             </div>
             <button onClick={close} className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-black">
               Close
             </button>
           </div>
         </header>
-        <div className="grid gap-3 overflow-auto p-4 md:grid-cols-2">
+        <div className="grid gap-3 overflow-auto p-3 md:grid-cols-2 md:p-4">
           <Input label="Your Name" value={draft.name} onChange={(v) => updateDraft("name", v)} />
           <Input label="Company" value={draft.company} onChange={(v) => updateDraft("company", v)} />
           <Input label="Title / Specialty" value={draft.title} onChange={(v) => updateDraft("title", v)} />
@@ -2041,7 +2239,10 @@ function SettingsPanel({ settings, close, saveSettings }) {
             </label>
           ))}
         </div>
-        <footer className="grid gap-2 border-t border-slate-200 bg-white p-3 md:grid-cols-2">
+        <footer
+          className="grid gap-2 border-t border-slate-200 bg-white p-3 md:grid-cols-2"
+          style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}
+        >
           <button onClick={() => setDraft(defaultBusinessContact)} className="rounded-md border border-slate-300 bg-white px-4 py-3 text-sm font-black">
             Reset Default
           </button>
@@ -2054,8 +2255,113 @@ function SettingsPanel({ settings, close, saveSettings }) {
   );
 }
 
-function Dashboard({ stats, clients, setActiveView, openClient, quickAction }) {
+function immediateActionReason(client = {}) {
+  if (isFollowUpOverdue(client)) {
+    return `Follow-up ${daysSinceISO(client.followUpDate)}d overdue`;
+  }
+  if (client.followUpDate && client.followUpDate <= todayISO() && client.leadStatus !== "Lost") {
+    return "Follow-up due today";
+  }
+  if (client.leadStatus === "New Lead" && daysSinceISO(client.createdAt) > 1) {
+    return `New lead waiting ${daysSinceISO(client.createdAt)}d`;
+  }
+  if (shouldMoveEstimateToFollowUp(client)) {
+    return "Estimate waiting without action";
+  }
+  if (client.projectStatus === "Completed" && client.paymentStatus !== "Paid") {
+    return "Completed job unpaid";
+  }
+  if (client.paymentStatus === "Balance Due") {
+    return "Balance due";
+  }
+  if (client.leadStatus === "Won" && client.projectStatus === "Not Scheduled") {
+    return "Won job not scheduled";
+  }
+  return "";
+}
+
+function immediateActionPriority(client = {}) {
+  if (isFollowUpOverdue(client)) return 0;
+  if (client.paymentStatus === "Balance Due") return 1;
+  if (client.projectStatus === "Completed" && client.paymentStatus !== "Paid") return 2;
+  if (shouldMoveEstimateToFollowUp(client)) return 3;
+  if (client.followUpDate && client.followUpDate <= todayISO()) return 4;
+  if (client.leadStatus === "New Lead" && daysSinceISO(client.createdAt) > 1) return 5;
+  return 9;
+}
+
+function ImmediateActionPanel({ clients, openClient, quickAction, setActiveView }) {
+  const urgentClients = clients
+    .map((client) => ({ client, reason: immediateActionReason(client) }))
+    .filter((item) => item.reason)
+    .sort((a, b) => immediateActionPriority(a.client) - immediateActionPriority(b.client))
+    .slice(0, 5);
+
+  if (!urgentClients.length) return null;
+
+  return (
+    <section className="rounded-lg border border-red-200 bg-red-50 p-3 shadow-sm">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-black text-red-950">Immediate Action</h2>
+          <p className="text-xs font-bold text-red-700">{urgentClients.length} urgent client(s) need attention</p>
+        </div>
+        <button onClick={() => setActiveView("Clients")} className="rounded-md bg-white px-3 py-2 text-sm font-black text-red-800">
+          All
+        </button>
+      </div>
+      <div className="mt-3 space-y-2">
+        {urgentClients.map(({ client, reason }) => (
+          <article key={client.id} className="rounded-md border border-red-200 bg-white p-3 shadow-sm">
+            <button onClick={() => openClient(client)} className="block w-full min-w-0 text-left">
+              <p className="truncate font-black text-slate-950">{client.name || client.phone || "Unnamed lead"}</p>
+              <p className="mt-0.5 text-sm font-bold text-red-700">{reason}</p>
+              <p className="truncate text-xs font-semibold text-slate-500">
+                {[client.service, client.city, client.assignedTo || "Unassigned"].filter(Boolean).join(" - ")}
+              </p>
+            </button>
+            <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <button onClick={() => quickAction(client, "call")} className="min-h-11 rounded-md bg-blue-700 px-3 py-2 text-sm font-black text-white">
+                Call
+              </button>
+              <button onClick={() => quickAction(client, "text")} className="min-h-11 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-bold">
+                Text
+              </button>
+              <button onClick={() => quickAction(client, "followUp")} className="min-h-11 rounded-md border border-blue-700 bg-blue-700 px-3 py-2 text-sm font-black text-white">
+                Follow Up
+              </button>
+              <button onClick={() => openClient(client)} className="min-h-11 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-bold">
+                Open
+              </button>
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function Dashboard({ stats, clients, savedInvoices = [], setActiveView, openClient, quickAction }) {
   const tasks = taskList(clients).slice(0, 8);
+  const openLeads = clients.filter((client) => !["Won", "Lost"].includes(client.leadStatus));
+  const wonClients = clients.filter((client) => client.leadStatus === "Won");
+  const sentEstimates = clients.filter((client) => client.leadStatus === "Estimate Sent" || client.estimateIds?.length);
+  const overdueFollowUps = clients.filter(isFollowUpOverdue);
+  const pipelineValue = openLeads.reduce((sum, client) => sum + numberValue(client.estimateAmount), 0);
+  const closeRate = sentEstimates.length ? Math.round((wonClients.length / sentEstimates.length) * 100) : 0;
+  const invoiceValue = savedInvoices.reduce((sum, invoice) => sum + invoiceTotal(invoice), 0);
+  const invoiceTotalDue = clients.reduce((sum, client) => sum + numberValue(client.balanceDue), 0);
+  const ownerRows = [...new Set(clients.map((client) => client.assignedTo || "Unassigned"))]
+    .map((owner) => ({
+      owner,
+      leads: clients.filter((client) => (client.assignedTo || "Unassigned") === owner && client.leadStatus !== "Lost").length,
+      due: clients.filter((client) => (client.assignedTo || "Unassigned") === owner && client.followUpDate && client.followUpDate <= todayISO()).length,
+      balance: clients
+        .filter((client) => (client.assignedTo || "Unassigned") === owner)
+        .reduce((sum, client) => sum + numberValue(client.balanceDue), 0),
+    }))
+    .sort((a, b) => b.due - a.due || b.leads - a.leads)
+    .slice(0, 4);
   const todayFocus = [
     {
       label: "Follow-ups due today",
@@ -2077,6 +2383,8 @@ function Dashboard({ stats, clients, setActiveView, openClient, quickAction }) {
 
   return (
     <section className="space-y-4">
+      <ImmediateActionPanel clients={clients} openClient={openClient} quickAction={quickAction} setActiveView={setActiveView} />
+
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
         {stats.map((stat) => (
           <button
@@ -2104,10 +2412,46 @@ function Dashboard({ stats, clients, setActiveView, openClient, quickAction }) {
 
         <section className="space-y-4">
           <div className={`rounded-lg p-3 ${crmPanelClass}`}>
-            <h2 className="text-lg font-black">Lead Flow</h2>
-            <div className="mt-3 space-y-2 text-sm font-semibold text-slate-700">
-              <p>New Lead &gt; Contacted &gt; Estimate Sent &gt; Follow-Up &gt; Won/Lost</p>
-              <p>Won &gt; Scheduled &gt; Completed &gt; Invoice &gt; Paid &gt; Review</p>
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-lg font-black">Pipeline Health</h2>
+              <button onClick={() => setActiveView("Pipeline")} className="text-sm font-bold text-blue-700">
+                Board
+              </button>
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <button onClick={() => setActiveView("Pipeline")} className="rounded-md border border-slate-200 bg-slate-50 p-3 text-left shadow-sm">
+                <p className="text-xl font-black">{money(pipelineValue)}</p>
+                <p className="text-xs font-bold text-slate-500">Open pipeline</p>
+              </button>
+              <button onClick={() => setActiveView("Clients")} className="rounded-md border border-slate-200 bg-slate-50 p-3 text-left shadow-sm">
+                <p className="text-xl font-black">{closeRate}%</p>
+                <p className="text-xs font-bold text-slate-500">Won / estimated</p>
+              </button>
+              <button onClick={() => setActiveView("Clients")} className="rounded-md border border-slate-200 bg-slate-50 p-3 text-left shadow-sm">
+                <p className="text-xl font-black">{overdueFollowUps.length}</p>
+                <p className="text-xs font-bold text-slate-500">Overdue follow-ups</p>
+              </button>
+              <button onClick={() => setActiveView("Invoices")} className="rounded-md border border-slate-200 bg-slate-50 p-3 text-left shadow-sm">
+                <p className="text-xl font-black">{money(invoiceTotalDue || invoiceValue)}</p>
+                <p className="text-xs font-bold text-slate-500">Invoice exposure</p>
+              </button>
+            </div>
+            <div className="mt-3 space-y-2">
+              {leadStatuses.filter((status) => status !== "Lost").map((status) => {
+                const count = clients.filter((client) => client.leadStatus === status).length;
+                const pct = clients.length ? Math.round((count / clients.length) * 100) : 0;
+                return (
+                  <div key={status}>
+                    <div className="flex justify-between text-xs font-black text-slate-600">
+                      <span>{status}</span>
+                      <span>{count}</span>
+                    </div>
+                    <div className="mt-1 h-2 overflow-hidden rounded-full bg-slate-100">
+                      <div className="h-full rounded-full bg-blue-700" style={{ width: `${pct}%` }} />
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
@@ -2120,6 +2464,25 @@ function Dashboard({ stats, clients, setActiveView, openClient, quickAction }) {
                   <p className="text-xs font-bold text-slate-500">{item.label}</p>
                 </button>
               ))}
+            </div>
+          </div>
+
+          <div className={`rounded-lg p-3 ${crmPanelClass}`}>
+            <h2 className="text-lg font-black">Ownership</h2>
+            <div className="mt-3 space-y-2">
+              {ownerRows.map((row) => (
+                <button key={row.owner} onClick={() => setActiveView("Clients")} className="grid w-full grid-cols-[minmax(0,1fr)_auto] gap-3 rounded-md border border-slate-200 bg-slate-50 p-3 text-left shadow-sm">
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-black">{row.owner}</span>
+                    <span className="block text-xs font-bold text-slate-500">{row.leads} active leads</span>
+                  </span>
+                  <span className="text-right text-xs font-black text-slate-600">
+                    {row.due} due<br />
+                    {money(row.balance)}
+                  </span>
+                </button>
+              ))}
+              {!ownerRows.length && <p className="text-sm font-bold text-slate-500">No active owners yet.</p>}
             </div>
           </div>
         </section>
@@ -2295,12 +2658,12 @@ function ClientsView({ clients, savedInvoices, filters, setFilters, filterOption
 function ClientCard({ client, estimates = [], openClient, editClient, deleteClient, quickAction, clearFollowUp }) {
   return (
     <article className={`rounded-lg p-3 transition hover:border-blue-300 hover:shadow-lg ${crmCardClass} ${needsReminder(client) ? "ring-2 ring-amber-300" : ""}`}>
-      <div className="flex items-start justify-between gap-3">
+      <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
         <button onClick={() => openClient(client)} className="min-w-0 text-left">
           <h3 className="truncate text-lg font-black">{client.name || "Unnamed Lead"}</h3>
-          <p className="mt-1 text-sm font-semibold text-slate-600">{[client.service, client.city].filter(Boolean).join(" - ") || "No service"}</p>
+          <p className="mt-1 break-words text-sm font-semibold text-slate-600">{[client.service, client.city].filter(Boolean).join(" - ") || "No service"}</p>
         </button>
-        <div className="flex shrink-0 gap-1">
+        <div className="flex min-w-0 flex-wrap gap-1 sm:justify-end">
           <StatusBadge value={client.leadStatus} />
           <PaymentBadge value={client.paymentStatus} />
         </div>
@@ -2316,31 +2679,31 @@ function ClientCard({ client, estimates = [], openClient, editClient, deleteClie
 
       <WorkflowWarnings client={client} />
 
-      <div className="mt-3 flex flex-wrap gap-2">
-        <button onClick={() => quickAction(client, "call")} className="rounded-md bg-blue-700 px-3 py-2 text-sm font-black text-white hover:bg-blue-800">
+      <div className="mt-3 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+        <button onClick={() => quickAction(client, "call")} className="min-h-11 rounded-md bg-blue-700 px-3 py-2 text-sm font-black text-white hover:bg-blue-800">
           Call
         </button>
-        <button onClick={() => quickAction(client, "estimate")} className="rounded-md border border-blue-700 bg-blue-700 px-3 py-2 text-sm font-black text-white hover:bg-blue-800">
-          Estimate
-        </button>
-        <button onClick={() => quickAction(client, "text")} className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-bold">
+        <button onClick={() => quickAction(client, "text")} className="min-h-11 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-bold">
           Text
         </button>
+        <button onClick={() => quickAction(client, "estimate")} className="min-h-11 rounded-md border border-blue-700 bg-blue-700 px-3 py-2 text-sm font-black text-white hover:bg-blue-800">
+          Estimate
+        </button>
         <LongPressFollowUpButton client={client} quickAction={quickAction} clearFollowUp={clearFollowUp} />
-        <button onClick={() => openClient(client)} className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-bold">
+        <button onClick={() => openClient(client)} className="min-h-11 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-bold">
           Open
         </button>
         <details className="relative">
-          <summary className="cursor-pointer list-none rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-bold">
+          <summary className="min-h-11 cursor-pointer list-none rounded-md border border-slate-300 bg-white px-3 py-2 text-center text-sm font-bold sm:text-left">
             More
           </summary>
-          <div className="absolute left-0 z-20 mt-2 w-40 rounded-lg border border-slate-200 bg-white p-2 shadow-xl">
+          <div className="absolute right-0 z-20 mt-2 w-44 rounded-lg border border-slate-200 bg-white p-2 shadow-xl sm:left-0 sm:right-auto">
             {["email", "invoice", "note"].map((action) => (
-              <button key={action} onClick={() => quickAction(client, action)} className="block w-full rounded-md px-3 py-2 text-left text-sm font-bold capitalize hover:bg-slate-100">
+              <button key={action} onClick={() => quickAction(client, action)} className="block min-h-11 w-full rounded-md px-3 py-2 text-left text-sm font-bold capitalize hover:bg-slate-100">
                 {action === "estimate" ? "Build Estimate" : action}
               </button>
             ))}
-            <button onClick={() => deleteClient(client.id)} className="block w-full rounded-md px-3 py-2 text-left text-sm font-bold text-red-700 hover:bg-red-50">
+            <button onClick={() => deleteClient(client.id)} className="block min-h-11 w-full rounded-md px-3 py-2 text-left text-sm font-bold text-red-700 hover:bg-red-50">
               Delete
             </button>
           </div>
@@ -2366,11 +2729,11 @@ function CalendarView({ clients, openClient }) {
       <h2 className="text-xl font-black">Calendar</h2>
       <div className="mt-3 space-y-2">
         {dated.map((item) => (
-          <button key={`${item.client.id}-${item.label}-${item.date}`} onClick={() => openClient(item.client)} className="flex w-full items-center justify-between rounded-md border border-slate-300 bg-white p-3 text-left shadow-sm hover:border-blue-300">
-            <span>
+          <button key={`${item.client.id}-${item.label}-${item.date}`} onClick={() => openClient(item.client)} className="grid w-full gap-1 rounded-md border border-slate-300 bg-white p-3 text-left shadow-sm hover:border-blue-300 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+            <span className="min-w-0 break-words">
               <b>{item.date}</b> {item.label}
             </span>
-            <span className="text-sm font-bold text-slate-600">{item.client.name}</span>
+            <span className="min-w-0 break-words text-sm font-bold text-slate-600 sm:text-right">{item.client.name}</span>
           </button>
         ))}
         {!dated.length && <p className="text-sm font-bold text-slate-500">No dated work yet.</p>}
@@ -2379,38 +2742,57 @@ function CalendarView({ clients, openClient }) {
   );
 }
 
-function InvoicesView({ clients, openClient, quickAction }) {
+function InvoicesView({ clients, savedInvoices = [], openClient, quickAction }) {
   const invoiceClients = clients.filter(
-    (client) => client.paymentStatus !== "No Invoice" || client.projectStatus === "Completed"
+    (client) => client.paymentStatus !== "No Invoice" || client.projectStatus === "Completed" || summarizeClientInvoices(client, savedInvoices).attached.length
   );
 
   return (
     <section className="space-y-3">
       <h2 className="text-xl font-black">Invoices & Payments</h2>
-      {invoiceClients.map((client) => (
+      {invoiceClients.map((client) => {
+        const invoiceSummary = summarizeClientInvoices(client, savedInvoices);
+        return (
         <article key={client.id} className={`rounded-lg p-3 ${crmCardClass}`}>
-          <div className="flex items-start justify-between gap-3">
-            <button onClick={() => openClient(client)} className="text-left">
-              <h3 className="font-black">{client.name || "Unnamed Client"}</h3>
-              <p className="text-sm font-semibold text-slate-600">{client.service || "No service"}</p>
+          <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
+            <button onClick={() => openClient(client)} className="min-w-0 text-left">
+              <h3 className="break-words font-black">{client.name || "Unnamed Client"}</h3>
+              <p className="break-words text-sm font-semibold text-slate-600">{client.service || "No service"}</p>
             </button>
-            <PaymentBadge value={client.paymentStatus} />
+            <div className="min-w-0 sm:text-right">
+              <PaymentBadge value={client.paymentStatus} />
+            </div>
           </div>
-          <div className="mt-3 grid grid-cols-3 gap-2 text-sm">
-            <Info label="Estimate" value={money(client.estimateAmount)} />
+          <div className="mt-3 grid grid-cols-1 gap-2 text-sm min-[360px]:grid-cols-3">
+            <Info label="Invoices" value={invoiceSummary.attached.length ? `${invoiceSummary.attached.length} / ${money(invoiceSummary.total)}` : "-"} />
             <Info label="Paid" value={money(client.paymentAmount)} />
             <Info label="Balance" value={money(client.balanceDue)} />
           </div>
-          <div className="mt-3 flex gap-2">
-            <button onClick={() => quickAction(client, "invoice")} className="rounded-md bg-blue-700 px-3 py-2 text-sm font-black text-white hover:bg-blue-800">
+          {invoiceSummary.attached.length > 0 && (
+            <div className="mt-3 grid gap-2">
+              {invoiceSummary.attached.slice(0, 2).map((invoice) => (
+                <Link
+                  key={invoice.id}
+                  href={`/invoice-basic?id=${encodeURIComponent(invoice.id)}`}
+                  className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-bold text-slate-800"
+                >
+                  <span className="truncate">{invoiceLabel(invoice)}</span>
+                  <span>{money(invoiceTotal(invoice))}</span>
+                </Link>
+              ))}
+            </div>
+          )}
+          <div className="mt-3 grid grid-cols-2 gap-2 sm:flex">
+            <button onClick={() => quickAction(client, "invoice")} className="min-h-11 rounded-md bg-blue-700 px-3 py-2 text-sm font-black text-white hover:bg-blue-800">
               Create Invoice
             </button>
-            <button onClick={() => quickAction(client, "paid")} className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-bold">
+            <button onClick={() => quickAction(client, "paid")} className="min-h-11 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-bold">
               Mark Paid
             </button>
           </div>
         </article>
-      ))}
+      );
+      })}
       {!invoiceClients.length && <p className={`rounded-lg p-8 text-center text-sm font-bold text-slate-500 ${crmPanelClass}`}>No invoices yet.</p>}
     </section>
   );
@@ -2429,6 +2811,7 @@ function nextClientStep(client = {}) {
 
 function ClientDetail({ client, savedInvoices = [], close, editClient, updateClient, changeStatus, quickAction, clearFollowUp, addCommunication }) {
   const attachedEstimates = getClientEstimates(client, savedInvoices);
+  const invoiceSummary = summarizeClientInvoices(client, savedInvoices);
   const editField = (field, label, currentValue = "", displayValue = currentValue) => {
     const nextValue = window.prompt(`Edit ${label}`, String(currentValue || ""));
     if (nextValue === null) return;
@@ -2444,8 +2827,8 @@ function ClientDetail({ client, savedInvoices = [], close, editClient, updateCli
   };
 
   return (
-    <aside className="fixed inset-0 z-40 bg-slate-950/40 md:p-4">
-      <div className="ml-auto flex h-full max-w-2xl flex-col bg-slate-100 shadow-2xl md:rounded-lg">
+    <aside className="fixed inset-0 z-40 h-dvh overflow-hidden bg-slate-950/40 md:p-4">
+      <div className="ml-auto flex h-full w-full max-w-2xl flex-col overflow-hidden bg-slate-100 shadow-2xl md:rounded-lg">
         <header className="shrink-0 border-b border-slate-200 bg-white p-3">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
@@ -2538,9 +2921,9 @@ function ClientDetail({ client, savedInvoices = [], close, editClient, updateCli
               <InlineStatus label="Payment Status" value={client.paymentStatus} options={paymentStatuses} onChange={(v) => changeStatus(client.id, "paymentStatus", v)} />
               <DateInput label="Follow-Up Date" value={client.followUpDate} onChange={(v) => updateClient(client.id, { followUpDate: v }, makeTimelineEntry({ type: "status_change", content: `Follow-up date changed to ${v || "none"}` }))} />
             </div>
-            <div className="mt-3 flex flex-wrap gap-2">
+            <div className="mt-3 grid grid-cols-2 gap-2 min-[420px]:grid-cols-3 sm:flex sm:flex-wrap">
               {communicationResults.map((result) => (
-                <button key={result} onClick={() => addCommunication(client.id, result)} className="rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-black">
+                <button key={result} onClick={() => addCommunication(client.id, result)} className="min-h-11 rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-black">
                   {result}
                 </button>
               ))}
@@ -2548,6 +2931,14 @@ function ClientDetail({ client, savedInvoices = [], close, editClient, updateCli
           </CrmSection>
 
           <CrmSection title="Payment">
+            {invoiceSummary.attached.length > 0 && (
+              <div className="mb-3 rounded-md border border-slate-200 bg-slate-50 p-3">
+                <p className="text-xs font-black uppercase text-slate-500">Linked invoices</p>
+                <p className="mt-1 text-sm font-bold text-slate-800">
+                  {invoiceSummary.attached.length} invoice(s), {money(invoiceSummary.total)} total, {money(invoiceSummary.balance)} balance after recorded payments.
+                </p>
+              </div>
+            )}
             <div className="grid gap-2 text-sm md:grid-cols-3">
               <EditableInfo label="Deposit" value={money(client.depositAmount)} onEdit={() => editField("depositAmount", "Deposit", client.depositAmount, money(client.depositAmount))} />
               <EditableInfo label="Paid" value={money(client.paymentAmount)} onEdit={() => editField("paymentAmount", "Paid", client.paymentAmount, money(client.paymentAmount))} />
@@ -2566,7 +2957,7 @@ function ClientDetail({ client, savedInvoices = [], close, editClient, updateCli
           </CrmSection>
         </div>
 
-        <footer className="border-t border-slate-200 bg-white p-3">
+        <footer className="border-t border-slate-200 bg-white p-3" style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}>
           <button onClick={() => editClient(client)} className="w-full rounded-md bg-slate-900 px-4 py-3 text-sm font-black text-white">
             Edit Client
           </button>
@@ -2603,17 +2994,17 @@ function ClientForm({
           : "Manual Lead";
 
   return (
-    <aside className="fixed inset-0 z-50 bg-slate-950/40 p-2 md:p-4">
-      <section className="mx-auto flex max-h-full max-w-4xl flex-col overflow-hidden rounded-lg bg-white shadow-2xl">
-        <div className="border-b border-slate-200 p-4">
+    <aside className="fixed inset-0 z-50 h-dvh overflow-hidden bg-slate-950/40 p-2 md:p-4">
+      <section className="mx-auto flex h-full max-w-4xl flex-col overflow-hidden rounded-lg bg-white shadow-2xl" style={{ maxHeight: "calc(100dvh - 2rem)" }}>
+        <div className="shrink-0 border-b border-slate-200 p-3 md:p-4">
           <div className="flex items-center justify-between gap-3">
-            <h2 className="text-xl font-black">{title}</h2>
+            <h2 className="min-w-0 truncate text-xl font-black">{title}</h2>
             <button onClick={close} className="rounded-md border border-slate-300 px-3 py-2 text-sm font-bold">Close</button>
           </div>
           <p className="mt-1 text-xs font-bold text-slate-500">Required: name or phone. Service and city are optional.</p>
         </div>
 
-        <div className="flex-1 space-y-4 overflow-auto p-4 pb-24">
+        <div className="flex-1 space-y-4 overflow-auto p-3 pb-24 md:p-4">
           {isSmartMode && (
             <FormGroup title={mode === "voicemail" ? "Voicemail / Call Notes" : "Paste Lead / Email"}>
               <textarea
@@ -2719,7 +3110,7 @@ function ClientForm({
           )}
         </div>
 
-        <div className="sticky bottom-0 flex gap-2 border-t border-slate-200 bg-white p-3">
+        <div className="sticky bottom-0 flex gap-2 border-t border-slate-200 bg-white p-3" style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}>
           <button onClick={close} className="rounded-md border border-slate-300 px-4 py-3 text-sm font-bold">Cancel</button>
           <button onClick={saveClient} className="flex-1 rounded-md bg-blue-700 px-4 py-3 text-sm font-black text-white hover:bg-blue-800">
             {editing ? "Update Client" : "Save Lead"}
@@ -2856,7 +3247,7 @@ function LongPressFollowUpButton({ client, quickAction, clearFollowUp, className
       }}
       onClick={handleClick}
       title="Tap to schedule. Long press to clear follow-up."
-      className={`rounded-md border border-blue-700 bg-blue-700 px-3 py-2 text-sm font-black text-white hover:bg-blue-800 ${className}`}
+      className={`min-h-11 rounded-md border border-blue-700 bg-blue-700 px-3 py-2 text-sm font-black text-white hover:bg-blue-800 ${className}`}
     >
       Follow Up
     </button>
@@ -2876,6 +3267,9 @@ function ClientActionGrid({ client, quickAction, clearFollowUp, editClient }) {
         Estimate
       </ActionButton>
       <LongPressFollowUpButton client={client} quickAction={quickAction} clearFollowUp={clearFollowUp} className="min-h-11 text-center leading-tight shadow-sm" />
+      <ActionButton primary onClick={() => quickAction(client, "acceptInvoice")}>
+        Accept + Invoice
+      </ActionButton>
       <details className="relative col-span-2">
         <summary className="min-h-11 cursor-pointer list-none rounded-md border border-slate-300 bg-white px-3 py-3 text-center text-sm font-black leading-tight text-slate-900 shadow-sm">
           More
@@ -3219,8 +3613,7 @@ function ProjectBadge({ value, label = "" }) {
     "Not Scheduled": "bg-slate-100 text-slate-700",
     Scheduled: "bg-indigo-50 text-indigo-800",
     "In Progress": "bg-blue-50 text-blue-800",
-    Completed: "bg-sky-50 text-sky-800",
-  };
+    Completed: "bg-sky-50 text-sky-800",  };
   return (
     <span className={`rounded-full px-2.5 py-1 text-[11px] font-black ${classes[value] || "bg-slate-100 text-slate-700"}`}>
       {label ? `${label}: ` : ""}{value || "-"}
