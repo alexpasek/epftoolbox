@@ -3366,14 +3366,14 @@ function FormGroup({ title, children }) {
 
 function Input({ label, value, onChange, type = "text" }) {
   return (
-    <label className="block text-sm font-bold">
+    <label className="block min-w-0 text-sm font-bold">
       {label}
       <input
         type={type}
         value={value || ""}
         onChange={(e) => onChange(e.target.value)}
         autoComplete={label.toLowerCase().includes("address") ? "street-address" : undefined}
-        className="mt-1 w-full rounded-md border border-slate-300 p-2.5 text-sm outline-none focus:border-blue-700"
+        className="mt-1 min-w-0 w-full rounded-md border border-slate-300 p-2.5 text-sm outline-none focus:border-blue-700"
       />
     </label>
   );
@@ -3416,7 +3416,7 @@ function AddressInput({ label, value, onChange, onCityChange }) {
   }, [onChange, onCityChange]);
 
   return (
-    <label className="block text-sm font-bold">
+    <label className="block min-w-0 text-sm font-bold">
       {label}
       <input
         ref={inputRef}
@@ -3425,7 +3425,7 @@ function AddressInput({ label, value, onChange, onCityChange }) {
         onChange={(e) => onChange(e.target.value)}
         autoComplete="street-address"
         placeholder="Start typing and choose the Google address"
-        className="mt-1 w-full rounded-md border border-slate-300 p-2.5 text-sm outline-none focus:border-blue-700"
+        className="mt-1 min-w-0 w-full rounded-md border border-slate-300 p-2.5 text-sm outline-none focus:border-blue-700"
       />
     </label>
   );
@@ -3528,9 +3528,11 @@ function InlineStatus({ label, value, options, onChange }) {
 
 function Info({ label, value }) {
   return (
-    <div className="rounded-md border border-slate-200 bg-slate-50 p-2 shadow-sm">
+    <div className="min-w-0 overflow-hidden rounded-md border border-slate-200 bg-slate-50 p-2 shadow-sm">
       <p className="text-[11px] font-black uppercase text-slate-500">{label}</p>
-      <p className="mt-0.5 break-words font-bold text-slate-900">{value || "-"}</p>
+      <p className="mt-0.5 font-bold text-slate-900" style={{ overflowWrap: "anywhere", wordBreak: "break-word" }}>
+        {value || "-"}
+      </p>
     </div>
   );
 }
@@ -3567,11 +3569,13 @@ function EditableInfo({ label, value, onEdit }) {
         clearTimer();
         onEdit?.();
       }}
-      className="w-full rounded-md border border-slate-200 bg-slate-50 p-2 text-left shadow-sm"
+      className="min-w-0 w-full overflow-hidden rounded-md border border-slate-200 bg-slate-50 p-2 text-left shadow-sm"
       title="Long press to edit"
     >
       <p className="text-[11px] font-black uppercase text-slate-500">{label}</p>
-      <p className="mt-0.5 break-words font-bold text-slate-900">{value || "-"}</p>
+      <p className="mt-0.5 font-bold text-slate-900" style={{ overflowWrap: "anywhere", wordBreak: "break-word" }}>
+        {value || "-"}
+      </p>
     </button>
   );
 }
