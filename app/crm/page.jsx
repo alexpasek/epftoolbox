@@ -221,14 +221,6 @@ function createFollowUpCalendarDescription(client = {}, selectedMessage = "", me
     "TEXT OPTION 2 - Estimate / booking follow-up:",
     allMessages.textEstimate,
     "",
-    "EMAIL OPTION 1 - Friendly check-in:",
-    `Subject: ${allMessages.emailSubject}`,
-    allMessages.emailCheckIn,
-    "",
-    "EMAIL OPTION 2 - Estimate / booking follow-up:",
-    `Subject: ${allMessages.emailSubject}`,
-    allMessages.emailEstimate,
-    "",
     "Business details:",
     `${contact.name} - ${contact.company}`,
     contact.title,
@@ -244,6 +236,11 @@ function createFollowUpCalendarDescription(client = {}, selectedMessage = "", me
   ]
     .filter(Boolean)
     .join("\n");
+}
+
+function isAndroidDevice() {
+  if (typeof navigator === "undefined") return false;
+  return /android/i.test(navigator.userAgent || "");
 }
 
 function downloadFollowUpCalendar(client = {}, dateISO = addDaysISO(2), selectedMessage = "", messages = {}, settings = defaultBusinessContact) {
@@ -1531,6 +1528,30 @@ export default function CrmPage() {
     }
   }
 
+  function clearFollowUp(client) {
+    if (!client.followUpDate && client.leadStatus !== "Follow-Up") {
+      alert("This client has no CRM follow-up to clear.");
+      return;
+    }
+    const ok = window.confirm(
+      "Clear this follow-up from the CRM? If you already imported it into iPhone Calendar, delete that calendar event in the Calendar app too."
+    );
+    if (!ok) return;
+
+    updateClient(
+      client.id,
+      {
+        followUpDate: "",
+        leadStatus: client.leadStatus === "Follow-Up" ? "Contacted" : client.leadStatus,
+      },
+      makeTimelineEntry({
+        type: "follow_up",
+        content: "Follow-up cleared from CRM by long press.",
+        createdBy: "CRM",
+      })
+    );
+  }
+
   function quickAction(client, action) {
     if (action === "call") {
       if (!client.phone) {
@@ -1731,6 +1752,7 @@ export default function CrmPage() {
             setActiveView={setActiveView}
             openClient={(client) => setSelectedClientId(client.id)}
             quickAction={quickAction}
+            clearFollowUp={clearFollowUp}
           />
         )}
 
@@ -1755,6 +1777,7 @@ export default function CrmPage() {
             editClient={editClient}
             deleteClient={deleteClient}
             quickAction={quickAction}
+            clearFollowUp={clearFollowUp}
           />
         )}
 
@@ -1796,6 +1819,7 @@ export default function CrmPage() {
             updateClient={updateClient}
             changeStatus={changeStatus}
             quickAction={quickAction}
+            clearFollowUp={clearFollowUp}
             addCommunication={addCommunication}
           />
         )}
@@ -1858,11 +1882,65 @@ function BottomNav({ activeView, setActiveView }) {
   );
 }
 
+function LongPressCalendarButton({ client, message, messages, label, action, longPressAction, scheduleFollowUp }) {
+  const timerRef = useRef(null);
+  const longPressFiredRef = useRef(false);
+
+  function clearTimer() {
+    if (timerRef.current) {
+      window.clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  }
+
+  function startLongPress() {
+    longPressFiredRef.current = false;
+    clearTimer();
+    timerRef.current = window.setTimeout(() => {
+      longPressFiredRef.current = true;
+      scheduleFollowUp(client, message, messages, longPressAction, "text");
+    }, 650);
+  }
+
+  function handleClick(event) {
+    if (longPressFiredRef.current) {
+      event.preventDefault();
+      longPressFiredRef.current = false;
+      return;
+    }
+    scheduleFollowUp(client, message, messages, action, "text");
+  }
+
+  return (
+    <button
+      type="button"
+      onPointerDown={startLongPress}
+      onPointerUp={clearTimer}
+      onPointerCancel={clearTimer}
+      onPointerLeave={clearTimer}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        clearTimer();
+        scheduleFollowUp(client, message, messages, longPressAction, "text");
+      }}
+      onClick={handleClick}
+      className="min-h-11 rounded-md bg-blue-700 px-3 py-2 text-sm font-black text-white hover:bg-blue-800"
+    >
+      {label}
+    </button>
+  );
+}
+
 function FollowUpChooser({ client, settings, close, scheduleFollowUp }) {
   const messages = createFollowUpMessages(client, settings);
+  const androidDevice = isAndroidDevice();
+  const calendarAction = androidDevice ? "google" : "ics";
+  const calendarLongPressAction = androidDevice ? "ics" : "google";
+  const calendarLabel = androidDevice ? "Android Calendar" : "iPhone Calendar";
+  const calendarLongPressLabel = androidDevice ? "Long press for iPhone file" : "Long press for Android";
   const options = [
-    ["checkIn", "Option 1", "Friendly check-in", messages.textCheckIn, messages.emailCheckIn],
-    ["estimate", "Option 2", "Estimate / booking follow-up", messages.textEstimate, messages.emailEstimate],
+    ["checkIn", "Option 1", "Friendly check-in", messages.textCheckIn],
+    ["estimate", "Option 2", "Estimate / booking follow-up", messages.textEstimate],
   ];
 
   return (
@@ -1874,7 +1952,7 @@ function FollowUpChooser({ client, settings, close, scheduleFollowUp }) {
               <p className="text-xs font-black uppercase text-blue-700">Follow Up</p>
               <h2 className="truncate text-xl font-black">{client.name || client.phone || "CRM lead"}</h2>
               <p className="mt-1 text-sm font-bold text-slate-500">
-                Calendar note saves text and email options. Buttons are above the message for phone use.
+                Calendar note saves both text options. {calendarLongPressLabel}.
               </p>
             </div>
             <button onClick={close} className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-black">
@@ -1884,49 +1962,32 @@ function FollowUpChooser({ client, settings, close, scheduleFollowUp }) {
         </header>
 
         <div className="grid gap-3 overflow-auto p-3 pb-8 md:grid-cols-2 md:p-4">
-          {options.map(([key, eyebrow, title, textMessage, emailMessage]) => (
+          {options.map(([key, eyebrow, title, textMessage]) => (
             <article key={key} className="rounded-lg border border-slate-300 bg-slate-50 p-3 shadow-sm">
               <p className="text-xs font-black uppercase text-slate-500">{eyebrow}</p>
               <h3 className="mt-1 text-base font-black text-slate-950">{title}</h3>
               <div className="mt-3 grid gap-2">
-                <button
-                  type="button"
-                  onClick={() => scheduleFollowUp(client, textMessage, messages, "ics", "text")}
-                  className="min-h-11 rounded-md bg-blue-700 px-3 py-2 text-sm font-black text-white hover:bg-blue-800"
-                >
-                  iPhone Calendar
-                </button>
+                <LongPressCalendarButton
+                  client={client}
+                  message={textMessage}
+                  messages={messages}
+                  label={calendarLabel}
+                  action={calendarAction}
+                  longPressAction={calendarLongPressAction}
+                  scheduleFollowUp={scheduleFollowUp}
+                />
                 <button
                   type="button"
                   disabled={!client.phone}
                   onClick={() => scheduleFollowUp(client, textMessage, messages, "text", "text")}
                   className="min-h-11 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-black text-slate-900 disabled:cursor-not-allowed disabled:opacity-45"
                 >
-                  iPhone Calendar + Text
-                </button>
-                <button
-                  type="button"
-                  onClick={() => scheduleFollowUp(client, textMessage, messages, "google", "text")}
-                  className="min-h-11 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-black text-slate-900"
-                >
-                  Android / Google Calendar
-                </button>
-                <button
-                  type="button"
-                  disabled={!client.email}
-                  onClick={() => scheduleFollowUp(client, emailMessage, messages, "email", "email")}
-                  className="min-h-11 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-black text-slate-900 disabled:cursor-not-allowed disabled:opacity-45"
-                >
-                  Calendar + Email
+                  Calendar + Text
                 </button>
               </div>
               <p className="mt-3 whitespace-pre-wrap rounded-md border border-slate-200 bg-white p-3 text-sm font-semibold leading-6 text-slate-800">
                 {textMessage}
               </p>
-              <details className="mt-2 rounded-md border border-slate-200 bg-white p-2">
-                <summary className="cursor-pointer text-xs font-black uppercase text-slate-500">Email version</summary>
-                <p className="mt-2 whitespace-pre-wrap text-sm font-semibold leading-6 text-slate-800">{emailMessage}</p>
-              </details>
             </article>
           ))}
         </div>
@@ -1969,8 +2030,6 @@ function SettingsPanel({ settings, close, saveSettings }) {
           {[
             ["Text Option 1", "textCheckInTemplate"],
             ["Text Option 2", "textEstimateTemplate"],
-            ["Email Option 1", "emailCheckInTemplate"],
-            ["Email Option 2", "emailEstimateTemplate"],
           ].map(([label, field]) => (
             <label key={field} className="block text-sm font-bold md:col-span-2">
               {label}
@@ -2145,7 +2204,7 @@ function PipelineCard({ client, openClient, changeStatus, compact = false }) {
   );
 }
 
-function ClientsView({ clients, savedInvoices, filters, setFilters, filterOptions, search, setSearch, openClient, editClient, deleteClient, quickAction }) {
+function ClientsView({ clients, savedInvoices, filters, setFilters, filterOptions, search, setSearch, openClient, editClient, deleteClient, quickAction, clearFollowUp }) {
   const [controlsOpen, setControlsOpen] = useState(false);
   const activeFilterCount =
     (search.trim() ? 1 : 0) +
@@ -2220,6 +2279,7 @@ function ClientsView({ clients, savedInvoices, filters, setFilters, filterOption
             editClient={editClient}
             deleteClient={deleteClient}
             quickAction={quickAction}
+            clearFollowUp={clearFollowUp}
           />
         ))}
       </div>
@@ -2232,7 +2292,7 @@ function ClientsView({ clients, savedInvoices, filters, setFilters, filterOption
   );
 }
 
-function ClientCard({ client, estimates = [], openClient, editClient, deleteClient, quickAction }) {
+function ClientCard({ client, estimates = [], openClient, editClient, deleteClient, quickAction, clearFollowUp }) {
   return (
     <article className={`rounded-lg p-3 transition hover:border-blue-300 hover:shadow-lg ${crmCardClass} ${needsReminder(client) ? "ring-2 ring-amber-300" : ""}`}>
       <div className="flex items-start justify-between gap-3">
@@ -2266,9 +2326,7 @@ function ClientCard({ client, estimates = [], openClient, editClient, deleteClie
         <button onClick={() => quickAction(client, "text")} className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-bold">
           Text
         </button>
-        <button onClick={() => quickAction(client, "followUp")} className="rounded-md border border-blue-700 bg-blue-700 px-3 py-2 text-sm font-black text-white hover:bg-blue-800">
-          Follow Up
-        </button>
+        <LongPressFollowUpButton client={client} quickAction={quickAction} clearFollowUp={clearFollowUp} />
         <button onClick={() => openClient(client)} className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-bold">
           Open
         </button>
@@ -2282,9 +2340,6 @@ function ClientCard({ client, estimates = [], openClient, editClient, deleteClie
                 {action === "estimate" ? "Build Estimate" : action}
               </button>
             ))}
-            <button onClick={() => editClient(client)} className="block w-full rounded-md px-3 py-2 text-left text-sm font-bold hover:bg-slate-100">
-              Edit
-            </button>
             <button onClick={() => deleteClient(client.id)} className="block w-full rounded-md px-3 py-2 text-left text-sm font-bold text-red-700 hover:bg-red-50">
               Delete
             </button>
@@ -2372,8 +2427,21 @@ function nextClientStep(client = {}) {
   return "Keep contact info updated and log the next client action.";
 }
 
-function ClientDetail({ client, savedInvoices = [], close, editClient, updateClient, changeStatus, quickAction, addCommunication }) {
+function ClientDetail({ client, savedInvoices = [], close, editClient, updateClient, changeStatus, quickAction, clearFollowUp, addCommunication }) {
   const attachedEstimates = getClientEstimates(client, savedInvoices);
+  const editField = (field, label, currentValue = "", displayValue = currentValue) => {
+    const nextValue = window.prompt(`Edit ${label}`, String(currentValue || ""));
+    if (nextValue === null) return;
+    updateClient(
+      client.id,
+      { [field]: nextValue },
+      makeTimelineEntry({
+        type: "edit",
+        content: `${label} changed from ${displayValue || "-"} to ${nextValue || "-"}.`,
+        createdBy: "CRM",
+      })
+    );
+  };
 
   return (
     <aside className="fixed inset-0 z-40 bg-slate-950/40 md:p-4">
@@ -2403,17 +2471,17 @@ function ClientDetail({ client, savedInvoices = [], close, editClient, updateCli
               <p className="text-xs font-black uppercase text-blue-900">Next best step</p>
               <p className="mt-1 text-sm font-bold text-blue-950">{nextClientStep(client)}</p>
             </div>
-            <ClientActionGrid client={client} quickAction={quickAction} editClient={editClient} />
+            <ClientActionGrid client={client} quickAction={quickAction} clearFollowUp={clearFollowUp} editClient={editClient} />
           </CrmSection>
 
           <CrmSection title="Contact Info" defaultOpen>
             <div className="grid gap-2 text-sm md:grid-cols-2">
-              <Info label="Phone" value={client.phone} />
-              <Info label="Email" value={client.email} />
-              <Info label="Address" value={client.address} />
-              <Info label="City" value={client.city} />
-              <Info label="Source" value={client.source} />
-              <Info label="Assigned" value={client.assignedTo} />
+              <EditableInfo label="Phone" value={client.phone} onEdit={() => editField("phone", "Phone", client.phone)} />
+              <EditableInfo label="Email" value={client.email} onEdit={() => editField("email", "Email", client.email)} />
+              <EditableInfo label="Address" value={client.address} onEdit={() => editField("address", "Address", client.address)} />
+              <EditableInfo label="City" value={client.city} onEdit={() => editField("city", "City", client.city)} />
+              <EditableInfo label="Source" value={client.source} onEdit={() => editField("source", "Source", client.source)} />
+              <EditableInfo label="Assigned" value={client.assignedTo} onEdit={() => editField("assignedTo", "Assigned", client.assignedTo)} />
             </div>
             {(client.address || client.city) && (
               <a
@@ -2429,13 +2497,13 @@ function ClientDetail({ client, savedInvoices = [], close, editClient, updateCli
 
           <CrmSection title="Job Details">
             <div className="grid gap-2 text-sm md:grid-cols-2">
-              <Info label="Service" value={client.service} />
-              <Info label="Square Footage" value={client.squareFootage} />
-              <Info label="Work Needed" value={client.workNeeded} />
-              <Info label="Ceiling Height" value={client.ceilingHeight} />
-              <Info label="Asbestos" value={client.asbestosStatus} />
-              <Info label="Start Date" value={client.startDate} />
-              <Info label="Completed" value={client.completedDate} />
+              <EditableInfo label="Service" value={client.service} onEdit={() => editField("service", "Service", client.service)} />
+              <EditableInfo label="Square Footage" value={client.squareFootage} onEdit={() => editField("squareFootage", "Square Footage", client.squareFootage)} />
+              <EditableInfo label="Work Needed" value={client.workNeeded} onEdit={() => editField("workNeeded", "Work Needed", client.workNeeded)} />
+              <EditableInfo label="Ceiling Height" value={client.ceilingHeight} onEdit={() => editField("ceilingHeight", "Ceiling Height", client.ceilingHeight)} />
+              <EditableInfo label="Asbestos" value={client.asbestosStatus} onEdit={() => editField("asbestosStatus", "Asbestos", client.asbestosStatus)} />
+              <EditableInfo label="Start Date" value={client.startDate} onEdit={() => editField("startDate", "Start Date", client.startDate)} />
+              <EditableInfo label="Completed" value={client.completedDate} onEdit={() => editField("completedDate", "Completed", client.completedDate)} />
             </div>
           </CrmSection>
 
@@ -2455,10 +2523,10 @@ function ClientDetail({ client, savedInvoices = [], close, editClient, updateCli
               </div>
             </div>
             <div className="grid gap-2 text-sm md:grid-cols-2">
-              <Info label="Amount" value={money(client.estimateAmount)} />
-              <Info label="Estimate Date" value={client.estimateDate} />
-              <Info label="Sent At" value={client.estimateSentAt?.slice(0, 10)} />
-              <Info label="Accepted At" value={client.estimateAcceptedAt?.slice(0, 10)} />
+              <EditableInfo label="Amount" value={money(client.estimateAmount)} onEdit={() => editField("estimateAmount", "Amount", client.estimateAmount, money(client.estimateAmount))} />
+              <EditableInfo label="Estimate Date" value={client.estimateDate} onEdit={() => editField("estimateDate", "Estimate Date", client.estimateDate)} />
+              <EditableInfo label="Sent At" value={client.estimateSentAt?.slice(0, 10)} onEdit={() => editField("estimateSentAt", "Sent At", client.estimateSentAt)} />
+              <EditableInfo label="Accepted At" value={client.estimateAcceptedAt?.slice(0, 10)} onEdit={() => editField("estimateAcceptedAt", "Accepted At", client.estimateAcceptedAt)} />
             </div>
             <AttachedEstimates estimates={attachedEstimates} />
           </CrmSection>
@@ -2481,9 +2549,9 @@ function ClientDetail({ client, savedInvoices = [], close, editClient, updateCli
 
           <CrmSection title="Payment">
             <div className="grid gap-2 text-sm md:grid-cols-3">
-              <Info label="Deposit" value={money(client.depositAmount)} />
-              <Info label="Paid" value={money(client.paymentAmount)} />
-              <Info label="Balance" value={money(client.balanceDue)} />
+              <EditableInfo label="Deposit" value={money(client.depositAmount)} onEdit={() => editField("depositAmount", "Deposit", client.depositAmount, money(client.depositAmount))} />
+              <EditableInfo label="Paid" value={money(client.paymentAmount)} onEdit={() => editField("paymentAmount", "Paid", client.paymentAmount, money(client.paymentAmount))} />
+              <EditableInfo label="Balance" value={money(client.balanceDue)} onEdit={() => editField("balanceDue", "Balance", client.balanceDue, money(client.balanceDue))} />
             </div>
             {client.paymentStatus === "Paid" && (
               <button onClick={() => quickAction(client, "note")} className="mt-3 rounded-md bg-blue-700 px-3 py-2 text-sm font-black text-white hover:bg-blue-800">
@@ -2497,6 +2565,12 @@ function ClientDetail({ client, savedInvoices = [], close, editClient, updateCli
             <Timeline entries={client.communicationLog || []} />
           </CrmSection>
         </div>
+
+        <footer className="border-t border-slate-200 bg-white p-3">
+          <button onClick={() => editClient(client)} className="w-full rounded-md bg-slate-900 px-4 py-3 text-sm font-black text-white">
+            Edit Client
+          </button>
+        </footer>
       </div>
     </aside>
   );
@@ -2735,7 +2809,61 @@ function ActionButton({ primary = false, disabled = false, onClick, children }) 
   );
 }
 
-function ClientActionGrid({ client, quickAction, editClient }) {
+function LongPressFollowUpButton({ client, quickAction, clearFollowUp, className = "" }) {
+  const timerRef = useRef(null);
+  const longPressFiredRef = useRef(false);
+
+  function clearTimer() {
+    if (timerRef.current) {
+      window.clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  }
+
+  function startLongPress() {
+    longPressFiredRef.current = false;
+    clearTimer();
+    timerRef.current = window.setTimeout(() => {
+      longPressFiredRef.current = true;
+      clearFollowUp?.(client);
+    }, 650);
+  }
+
+  function endLongPress() {
+    clearTimer();
+  }
+
+  function handleClick(event) {
+    if (longPressFiredRef.current) {
+      event.preventDefault();
+      longPressFiredRef.current = false;
+      return;
+    }
+    quickAction(client, "followUp");
+  }
+
+  return (
+    <button
+      type="button"
+      onPointerDown={startLongPress}
+      onPointerUp={endLongPress}
+      onPointerCancel={endLongPress}
+      onPointerLeave={endLongPress}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        clearTimer();
+        clearFollowUp?.(client);
+      }}
+      onClick={handleClick}
+      title="Tap to schedule. Long press to clear follow-up."
+      className={`rounded-md border border-blue-700 bg-blue-700 px-3 py-2 text-sm font-black text-white hover:bg-blue-800 ${className}`}
+    >
+      Follow Up
+    </button>
+  );
+}
+
+function ClientActionGrid({ client, quickAction, clearFollowUp, editClient }) {
   return (
     <div className="mt-3 grid grid-cols-2 gap-2">
       <ActionButton primary disabled={!client.phone} onClick={() => quickAction(client, "call")}>
@@ -2747,9 +2875,7 @@ function ClientActionGrid({ client, quickAction, editClient }) {
       <ActionButton primary onClick={() => quickAction(client, "estimate")}>
         Estimate
       </ActionButton>
-      <ActionButton primary onClick={() => quickAction(client, "followUp")}>
-        Follow Up
-      </ActionButton>
+      <LongPressFollowUpButton client={client} quickAction={quickAction} clearFollowUp={clearFollowUp} className="min-h-11 text-center leading-tight shadow-sm" />
       <details className="relative col-span-2">
         <summary className="min-h-11 cursor-pointer list-none rounded-md border border-slate-300 bg-white px-3 py-3 text-center text-sm font-black leading-tight text-slate-900 shadow-sm">
           More
@@ -2763,9 +2889,6 @@ function ClientActionGrid({ client, quickAction, editClient }) {
           </button>
           <button onClick={() => quickAction(client, "note")} className="rounded-md px-3 py-2 text-left text-sm font-bold hover:bg-slate-100">
             Note
-          </button>
-          <button onClick={() => editClient(client)} className="rounded-md px-3 py-2 text-left text-sm font-bold hover:bg-slate-100">
-            Edit Client
           </button>
         </div>
       </details>
@@ -3015,6 +3138,47 @@ function Info({ label, value }) {
       <p className="text-[11px] font-black uppercase text-slate-500">{label}</p>
       <p className="mt-0.5 break-words font-bold text-slate-900">{value || "-"}</p>
     </div>
+  );
+}
+
+function EditableInfo({ label, value, onEdit }) {
+  const timerRef = useRef(null);
+  const longPressFiredRef = useRef(false);
+
+  function clearTimer() {
+    if (timerRef.current) {
+      window.clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  }
+
+  function startLongPress() {
+    longPressFiredRef.current = false;
+    clearTimer();
+    timerRef.current = window.setTimeout(() => {
+      longPressFiredRef.current = true;
+      onEdit?.();
+    }, 600);
+  }
+
+  return (
+    <button
+      type="button"
+      onPointerDown={startLongPress}
+      onPointerUp={clearTimer}
+      onPointerCancel={clearTimer}
+      onPointerLeave={clearTimer}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        clearTimer();
+        onEdit?.();
+      }}
+      className="w-full rounded-md border border-slate-200 bg-slate-50 p-2 text-left shadow-sm"
+      title="Long press to edit"
+    >
+      <p className="text-[11px] font-black uppercase text-slate-500">{label}</p>
+      <p className="mt-0.5 break-words font-bold text-slate-900">{value || "-"}</p>
+    </button>
   );
 }
 
