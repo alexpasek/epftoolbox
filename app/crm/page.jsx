@@ -8,6 +8,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 const CRM_STORAGE_KEY = "epf.crm.clients";
 const CRM_AUTH_KEY = "epf.crm.unlocked";
 const CRM_ACCESS_MODE_KEY = "epf.crm.accessMode";
+const CRM_SETTINGS_KEY = "epf.crm.settings";
 const CRM_ACCESS_PIN = "1234";
 const CRM_LIMITED_PIN = "yehor";
 const DELETE_PASSWORD = "1234";
@@ -70,6 +71,8 @@ const paymentMethodOptions = ["Cash", "e-Transfer", "Check"];
 
 const navItems = ["Dashboard", "Pipeline", "Clients", "Calendar", "Invoices"];
 const CRM_SCHEMA_VERSION = 2;
+const crmPanelClass = "border border-slate-300 bg-white shadow-md shadow-slate-300/50";
+const crmCardClass = "border border-slate-300 bg-white shadow-md shadow-slate-300/50";
 const cityKeywords = [
   "Toronto",
   "Mississauga",
@@ -109,6 +112,22 @@ const makeId = () => `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 const nowISO = () => new Date().toISOString();
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const monthISO = () => new Date().toISOString().slice(0, 7);
+const defaultBusinessContact = {
+  name: "Alex",
+  company: "EPF Pro Services",
+  phone: "647-923-6784",
+  email: "info@epfproservices.com",
+  website: "epfproservices.com",
+  title: "Popcorn ceiling specialist",
+  textCheckInTemplate:
+    "Hi {firstName}, this is {name} from {company}, {title}. Just following up about the {service}{cityText}. You can see more at {website}. Let me know if you have any questions or would like to book the next step.\n\n{signature}",
+  textEstimateTemplate:
+    "Hi {firstName}, this is {name} from {company}, {title}. I wanted to follow up on your {service}{cityText}.{estimateText} You can see more at {website}. If you would like, I can help confirm timing and the next available date.\n\n{signature}",
+  emailCheckInTemplate:
+    "Hi {firstName},\n\nThis is {name} from {company}, {title}. I am following up about the {service}{cityText}.\n\nYou can review our work and contact details here: {website}\n\nLet me know if you have any questions or if you would like to book the next step.\n\n{signature}",
+  emailEstimateTemplate:
+    "Hi {firstName},\n\nThis is {name} from {company}, {title}. I wanted to follow up on your {service}{cityText}.{estimateText}\n\nYou can review our work and contact details here: {website}\n\nIf you would like, I can help confirm timing and the next available date.\n\n{signature}",
+};
 
 function addDaysISO(days, from = new Date()) {
   const date = new Date(from);
@@ -129,19 +148,95 @@ function escapeICS(value = "") {
     .replace(/;/g, "\\;");
 }
 
-function createFollowUpMessage(client = {}) {
-  const firstName = String(client.name || "").trim().split(/\s+/)[0] || "there";
-  const service = compactServiceLabel(client).toLowerCase();
-  const city = client.city ? ` in ${client.city}` : "";
-  const estimate = numberValue(client.estimateAmount) ? ` The estimate is ${money(client.estimateAmount)}.` : "";
-  return `Hi ${firstName}, just following up about the ${service}${city}.${estimate} Let me know if you have any questions or if you would like to book the next step.`;
+function normalizeSettings(settings = {}) {
+  return {
+    ...defaultBusinessContact,
+    ...settings,
+  };
 }
 
-function downloadFollowUpCalendar(client = {}, dateISO = addDaysISO(2), message = "") {
-  if (typeof window === "undefined") return;
-  const title = `Follow up: ${client.name || client.phone || "CRM lead"}`;
-  const description = [
-    message,
+function businessSignature(settings = defaultBusinessContact) {
+  const contact = normalizeSettings(settings);
+  return `${contact.name}\n${contact.company}\n${contact.title}\n${contact.phone}\n${contact.website}`;
+}
+
+function renderTemplate(template = "", values = {}) {
+  return String(template).replace(/\{(\w+)\}/g, (_, key) => values[key] ?? "");
+}
+
+function createFollowUpMessages(client = {}, settings = defaultBusinessContact) {
+  const contact = normalizeSettings(settings);
+  const firstName = String(client.name || "").trim().split(/\s+/)[0] || "there";
+  const service = compactServiceLabel(client).toLowerCase();
+  const values = {
+    firstName,
+    name: contact.name,
+    company: contact.company,
+    title: contact.title,
+    phone: contact.phone,
+    email: contact.email,
+    website: contact.website,
+    service,
+    city: client.city || "",
+    cityText: client.city ? ` in ${client.city}` : "",
+    estimate: numberValue(client.estimateAmount) ? money(client.estimateAmount) : "",
+    estimateText: numberValue(client.estimateAmount) ? ` The estimate is ${money(client.estimateAmount)}.` : "",
+    signature: businessSignature(contact),
+  };
+  const subject = `${contact.company} follow-up`;
+  return {
+    textCheckIn: renderTemplate(contact.textCheckInTemplate, values),
+    textEstimate: renderTemplate(contact.textEstimateTemplate, values),
+    emailSubject: subject,
+    emailCheckIn: renderTemplate(contact.emailCheckInTemplate, values),
+    emailEstimate: renderTemplate(contact.emailEstimateTemplate, values),
+  };
+}
+
+function googleCalendarHref(client = {}, dateISO = addDaysISO(2), description = "") {
+  const params = new URLSearchParams({
+    action: "TEMPLATE",
+    text: `Follow up: ${client.name || client.phone || "CRM lead"}`,
+    dates: `${dateTimeForICS(dateISO, 9)}/${dateTimeForICS(dateISO, 9).replace("090000", "093000")}`,
+    details: description,
+  });
+  const location = [client.address, client.city].filter(Boolean).join(", ");
+  if (location) params.set("location", location);
+  return `https://calendar.google.com/calendar/render?${params.toString()}`;
+}
+
+function createFollowUpCalendarDescription(client = {}, selectedMessage = "", messages = {}, settings = defaultBusinessContact) {
+  const contact = normalizeSettings(settings);
+  const allMessages = {
+    ...createFollowUpMessages(client, contact),
+    ...messages,
+  };
+  return [
+    "Selected follow-up:",
+    selectedMessage,
+    "",
+    "TEXT OPTION 1 - Friendly check-in:",
+    allMessages.textCheckIn,
+    "",
+    "TEXT OPTION 2 - Estimate / booking follow-up:",
+    allMessages.textEstimate,
+    "",
+    "EMAIL OPTION 1 - Friendly check-in:",
+    `Subject: ${allMessages.emailSubject}`,
+    allMessages.emailCheckIn,
+    "",
+    "EMAIL OPTION 2 - Estimate / booking follow-up:",
+    `Subject: ${allMessages.emailSubject}`,
+    allMessages.emailEstimate,
+    "",
+    "Business details:",
+    `${contact.name} - ${contact.company}`,
+    contact.title,
+    contact.phone,
+    contact.email,
+    contact.website,
+    "",
+    "Client details:",
     client.phone ? `Phone: ${client.phone}` : "",
     client.email ? `Email: ${client.email}` : "",
     client.service ? `Service: ${client.service}` : "",
@@ -149,6 +244,12 @@ function downloadFollowUpCalendar(client = {}, dateISO = addDaysISO(2), message 
   ]
     .filter(Boolean)
     .join("\n");
+}
+
+function downloadFollowUpCalendar(client = {}, dateISO = addDaysISO(2), selectedMessage = "", messages = {}, settings = defaultBusinessContact) {
+  if (typeof window === "undefined") return;
+  const title = `Follow up: ${client.name || client.phone || "CRM lead"}`;
+  const description = createFollowUpCalendarDescription(client, selectedMessage, messages, settings);
   const location = [client.address, client.city].filter(Boolean).join(", ");
   const ics = [
     "BEGIN:VCALENDAR",
@@ -768,6 +869,9 @@ export default function CrmPage() {
   const [accessPin, setAccessPin] = useState("");
   const [accessError, setAccessError] = useState("");
   const [savedInvoices, setSavedInvoices] = useState([]);
+  const [followUpClientId, setFollowUpClientId] = useState(null);
+  const [showSettings, setShowSettings] = useState(false);
+  const [appSettings, setAppSettings] = useState(defaultBusinessContact);
   const clientsRef = useRef(sampleClients);
 
   useEffect(() => {
@@ -845,6 +949,8 @@ export default function CrmPage() {
       setIsUnlocked(unlocked);
       const storedMode = window.localStorage.getItem(CRM_ACCESS_MODE_KEY);
       setAccessMode(storedMode === "limited" ? "limited" : "master");
+      const storedSettings = JSON.parse(window.localStorage.getItem(CRM_SETTINGS_KEY) || "{}");
+      setAppSettings(normalizeSettings(storedSettings));
     } catch {}
   }, []);
 
@@ -939,6 +1045,17 @@ export default function CrmPage() {
           canAccessClient(client, effectiveAccessMode)
       ) || null,
     [clients, effectiveAccessMode, selectedClientId]
+  );
+
+  const followUpClient = useMemo(
+    () =>
+      clients.find(
+        (client) =>
+          client.id === followUpClientId &&
+          !client.deletedAt &&
+          canAccessClient(client, effectiveAccessMode)
+      ) || null,
+    [clients, effectiveAccessMode, followUpClientId]
   );
 
   const activeClients = useMemo(
@@ -1372,6 +1489,48 @@ export default function CrmPage() {
     updateClient(id, updates, makeTimelineEntry({ type, direction, content: result, createdBy: "Sales" }));
   }
 
+  function saveSettings(nextSettings) {
+    const normalized = normalizeSettings(nextSettings);
+    setAppSettings(normalized);
+    try {
+      window.localStorage.setItem(CRM_SETTINGS_KEY, JSON.stringify(normalized));
+    } catch {}
+    setShowSettings(false);
+  }
+
+  function scheduleFollowUp(client, message, messages, action = "ics", channel = "text") {
+    const followUpDate = addDaysISO(2);
+    const description = createFollowUpCalendarDescription(client, message, messages, appSettings);
+    updateClient(
+      client.id,
+      { leadStatus: "Follow-Up", followUpDate },
+      makeTimelineEntry({
+        type: "follow_up",
+        direction: "outbound",
+        content: `Follow-up scheduled for ${followUpDate}.\n\nSelected ${channel} message:\n${message}\n\n${description}`,
+        createdBy: "CRM",
+      })
+    );
+    if (action === "ics" || action === "text" || action === "email") {
+      downloadFollowUpCalendar(client, followUpDate, message, messages, appSettings);
+    }
+    setFollowUpClientId(null);
+    if (action === "google") {
+      window.open(googleCalendarHref(client, followUpDate, description), "_blank", "noopener,noreferrer");
+    }
+    if (action === "text" && client.phone) {
+      window.setTimeout(() => {
+        window.location.href = `sms:${client.phone}&body=${encodeURIComponent(message)}`;
+      }, 50);
+    }
+    if (action === "email" && client.email) {
+      const subject = encodeURIComponent(messages.emailSubject || `${appSettings.company} follow-up`);
+      window.setTimeout(() => {
+        window.location.href = `mailto:${client.email}?subject=${subject}&body=${encodeURIComponent(message)}`;
+      }, 50);
+    }
+  }
+
   function quickAction(client, action) {
     if (action === "call") {
       if (!client.phone) {
@@ -1410,19 +1569,7 @@ export default function CrmPage() {
     }
     if (action === "estimateSent") addCommunication(client.id, "Estimate Sent");
     if (action === "followUp") {
-      const followUpDate = addDaysISO(2);
-      const message = createFollowUpMessage(client);
-      updateClient(
-        client.id,
-        { leadStatus: "Follow-Up", followUpDate },
-        makeTimelineEntry({
-          type: "follow_up",
-          direction: "outbound",
-          content: `Follow-up scheduled for ${followUpDate}.\n\nMessage: ${message}`,
-          createdBy: "CRM",
-        })
-      );
-      downloadFollowUpCalendar(client, followUpDate, message);
+      setFollowUpClientId(client.id);
     }
     if (action === "invoice") {
       updateClient(
@@ -1488,7 +1635,7 @@ export default function CrmPage() {
       />
       <div className="mx-auto max-w-7xl p-3 md:p-5">
         <header className="sticky top-0 z-20 -mx-3 border-b border-slate-200 bg-slate-100/95 px-3 py-3 backdrop-blur md:static md:mx-0 md:border-0 md:bg-transparent md:px-0">
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <Link href="/" className="text-xs font-bold text-blue-700 hover:underline">
                 Back to menu
@@ -1501,7 +1648,7 @@ export default function CrmPage() {
                 {syncStatus}
               </p>
             </div>
-            <div className="flex shrink-0 items-center gap-2">
+            <div className="flex max-w-[58vw] shrink-0 flex-wrap items-center justify-end gap-1.5 md:max-w-none md:gap-2">
               {accessMode === "master" && (
                 <button
                   type="button"
@@ -1562,6 +1709,9 @@ export default function CrmPage() {
                   )}
                 </div>
               )}
+              <button onClick={() => setShowSettings(true)} className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-bold">
+                Settings
+              </button>
               <button onClick={lockCrm} className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-bold">
                 Lock
               </button>
@@ -1649,6 +1799,23 @@ export default function CrmPage() {
             addCommunication={addCommunication}
           />
         )}
+
+        {followUpClient && (
+          <FollowUpChooser
+            client={followUpClient}
+            settings={appSettings}
+            close={() => setFollowUpClientId(null)}
+            scheduleFollowUp={scheduleFollowUp}
+          />
+        )}
+
+        {showSettings && (
+          <SettingsPanel
+            settings={appSettings}
+            close={() => setShowSettings(false)}
+            saveSettings={saveSettings}
+          />
+        )}
       </div>
 
       <BottomNav activeView={activeView} setActiveView={setActiveView} />
@@ -1691,6 +1858,143 @@ function BottomNav({ activeView, setActiveView }) {
   );
 }
 
+function FollowUpChooser({ client, settings, close, scheduleFollowUp }) {
+  const messages = createFollowUpMessages(client, settings);
+  const options = [
+    ["checkIn", "Option 1", "Friendly check-in", messages.textCheckIn, messages.emailCheckIn],
+    ["estimate", "Option 2", "Estimate / booking follow-up", messages.textEstimate, messages.emailEstimate],
+  ];
+
+  return (
+    <aside className="fixed inset-0 z-50 bg-slate-950/50 p-2 md:p-5">
+      <section className="mx-auto flex max-h-full max-w-3xl flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-2xl">
+        <header className="shrink-0 border-b border-slate-200 p-3 md:p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-xs font-black uppercase text-blue-700">Follow Up</p>
+              <h2 className="truncate text-xl font-black">{client.name || client.phone || "CRM lead"}</h2>
+              <p className="mt-1 text-sm font-bold text-slate-500">
+                Calendar note saves text and email options. Buttons are above the message for phone use.
+              </p>
+            </div>
+            <button onClick={close} className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-black">
+              Close
+            </button>
+          </div>
+        </header>
+
+        <div className="grid gap-3 overflow-auto p-3 pb-8 md:grid-cols-2 md:p-4">
+          {options.map(([key, eyebrow, title, textMessage, emailMessage]) => (
+            <article key={key} className="rounded-lg border border-slate-300 bg-slate-50 p-3 shadow-sm">
+              <p className="text-xs font-black uppercase text-slate-500">{eyebrow}</p>
+              <h3 className="mt-1 text-base font-black text-slate-950">{title}</h3>
+              <div className="mt-3 grid gap-2">
+                <button
+                  type="button"
+                  onClick={() => scheduleFollowUp(client, textMessage, messages, "ics", "text")}
+                  className="min-h-11 rounded-md bg-blue-700 px-3 py-2 text-sm font-black text-white hover:bg-blue-800"
+                >
+                  iPhone Calendar
+                </button>
+                <button
+                  type="button"
+                  disabled={!client.phone}
+                  onClick={() => scheduleFollowUp(client, textMessage, messages, "text", "text")}
+                  className="min-h-11 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-black text-slate-900 disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  iPhone Calendar + Text
+                </button>
+                <button
+                  type="button"
+                  onClick={() => scheduleFollowUp(client, textMessage, messages, "google", "text")}
+                  className="min-h-11 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-black text-slate-900"
+                >
+                  Android / Google Calendar
+                </button>
+                <button
+                  type="button"
+                  disabled={!client.email}
+                  onClick={() => scheduleFollowUp(client, emailMessage, messages, "email", "email")}
+                  className="min-h-11 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-black text-slate-900 disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  Calendar + Email
+                </button>
+              </div>
+              <p className="mt-3 whitespace-pre-wrap rounded-md border border-slate-200 bg-white p-3 text-sm font-semibold leading-6 text-slate-800">
+                {textMessage}
+              </p>
+              <details className="mt-2 rounded-md border border-slate-200 bg-white p-2">
+                <summary className="cursor-pointer text-xs font-black uppercase text-slate-500">Email version</summary>
+                <p className="mt-2 whitespace-pre-wrap text-sm font-semibold leading-6 text-slate-800">{emailMessage}</p>
+              </details>
+            </article>
+          ))}
+        </div>
+      </section>
+    </aside>
+  );
+}
+
+function SettingsPanel({ settings, close, saveSettings }) {
+  const [draft, setDraft] = useState(normalizeSettings(settings));
+  const updateDraft = (field, value) => setDraft((current) => ({ ...current, [field]: value }));
+
+  return (
+    <aside className="fixed inset-0 z-50 bg-slate-950/50 p-3 md:p-5">
+      <section className="mx-auto flex max-h-full max-w-2xl flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-2xl">
+        <header className="border-b border-slate-200 p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-black uppercase text-blue-700">CRM Settings</p>
+              <h2 className="text-xl font-black">App Adjustments</h2>
+            </div>
+            <button onClick={close} className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-black">
+              Close
+            </button>
+          </div>
+        </header>
+        <div className="grid gap-3 overflow-auto p-4 md:grid-cols-2">
+          <Input label="Your Name" value={draft.name} onChange={(v) => updateDraft("name", v)} />
+          <Input label="Company" value={draft.company} onChange={(v) => updateDraft("company", v)} />
+          <Input label="Title / Specialty" value={draft.title} onChange={(v) => updateDraft("title", v)} />
+          <Input label="Phone" value={draft.phone} onChange={(v) => updateDraft("phone", v)} />
+          <Input label="Email" value={draft.email} onChange={(v) => updateDraft("email", v)} />
+          <Input label="Website" value={draft.website} onChange={(v) => updateDraft("website", v)} />
+          <div className="md:col-span-2">
+            <p className="text-xs font-black uppercase text-slate-500">Follow-up message templates</p>
+            <p className="mt-1 text-xs font-bold text-slate-500">
+              Available words: {"{firstName}"} {"{name}"} {"{company}"} {"{title}"} {"{service}"} {"{cityText}"} {"{estimateText}"} {"{website}"} {"{signature}"}
+            </p>
+          </div>
+          {[
+            ["Text Option 1", "textCheckInTemplate"],
+            ["Text Option 2", "textEstimateTemplate"],
+            ["Email Option 1", "emailCheckInTemplate"],
+            ["Email Option 2", "emailEstimateTemplate"],
+          ].map(([label, field]) => (
+            <label key={field} className="block text-sm font-bold md:col-span-2">
+              {label}
+              <textarea
+                value={draft[field] || ""}
+                onChange={(e) => updateDraft(field, e.target.value)}
+                className="mt-1 min-h-28 w-full rounded-md border border-slate-300 p-3 text-sm outline-none focus:border-blue-700"
+              />
+            </label>
+          ))}
+        </div>
+        <footer className="grid gap-2 border-t border-slate-200 bg-white p-3 md:grid-cols-2">
+          <button onClick={() => setDraft(defaultBusinessContact)} className="rounded-md border border-slate-300 bg-white px-4 py-3 text-sm font-black">
+            Reset Default
+          </button>
+          <button onClick={() => saveSettings(draft)} className="rounded-md bg-blue-700 px-4 py-3 text-sm font-black text-white hover:bg-blue-800">
+            Save Settings
+          </button>
+        </footer>
+      </section>
+    </aside>
+  );
+}
+
 function Dashboard({ stats, clients, setActiveView, openClient, quickAction }) {
   const tasks = taskList(clients).slice(0, 8);
   const todayFocus = [
@@ -1719,7 +2023,7 @@ function Dashboard({ stats, clients, setActiveView, openClient, quickAction }) {
           <button
             key={stat.label}
             onClick={() => setActiveView(stat.label === "Balance Due" ? "Invoices" : "Clients")}
-            className="rounded-lg bg-white p-3 text-left shadow-sm"
+            className={`rounded-lg p-3 text-left transition hover:border-blue-300 hover:shadow-lg ${crmCardClass}`}
           >
             <p className="text-xs font-black uppercase text-slate-500">{stat.label}</p>
             <p className="mt-1 text-2xl font-black">{stat.count}</p>
@@ -1729,7 +2033,7 @@ function Dashboard({ stats, clients, setActiveView, openClient, quickAction }) {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
-        <section className="rounded-lg bg-white p-3 shadow-sm">
+        <section className={`rounded-lg p-3 ${crmPanelClass}`}>
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-black">My Tasks</h2>
             <button onClick={() => setActiveView("Clients")} className="text-sm font-bold text-blue-700">
@@ -1740,7 +2044,7 @@ function Dashboard({ stats, clients, setActiveView, openClient, quickAction }) {
         </section>
 
         <section className="space-y-4">
-          <div className="rounded-lg bg-white p-3 shadow-sm">
+          <div className={`rounded-lg p-3 ${crmPanelClass}`}>
             <h2 className="text-lg font-black">Lead Flow</h2>
             <div className="mt-3 space-y-2 text-sm font-semibold text-slate-700">
               <p>New Lead &gt; Contacted &gt; Estimate Sent &gt; Follow-Up &gt; Won/Lost</p>
@@ -1748,11 +2052,11 @@ function Dashboard({ stats, clients, setActiveView, openClient, quickAction }) {
             </div>
           </div>
 
-          <div className="rounded-lg bg-white p-3 shadow-sm">
+          <div className={`rounded-lg p-3 ${crmPanelClass}`}>
             <h2 className="text-lg font-black">Today Focus</h2>
             <div className="mt-3 grid grid-cols-2 gap-2">
               {todayFocus.map((item) => (
-                <button key={item.label} onClick={() => setActiveView("Clients")} className="rounded-md bg-slate-50 p-3 text-left">
+                <button key={item.label} onClick={() => setActiveView("Clients")} className="rounded-md border border-slate-200 bg-slate-50 p-3 text-left shadow-sm">
                   <p className="text-xl font-black">{item.count}</p>
                   <p className="text-xs font-bold text-slate-500">{item.label}</p>
                 </button>
@@ -1781,7 +2085,7 @@ function Pipeline({ clients, openClient, changeStatus }) {
           return (
             <section
               key={stage}
-              className={`rounded-lg bg-white p-3 shadow-sm ${
+              className={`rounded-lg p-3 ${crmPanelClass} ${
                 isLostStage ? "md:min-w-[180px] md:max-w-[220px]" : "md:min-w-[240px] md:flex-1"
               }`}
             >
@@ -1817,7 +2121,7 @@ function Pipeline({ clients, openClient, changeStatus }) {
 
 function PipelineCard({ client, openClient, changeStatus, compact = false }) {
   return (
-    <article className={`rounded-md border bg-white ${compact ? "p-2" : "p-3"} ${needsReminder(client) ? "border-amber-400" : "border-slate-200"}`}>
+    <article className={`rounded-md border bg-white shadow-sm ${compact ? "p-2" : "p-3"} ${needsReminder(client) ? "border-amber-400 shadow-amber-200" : "border-slate-300 shadow-slate-200"}`}>
       <button onClick={() => openClient(client)} className="w-full text-left">
         <p className="font-black text-slate-950">{client.name || "Unnamed Lead"}</p>
         {!compact && <p className="mt-1 text-sm font-semibold text-slate-600">{client.service || "No service"}</p>}
@@ -1849,7 +2153,7 @@ function ClientsView({ clients, savedInvoices, filters, setFilters, filterOption
 
   return (
     <section className="space-y-3">
-      <div className="rounded-lg bg-white p-3 shadow-sm">
+      <div className={`rounded-lg p-3 ${crmPanelClass}`}>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <h2 className="text-lg font-black">Clients</h2>
@@ -1930,7 +2234,7 @@ function ClientsView({ clients, savedInvoices, filters, setFilters, filterOption
 
 function ClientCard({ client, estimates = [], openClient, editClient, deleteClient, quickAction }) {
   return (
-    <article className={`rounded-lg bg-white p-3 shadow-sm ${needsReminder(client) ? "ring-2 ring-amber-300" : ""}`}>
+    <article className={`rounded-lg p-3 transition hover:border-blue-300 hover:shadow-lg ${crmCardClass} ${needsReminder(client) ? "ring-2 ring-amber-300" : ""}`}>
       <div className="flex items-start justify-between gap-3">
         <button onClick={() => openClient(client)} className="min-w-0 text-left">
           <h3 className="truncate text-lg font-black">{client.name || "Unnamed Lead"}</h3>
@@ -1956,6 +2260,9 @@ function ClientCard({ client, estimates = [], openClient, editClient, deleteClie
         <button onClick={() => quickAction(client, "call")} className="rounded-md bg-blue-700 px-3 py-2 text-sm font-black text-white hover:bg-blue-800">
           Call
         </button>
+        <button onClick={() => quickAction(client, "estimate")} className="rounded-md border border-blue-700 bg-blue-700 px-3 py-2 text-sm font-black text-white hover:bg-blue-800">
+          Estimate
+        </button>
         <button onClick={() => quickAction(client, "text")} className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-bold">
           Text
         </button>
@@ -1970,7 +2277,7 @@ function ClientCard({ client, estimates = [], openClient, editClient, deleteClie
             More
           </summary>
           <div className="absolute left-0 z-20 mt-2 w-40 rounded-lg border border-slate-200 bg-white p-2 shadow-xl">
-            {["email", "estimate", "invoice", "note"].map((action) => (
+            {["email", "invoice", "note"].map((action) => (
               <button key={action} onClick={() => quickAction(client, action)} className="block w-full rounded-md px-3 py-2 text-left text-sm font-bold capitalize hover:bg-slate-100">
                 {action === "estimate" ? "Build Estimate" : action}
               </button>
@@ -2000,11 +2307,11 @@ function CalendarView({ clients, openClient }) {
     .sort((a, b) => a.date.localeCompare(b.date));
 
   return (
-    <section className="rounded-lg bg-white p-3 shadow-sm">
+    <section className={`rounded-lg p-3 ${crmPanelClass}`}>
       <h2 className="text-xl font-black">Calendar</h2>
       <div className="mt-3 space-y-2">
         {dated.map((item) => (
-          <button key={`${item.client.id}-${item.label}-${item.date}`} onClick={() => openClient(item.client)} className="flex w-full items-center justify-between rounded-md border border-slate-200 p-3 text-left">
+          <button key={`${item.client.id}-${item.label}-${item.date}`} onClick={() => openClient(item.client)} className="flex w-full items-center justify-between rounded-md border border-slate-300 bg-white p-3 text-left shadow-sm hover:border-blue-300">
             <span>
               <b>{item.date}</b> {item.label}
             </span>
@@ -2026,7 +2333,7 @@ function InvoicesView({ clients, openClient, quickAction }) {
     <section className="space-y-3">
       <h2 className="text-xl font-black">Invoices & Payments</h2>
       {invoiceClients.map((client) => (
-        <article key={client.id} className="rounded-lg bg-white p-3 shadow-sm">
+        <article key={client.id} className={`rounded-lg p-3 ${crmCardClass}`}>
           <div className="flex items-start justify-between gap-3">
             <button onClick={() => openClient(client)} className="text-left">
               <h3 className="font-black">{client.name || "Unnamed Client"}</h3>
@@ -2049,9 +2356,20 @@ function InvoicesView({ clients, openClient, quickAction }) {
           </div>
         </article>
       ))}
-      {!invoiceClients.length && <p className="rounded-lg bg-white p-8 text-center text-sm font-bold text-slate-500">No invoices yet.</p>}
+      {!invoiceClients.length && <p className={`rounded-lg p-8 text-center text-sm font-bold text-slate-500 ${crmPanelClass}`}>No invoices yet.</p>}
     </section>
   );
+}
+
+function nextClientStep(client = {}) {
+  if (client.leadStatus === "New Lead") return "New lead: call or text now, then set a follow-up.";
+  if (client.leadStatus === "Follow-Up") return client.followUpDate ? `Follow up scheduled for ${client.followUpDate}.` : "Follow-up lead: choose a date and send a message.";
+  if (client.leadStatus === "Estimate Booked") return "Estimate booked: confirm appointment and address.";
+  if (client.leadStatus === "Estimate Sent") return "Estimate sent: follow up and ask if they want the next date.";
+  if (client.leadStatus === "Won" && client.projectStatus === "Not Scheduled") return "Won job: schedule the start date.";
+  if (client.projectStatus === "Completed" && client.paymentStatus !== "Paid") return "Completed job: collect balance or send invoice.";
+  if (client.paymentStatus === "Balance Due") return "Balance due: follow up on payment.";
+  return "Keep contact info updated and log the next client action.";
 }
 
 function ClientDetail({ client, savedInvoices = [], close, editClient, updateClient, changeStatus, quickAction, addCommunication }) {
@@ -2060,7 +2378,7 @@ function ClientDetail({ client, savedInvoices = [], close, editClient, updateCli
   return (
     <aside className="fixed inset-0 z-40 bg-slate-950/40 md:p-4">
       <div className="ml-auto flex h-full max-w-2xl flex-col bg-slate-100 shadow-2xl md:rounded-lg">
-        <header className="sticky top-0 z-10 border-b border-slate-200 bg-white p-3">
+        <header className="shrink-0 border-b border-slate-200 bg-white p-3">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <p className="text-xs font-black uppercase text-slate-500">Client Detail</p>
@@ -2077,30 +2395,17 @@ function ClientDetail({ client, savedInvoices = [], close, editClient, updateCli
             <ProjectBadge label="Job" value={client.projectStatus} />
           </div>
           <WorkflowWarnings client={client} />
-          <div className="mt-3 grid grid-cols-3 gap-2">
-            <button
-              onClick={() => quickAction(client, "call")}
-              className="rounded-md bg-blue-700 px-3 py-3 text-sm font-black text-white shadow-sm hover:bg-blue-800"
-            >
-              Call
-            </button>
-            <button
-              onClick={() => quickAction(client, "text")}
-              className="rounded-md border border-slate-300 bg-white px-3 py-3 text-sm font-black text-slate-900 shadow-sm"
-            >
-              Text
-            </button>
-            <button
-              onClick={() => editClient(client)}
-              className="rounded-md border border-slate-300 bg-white px-3 py-3 text-sm font-black text-slate-900 shadow-sm"
-            >
-              Edit
-            </button>
-          </div>
-          <QuickActions client={client} quickAction={quickAction} compact />
         </header>
 
         <div className="flex-1 space-y-3 overflow-auto p-3">
+          <CrmSection title="Daily Action" defaultOpen>
+            <div className="rounded-md border border-blue-200 bg-blue-50 p-3">
+              <p className="text-xs font-black uppercase text-blue-900">Next best step</p>
+              <p className="mt-1 text-sm font-bold text-blue-950">{nextClientStep(client)}</p>
+            </div>
+            <ClientActionGrid client={client} quickAction={quickAction} editClient={editClient} />
+          </CrmSection>
+
           <CrmSection title="Contact Info" defaultOpen>
             <div className="grid gap-2 text-sm md:grid-cols-2">
               <Info label="Phone" value={client.phone} />
@@ -2187,17 +2492,11 @@ function ClientDetail({ client, savedInvoices = [], close, editClient, updateCli
             )}
           </CrmSection>
 
-          <CrmSection title="Timeline / Notes" defaultOpen>
+          <CrmSection title="Timeline / Notes">
             {client.notes && <p className="mb-3 whitespace-pre-wrap rounded-md bg-white p-3 text-sm font-semibold text-slate-700">{client.notes}</p>}
             <Timeline entries={client.communicationLog || []} />
           </CrmSection>
         </div>
-
-        <footer className="border-t border-slate-200 bg-white p-3">
-          <button onClick={() => editClient(client)} className="w-full rounded-md bg-slate-900 px-4 py-3 text-sm font-black text-white">
-            Edit Full Client
-          </button>
-        </footer>
       </div>
     </aside>
   );
@@ -2380,7 +2679,7 @@ function FollowUpTaskList({ tasks, openClient, quickAction }) {
   return (
     <div className="mt-3 space-y-2">
       {tasks.map((task, index) => (
-        <article key={`${task.client.id}-${task.label}-${index}`} className="rounded-md border border-slate-200 p-3">
+        <article key={`${task.client.id}-${task.label}-${index}`} className="rounded-md border border-slate-300 bg-white p-3 shadow-sm shadow-slate-200">
           <button onClick={() => openClient(task.client)} className="w-full text-left">
             <p className="font-black">{task.client.name || "Unnamed Lead"}</p>
             <p className="text-sm font-bold text-amber-700">{task.label}</p>
@@ -2419,35 +2718,57 @@ function WorkflowWarnings({ client }) {
   );
 }
 
-function QuickActions({ client, quickAction, compact = false }) {
-  const actions = compact
-    ? [
-        ["email", "Email"],
-        ["estimate", "Estimate"],
-        ["followUp", "Follow Up"],
-        ["invoice", "Invoice"],
-        ["note", "Note"],
-      ]
-    : [
-        ["call", "Call"],
-        ["text", "Text"],
-        ["email", "Email"],
-        ["estimate", "Estimate"],
-        ["followUp", "Follow Up"],
-        ["invoice", "Invoice"],
-        ["note", "Note"],
-      ];
+function ActionButton({ primary = false, disabled = false, onClick, children }) {
   return (
-    <div className={`mt-3 grid gap-2 ${compact ? "grid-cols-2 md:grid-cols-5" : "grid-cols-3"}`}>
-      {actions.map(([action, label]) => (
-        <button
-          key={action}
-          onClick={() => quickAction(client, action)}
-          className={`min-h-10 rounded-md border border-slate-300 bg-white px-2 py-2 text-center text-xs font-black leading-tight text-slate-800 ${action === "call" || action === "estimate" || action === "followUp" ? "border-blue-700 bg-blue-700 text-white hover:bg-blue-800" : ""}`}
-        >
-          <span>{label}</span>
-        </button>
-      ))}
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className={
+        primary
+          ? "min-h-11 rounded-md border border-blue-700 bg-blue-700 px-3 py-2 text-center text-sm font-black leading-tight text-white shadow-sm hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-45"
+          : "min-h-11 rounded-md border border-slate-300 bg-white px-3 py-2 text-center text-sm font-black leading-tight text-slate-900 shadow-sm disabled:cursor-not-allowed disabled:opacity-45"
+      }
+    >
+      {children}
+    </button>
+  );
+}
+
+function ClientActionGrid({ client, quickAction, editClient }) {
+  return (
+    <div className="mt-3 grid grid-cols-2 gap-2">
+      <ActionButton primary disabled={!client.phone} onClick={() => quickAction(client, "call")}>
+        Call
+      </ActionButton>
+      <ActionButton disabled={!client.phone} onClick={() => quickAction(client, "text")}>
+        Text
+      </ActionButton>
+      <ActionButton primary onClick={() => quickAction(client, "estimate")}>
+        Estimate
+      </ActionButton>
+      <ActionButton primary onClick={() => quickAction(client, "followUp")}>
+        Follow Up
+      </ActionButton>
+      <details className="relative col-span-2">
+        <summary className="min-h-11 cursor-pointer list-none rounded-md border border-slate-300 bg-white px-3 py-3 text-center text-sm font-black leading-tight text-slate-900 shadow-sm">
+          More
+        </summary>
+        <div className="absolute left-0 right-0 z-20 mt-2 grid gap-1 rounded-lg border border-slate-300 bg-white p-2 shadow-xl">
+          <button disabled={!client.email} onClick={() => quickAction(client, "email")} className="rounded-md px-3 py-2 text-left text-sm font-bold hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-45">
+            Email
+          </button>
+          <button onClick={() => quickAction(client, "invoice")} className="rounded-md px-3 py-2 text-left text-sm font-bold hover:bg-slate-100">
+            Invoice
+          </button>
+          <button onClick={() => quickAction(client, "note")} className="rounded-md px-3 py-2 text-left text-sm font-bold hover:bg-slate-100">
+            Note
+          </button>
+          <button onClick={() => editClient(client)} className="rounded-md px-3 py-2 text-left text-sm font-bold hover:bg-slate-100">
+            Edit Client
+          </button>
+        </div>
+      </details>
     </div>
   );
 }
@@ -2467,7 +2788,7 @@ function AttachedEstimates({ estimates = [] }) {
         const total = estimate.totals?.total || 0;
         const date = String(estimate.updatedAt || estimate.savedAt || estimate.createdAt || estimate.date || "").slice(0, 10);
         return (
-          <article key={estimate.id} className="rounded-md border border-slate-200 bg-white p-3">
+          <article key={estimate.id} className="rounded-md border border-slate-300 bg-white p-3 shadow-sm shadow-slate-200">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <p className="truncate text-sm font-black">{estimate.quoteId || estimate.id || "Saved Estimate"}</p>
@@ -2495,7 +2816,7 @@ function Timeline({ entries }) {
   return (
     <div className="space-y-2">
       {sorted.map((entry, index) => (
-        <article key={`${entry.id || "timeline"}-${index}`} className="rounded-md border border-slate-200 bg-white p-3 text-sm">
+        <article key={`${entry.id || "timeline"}-${index}`} className="rounded-md border border-slate-300 bg-white p-3 text-sm shadow-sm shadow-slate-200">
           <div className="flex items-center justify-between gap-2">
             <p className="font-black capitalize">{entry.type?.replace("_", " ") || "note"}</p>
             <p className="text-xs font-bold text-slate-500">{String(entry.date || "").slice(0, 16).replace("T", " ")}</p>
@@ -2510,7 +2831,7 @@ function Timeline({ entries }) {
 
 function CrmSection({ title, children, defaultOpen = false }) {
   return (
-    <details open={defaultOpen} className="rounded-lg bg-white p-3 shadow-sm">
+    <details open={defaultOpen} className={`rounded-lg p-3 ${crmPanelClass}`}>
       <summary className="cursor-pointer text-sm font-black uppercase text-slate-600">{title}</summary>
       <div className="mt-3">{children}</div>
     </details>
@@ -2519,7 +2840,7 @@ function CrmSection({ title, children, defaultOpen = false }) {
 
 function FormGroup({ title, children }) {
   return (
-    <section className="rounded-lg border border-slate-200 p-3">
+    <section className="rounded-lg border border-slate-300 bg-slate-50 p-3">
       <h3 className="text-sm font-black uppercase text-slate-500">{title}</h3>
       <div className="mt-2 grid gap-2">{children}</div>
     </section>
@@ -2690,7 +3011,7 @@ function InlineStatus({ label, value, options, onChange }) {
 
 function Info({ label, value }) {
   return (
-    <div className="rounded-md bg-slate-50 p-2">
+    <div className="rounded-md border border-slate-200 bg-slate-50 p-2 shadow-sm">
       <p className="text-[11px] font-black uppercase text-slate-500">{label}</p>
       <p className="mt-0.5 break-words font-bold text-slate-900">{value || "-"}</p>
     </div>
@@ -2699,7 +3020,7 @@ function Info({ label, value }) {
 
 function StatusBadge({ value, label = "" }) {
   const classes = {
-    "New Lead": "bg-blue-50 text-blue-800",
+    "New Lead": "animate-pulse bg-red-50 text-red-800 ring-2 ring-red-400",
     Contacted: "bg-slate-100 text-slate-800",
     "Estimate Booked": "bg-indigo-50 text-indigo-800",
     "Estimate Sent": "bg-amber-50 text-amber-800",
