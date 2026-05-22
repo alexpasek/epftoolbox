@@ -142,6 +142,43 @@ function addDaysISO(days, from = new Date()) {
   return date.toISOString().slice(0, 10);
 }
 
+function parseRequestedDateToISO(value = "", from = new Date()) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+
+  const lower = raw.toLowerCase();
+  if (lower === "today") return todayISO();
+  if (lower === "tomorrow") return addDaysISO(1, from);
+
+  const weekdays = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+  const weekdayIndex = weekdays.findIndex((day) => lower.includes(day));
+  if (weekdayIndex >= 0) {
+    const date = new Date(from);
+    const currentDay = date.getDay();
+    const offset = (weekdayIndex - currentDay + 7) % 7 || 7;
+    date.setDate(date.getDate() + offset);
+    return date.toISOString().slice(0, 10);
+  }
+
+  const monthMatch = raw.match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})(?:,\s*(\d{4}))?\b/i);
+  if (monthMatch) {
+    const monthNames = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+    const monthIndex = monthNames.findIndex((month) => monthMatch[1].toLowerCase().startsWith(month));
+    const day = Number(monthMatch[2]);
+    const year = Number(monthMatch[3]) || from.getFullYear();
+    if (monthIndex >= 0 && day >= 1 && day <= 31) {
+      const date = new Date(year, monthIndex, day);
+      if (!monthMatch[3] && date < new Date(todayISO())) date.setFullYear(year + 1);
+      return date.toISOString().slice(0, 10);
+    }
+  }
+
+  const parsed = new Date(raw);
+  if (!Number.isNaN(parsed.getTime())) return parsed.toISOString().slice(0, 10);
+  return raw;
+}
+
 function dateTimeForICS(dateISO = addDaysISO(2), hour = 9) {
   const compactDate = String(dateISO || addDaysISO(2)).replace(/-/g, "");
   return `${compactDate}T${String(hour).padStart(2, "0")}0000`;
@@ -299,16 +336,24 @@ function numberValue(value) {
   return Number.isFinite(number) ? number : 0;
 }
 
-function createInvoiceHref(client = {}) {
+function createInvoiceHref(client = {}, invoices = []) {
+  const attachedEstimate = getClientEstimates(client, invoices)[0];
+  if (attachedEstimate?.id) {
+    return `/invoice-basic?id=${encodeURIComponent(attachedEstimate.id)}`;
+  }
+
   const params = new URLSearchParams({ new: "1" });
   if (client.id) params.set("clientId", client.id);
   if (client.name) params.set("client", client.name);
   const contact = [client.phone, client.email].filter(Boolean).join(" / ");
   if (contact) params.set("contact", contact);
-  if (client.address) params.set("site", client.address);
-  if (client.service) params.set("service", client.service);
+  const site = [client.address, client.city].filter(Boolean).join(", ");
+  if (site) params.set("site", site);
+  const service = compactServiceLabel(client);
+  if (service) params.set("service", service);
   const estimateAmount = String(client.estimateAmount || "").replace(/[^0-9.]/g, "");
   if (estimateAmount) params.set("amount", estimateAmount);
+  if (client.notes) params.set("notes", client.notes);
   return `/invoice-basic?${params.toString()}`;
 }
 
@@ -440,7 +485,7 @@ function parseLeadText(inputText = "", source = "paste") {
     workNeeded: detectedService,
     notes: text,
     squareFootage,
-    requestedDate,
+    requestedDate: parseRequestedDateToISO(requestedDate),
     address,
     source,
   };
@@ -1122,6 +1167,11 @@ export default function CrmPage() {
     if (urlClient) {
       setSelectedClientId(clientId);
       setActiveView(urlClient.leadStatus === "Lost" ? "Archive" : "Clients");
+      try {
+        const url = new URL(window.location.href);
+        url.searchParams.delete("client");
+        window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+      } catch {}
     }
   }, [activeClients]);
 
@@ -1383,7 +1433,7 @@ export default function CrmPage() {
       service: parsed.service || (mode === "voicemail" ? "No service" : form.service),
       workNeeded: parsed.workNeeded || form.workNeeded,
       squareFootage: parsed.squareFootage || form.squareFootage,
-      requestedDate: parsed.requestedDate || form.requestedDate,
+      requestedDate: parseRequestedDateToISO(parsed.requestedDate) || form.requestedDate,
       notes: parsed.notes || form.notes,
       source: parsed.source,
       leadStatus: "New Lead",
@@ -1480,7 +1530,6 @@ export default function CrmPage() {
       if (editingId) return current.map((client) => (client.id === editingId ? saved : client));
       return [saved, ...current];
     });
-    setSelectedClientId(saved.id);
     setShowForm(false);
     setEditingId(null);
     setSmartLeadText("");
@@ -1725,7 +1774,7 @@ export default function CrmPage() {
         makeTimelineEntry({ type: "estimate", content: "Estimate accepted. Invoice opened.", createdBy: "Sales" })
       );
       window.setTimeout(() => {
-        window.location.href = createInvoiceHref({ ...client, leadStatus: "Won" });
+        window.location.href = createInvoiceHref({ ...client, leadStatus: "Won" }, visibleSavedInvoices);
       }, 50);
     }
     if (action === "followUp") {
@@ -1738,7 +1787,7 @@ export default function CrmPage() {
         makeTimelineEntry({ type: "invoice", content: "Invoice created", createdBy: "Sales" })
       );
       window.setTimeout(() => {
-        window.location.href = createInvoiceHref(client);
+        window.location.href = createInvoiceHref(client, visibleSavedInvoices);
       }, 50);
     }
     if (action === "note") {
@@ -3270,7 +3319,7 @@ function ClientForm({
                     onChange={(v) => updateForm("address", v)}
                     onCityChange={(v) => updateForm("city", v)}
                   />
-                  <Input label="Requested Date" value={form.requestedDate} onChange={(v) => updateForm("requestedDate", v)} />
+                  <DateInput label="Requested Date" value={form.requestedDate} onChange={(v) => updateForm("requestedDate", v)} />
                 </div>
                 <label className="mt-3 block text-sm font-black">
                   Notes
@@ -3682,6 +3731,7 @@ function SuggestInput({ label, value, options, onChange }) {
 }
 
 function DateInput({ label, value, onChange }) {
+  const dateValue = /^\d{4}-\d{2}-\d{2}$/.test(String(value || "")) ? value : "";
   const shortcuts = [
     ["Today", todayISO()],
     ["Tomorrow", addDaysISO(1)],
@@ -3693,10 +3743,11 @@ function DateInput({ label, value, onChange }) {
       {label}
       <input
         type="date"
-        value={value || ""}
+        value={dateValue || ""}
         onChange={(e) => onChange(e.target.value)}
         className="mt-1 w-full rounded-md border border-slate-300 bg-white p-2.5 text-sm outline-none focus:border-blue-700"
       />
+      {value && !dateValue && <p className="mt-1 text-xs font-bold text-amber-700">Saved as text: {value}</p>}
       <div className="mt-1 flex flex-wrap gap-1">
         {shortcuts.map(([text, date]) => (
           <button

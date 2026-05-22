@@ -251,6 +251,8 @@ function InvoiceBasicPageInner() {
           const queryContact = searchParams.get("contact") || "";
           const querySite = searchParams.get("site") || "";
           const queryService = searchParams.get("service") || "";
+          const queryNotes = searchParams.get("notes") || "";
+          const queryQuoteId = searchParams.get("quoteId") || "";
           const queryAmount = Number(searchParams.get("amount") || 0);
           const queryCrmClientId = searchParams.get("clientId") || "";
 
@@ -259,6 +261,8 @@ function InvoiceBasicPageInner() {
             client: queryClient,
             contact: queryContact,
             site: querySite,
+            notes: queryNotes,
+            quoteId: queryQuoteId || "EPF-QUOTE",
             items: queryService
               ? [
                   {
