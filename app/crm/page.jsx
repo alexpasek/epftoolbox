@@ -3064,7 +3064,7 @@ function ClientDetail({ client, savedInvoices = [], close, editClient, updateCli
               <p className="text-xs font-black uppercase text-blue-900">Next best step</p>
               <p className="mt-1 text-sm font-bold text-blue-950">{nextClientStep(client)}</p>
             </div>
-            <ClientActionGrid client={client} quickAction={quickAction} clearFollowUp={clearFollowUp} editClient={editClient} />
+            <ClientActionGrid client={client} quickAction={quickAction} clearFollowUp={clearFollowUp} />
           </CrmSection>
 
           <CrmSection title="Contact Info" defaultOpen>
@@ -3464,7 +3464,7 @@ function LongPressFollowUpButton({ client, quickAction, clearFollowUp, className
   );
 }
 
-function ClientActionGrid({ client, quickAction, clearFollowUp, editClient }) {
+function ClientActionGrid({ client, quickAction, clearFollowUp }) {
   return (
     <div className="mt-3 grid grid-cols-2 gap-2">
       <ActionButton primary disabled={!client.phone} onClick={() => quickAction(client, "call")}>
@@ -3476,7 +3476,12 @@ function ClientActionGrid({ client, quickAction, clearFollowUp, editClient }) {
       <ActionButton primary onClick={() => quickAction(client, "estimate")}>
         Estimate
       </ActionButton>
-      <LongPressFollowUpButton client={client} quickAction={quickAction} clearFollowUp={clearFollowUp} className="min-h-11 text-center leading-tight shadow-sm" />
+      <LongPressFollowUpButton
+        client={client}
+        quickAction={quickAction}
+        clearFollowUp={clearFollowUp}
+        className="min-h-11 text-center leading-tight shadow-sm"
+      />
       <ActionButton primary onClick={() => quickAction(client, "acceptInvoice")}>
         Accept + Invoice
       </ActionButton>
@@ -3485,13 +3490,26 @@ function ClientActionGrid({ client, quickAction, clearFollowUp, editClient }) {
           More
         </summary>
         <div className="absolute left-0 right-0 z-20 mt-2 grid gap-1 rounded-lg border border-slate-300 bg-white p-2 shadow-xl">
-          <button disabled={!client.email} onClick={() => quickAction(client, "email")} className="rounded-md px-3 py-2 text-left text-sm font-bold hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-45">
+          <button
+            type="button"
+            disabled={!client.email}
+            onClick={() => quickAction(client, "email")}
+            className="rounded-md px-3 py-2 text-left text-sm font-bold hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-45"
+          >
             Email
           </button>
-          <button onClick={() => quickAction(client, "invoice")} className="rounded-md px-3 py-2 text-left text-sm font-bold hover:bg-slate-100">
+          <button
+            type="button"
+            onClick={() => quickAction(client, "invoice")}
+            className="rounded-md px-3 py-2 text-left text-sm font-bold hover:bg-slate-100"
+          >
             Invoice
           </button>
-          <button onClick={() => quickAction(client, "note")} className="rounded-md px-3 py-2 text-left text-sm font-bold hover:bg-slate-100">
+          <button
+            type="button"
+            onClick={() => quickAction(client, "note")}
+            className="rounded-md px-3 py-2 text-left text-sm font-bold hover:bg-slate-100"
+          >
             Note
           </button>
         </div>
