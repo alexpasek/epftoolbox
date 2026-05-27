@@ -10,7 +10,7 @@ const CRM_AUTH_KEY = "epf.crm.unlocked";
 const CRM_ACCESS_MODE_KEY = "epf.crm.accessMode";
 const CRM_SETTINGS_KEY = "epf.crm.settings";
 const CRM_ACCESS_PIN = "1234";
-const CRM_LIMITED_PIN = "yehor";
+const CRM_LIMITED_PIN = "0000";
 const DELETE_PASSWORD = "1234";
 const LIMITED_ASSIGNEE = "Yehor";
 const limitedCalgaryKeywords = [
@@ -412,6 +412,31 @@ function createGoogleMapsHref(clientOrAddress = {}) {
       ? clientOrAddress
       : [clientOrAddress.address, clientOrAddress.city].filter(Boolean).join(", ");
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query || "")}`;
+}
+
+function clientShareUrl(client = {}) {
+  if (typeof window === "undefined") return "";
+  const url = new URL(window.location.href);
+  url.pathname = "/crm";
+  url.search = "";
+  url.hash = "";
+  if (client.id) url.searchParams.set("client", client.id);
+  return url.toString();
+}
+
+function clientShareText(client = {}) {
+  const parts = [
+    `Client: ${client.name || client.phone || "Unnamed lead"}`,
+    client.phone ? `Phone: ${client.phone}` : "",
+    client.email ? `Email: ${client.email}` : "",
+    [client.service, client.city].filter(Boolean).join(" - "),
+    client.address ? `Address: ${client.address}` : "",
+    client.leadStatus ? `Status: ${client.leadStatus}` : "",
+    client.followUpDate ? `Follow-up: ${client.followUpDate}` : "",
+    numberValue(client.estimateAmount) ? `Estimate: ${money(client.estimateAmount)}` : "",
+    clientCardNote(client) ? `Note: ${clientCardNote(client).slice(0, 220)}` : "",
+  ];
+  return parts.filter(Boolean).join("\n");
 }
 
 function cleanName(value = "") {
@@ -1671,6 +1696,47 @@ export default function CrmPage() {
     updateClient(id, updates, makeTimelineEntry({ type, direction, content: result, createdBy: "Sales" }));
   }
 
+  function addClientNote(client, note, createdBy = "Sales") {
+    const cleanNote = String(note || "").trim();
+    if (!cleanNote) return;
+    const datedNote = `[${todayISO()}] ${cleanNote}`;
+    updateClient(
+      client.id,
+      {
+        notes: [client.notes, datedNote].filter(Boolean).join("\n\n"),
+      },
+      makeTimelineEntry({ type: "note", content: cleanNote, createdBy })
+    );
+  }
+
+  async function addAiClientNote(client, rawNote) {
+    const cleanNote = String(rawNote || "").trim();
+    if (!cleanNote) return;
+
+    try {
+      const res = await fetch("/api/crm/assistant", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          command: `Add this note to the current client. Keep the note short and useful for a contractor CRM: ${cleanNote}`,
+          clients: dailyClients,
+          openClient: client,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "AI note failed");
+
+      const aiNote =
+        data?.action?.changes?.find((change) => change.field === "projectNotes")?.value ||
+        data?.action?.changes?.find((change) => change.field === "notes")?.value ||
+        cleanNote;
+      addClientNote(client, aiNote, "AI");
+    } catch {
+      addClientNote(client, cleanNote, "Sales");
+      alert("AI note was unavailable. Saved the original note instead.");
+    }
+  }
+
   function saveSettings(nextSettings) {
     const normalized = normalizeSettings(nextSettings);
     setAppSettings(normalized);
@@ -1752,6 +1818,24 @@ export default function CrmPage() {
     );
   }
 
+  async function shareClientCard(client) {
+    const url = clientShareUrl(client);
+    const text = clientShareText(client);
+    const title = `CRM client: ${client.name || client.phone || "Unnamed lead"}`;
+
+    try {
+      if (navigator.share) {
+        await navigator.share({ title, text, url });
+        return;
+      }
+      await navigator.clipboard.writeText([text, url].filter(Boolean).join("\n\n"));
+      alert("Client card copied. You can paste it into text, email, or WhatsApp.");
+    } catch (error) {
+      if (error?.name === "AbortError") return;
+      window.prompt("Copy this client card", [text, url].filter(Boolean).join("\n\n"));
+    }
+  }
+
   function quickAction(client, action) {
     if (action === "call") {
       if (!client.phone) {
@@ -1820,7 +1904,10 @@ export default function CrmPage() {
     }
     if (action === "note") {
       const note = window.prompt("Add note");
-      if (note) updateClient(client.id, {}, makeTimelineEntry({ type: "note", content: note, createdBy: "Sales" }));
+      if (note) addClientNote(client, note);
+    }
+    if (action === "share") {
+      shareClientCard(client);
     }
     if (action === "paid") {
       updateClient(
@@ -2053,6 +2140,8 @@ export default function CrmPage() {
             editClient={editClient}
             deleteClient={deleteClient}
             quickAction={quickAction}
+            addClientNote={addClientNote}
+            addAiClientNote={addAiClientNote}
             clearFollowUp={clearFollowUp}
           />
         )}
@@ -2791,7 +2880,7 @@ function PipelineCard({ client, openClient, changeStatus, compact = false }) {
   );
 }
 
-function ClientsView({ clients, monthlyStats, savedInvoices, filters, setFilters, filterOptions, search, setSearch, openClient, editClient, deleteClient, quickAction, clearFollowUp }) {
+function ClientsView({ clients, monthlyStats, savedInvoices, filters, setFilters, filterOptions, search, setSearch, openClient, editClient, deleteClient, quickAction, addClientNote, addAiClientNote, clearFollowUp }) {
   const [controlsOpen, setControlsOpen] = useState(false);
   const activeFilterCount =
     (search.trim() ? 1 : 0) +
@@ -2871,6 +2960,8 @@ function ClientsView({ clients, monthlyStats, savedInvoices, filters, setFilters
             editClient={editClient}
             deleteClient={deleteClient}
             quickAction={quickAction}
+            addClientNote={addClientNote}
+            addAiClientNote={addAiClientNote}
             clearFollowUp={clearFollowUp}
           />
         ))}
@@ -2884,9 +2975,29 @@ function ClientsView({ clients, monthlyStats, savedInvoices, filters, setFilters
   );
 }
 
-function ClientCard({ client, estimates = [], openClient, editClient, deleteClient, quickAction, clearFollowUp }) {
+function ClientCard({ client, estimates = [], openClient, editClient, deleteClient, quickAction, addClientNote, addAiClientNote, clearFollowUp }) {
+  const [noteOpen, setNoteOpen] = useState(false);
+  const [noteDraft, setNoteDraft] = useState("");
+  const [noteSaving, setNoteSaving] = useState(false);
   const lastContact = lastContactDate(client);
   const note = clientCardNote(client);
+
+  async function saveQuickNote(useAi = false) {
+    const cleanNote = noteDraft.trim();
+    if (!cleanNote || noteSaving) return;
+    setNoteSaving(true);
+    try {
+      if (useAi) {
+        await addAiClientNote?.(client, cleanNote);
+      } else {
+        addClientNote?.(client, cleanNote);
+      }
+      setNoteDraft("");
+      setNoteOpen(false);
+    } finally {
+      setNoteSaving(false);
+    }
+  }
 
   return (
     <article className={`rounded-lg p-3 transition hover:border-blue-300 hover:shadow-lg ${crmCardClass} ${needsReminder(client) ? "ring-2 ring-amber-300" : ""}`}>
@@ -2922,6 +3033,54 @@ function ClientCard({ client, estimates = [], openClient, editClient, deleteClie
         </p>
       </button>
 
+      {noteOpen ? (
+        <div className="mt-2 rounded-md border border-blue-200 bg-blue-50 p-2">
+          <textarea
+            value={noteDraft}
+            onChange={(event) => setNoteDraft(event.target.value)}
+            className="min-h-20 w-full rounded-md border border-slate-300 bg-white p-2 text-sm font-semibold outline-none focus:border-blue-700"
+            placeholder="Quick note after call, email, or site visit..."
+            autoFocus
+          />
+          <div className="mt-2 grid grid-cols-3 gap-2">
+            <button
+              type="button"
+              disabled={!noteDraft.trim() || noteSaving}
+              onClick={() => saveQuickNote(false)}
+              className="min-h-10 rounded-md bg-blue-700 px-3 py-2 text-xs font-black text-white disabled:opacity-50"
+            >
+              Save
+            </button>
+            <button
+              type="button"
+              disabled={!noteDraft.trim() || noteSaving}
+              onClick={() => saveQuickNote(true)}
+              className="min-h-10 rounded-md border border-blue-700 bg-white px-3 py-2 text-xs font-black text-blue-800 disabled:opacity-50"
+            >
+              AI Save
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setNoteOpen(false);
+                setNoteDraft("");
+              }}
+              className="min-h-10 rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-black text-slate-700"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setNoteOpen(true)}
+          className="mt-2 min-h-10 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-black text-slate-800"
+        >
+          Add Quick Note
+        </button>
+      )}
+
       <WorkflowWarnings client={client} />
 
       <div className="mt-3 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
@@ -2938,12 +3097,15 @@ function ClientCard({ client, estimates = [], openClient, editClient, deleteClie
         <button onClick={() => openClient(client)} className="min-h-11 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-bold">
           Open
         </button>
+        <button onClick={() => quickAction(client, "share")} className="min-h-11 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-bold">
+          Share
+        </button>
         <details className="relative">
           <summary className="min-h-11 cursor-pointer list-none rounded-md border border-slate-300 bg-white px-3 py-2 text-center text-sm font-bold sm:text-left">
             More
           </summary>
           <div className="absolute right-0 z-20 mt-2 w-44 rounded-lg border border-slate-200 bg-white p-2 shadow-xl sm:left-0 sm:right-auto">
-            {["email", "invoice", "note"].map((action) => (
+            {["email", "invoice", "note", "share"].map((action) => (
               <button key={action} onClick={() => quickAction(client, action)} className="block min-h-11 w-full rounded-md px-3 py-2 text-left text-sm font-bold capitalize hover:bg-slate-100">
                 {action === "estimate" ? "Build Estimate" : action}
               </button>
@@ -3583,6 +3745,9 @@ function ClientActionGrid({ client, quickAction, clearFollowUp }) {
       />
       <ActionButton primary onClick={() => quickAction(client, "acceptInvoice")}>
         Accept + Invoice
+      </ActionButton>
+      <ActionButton onClick={() => quickAction(client, "share")}>
+        Share
       </ActionButton>
       <details className="relative col-span-2">
         <summary className="min-h-11 cursor-pointer list-none rounded-md border border-slate-300 bg-white px-3 py-3 text-center text-sm font-black leading-tight text-slate-900 shadow-sm">

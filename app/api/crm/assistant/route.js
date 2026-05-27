@@ -30,6 +30,7 @@ const allowedFields = [
   "paymentAmount",
   "balanceDue",
   "paymentMethod",
+  "notes",
   "projectNotes",
 ];
 
@@ -75,6 +76,10 @@ const actionSchema = {
 };
 
 function compactClient(client) {
+  const lastContact = (client?.communicationLog || []).find((item) =>
+    ["call", "text", "email", "note"].includes(item?.type)
+  );
+
   return {
     name: client?.name || "",
     phone: client?.phone || "",
@@ -85,6 +90,8 @@ function compactClient(client) {
     tag: client?.tag || "",
     followUpDate: client?.followUpDate || "",
     balanceDue: client?.balanceDue || "",
+    notes: client?.notes || client?.projectNotes || "",
+    lastContactDate: lastContact?.date?.slice(0, 10) || "",
   };
 }
 
@@ -142,7 +149,7 @@ export async function POST(req) {
     "Use type create only when the user clearly asks to add/create/new client/lead/customer.",
     "Use type noop if the command is unclear or no CRM change is requested.",
     `Today is ${today}. Convert today/tomorrow/in N days to YYYY-MM-DD where relevant.`,
-    "For add note/note/notes, set field projectNotes and appendNote true.",
+    "For add note/note/notes, set field notes and appendNote true.",
     "For completed/done/finished, set projectFlag Completed, leadStatus Completed, and projectCompletedDate if not supplied.",
     "For no response, set projectFlag No Response and tag Called Client No Response.",
     "For estimate sent/quote sent, set estimateSent Yes, leadStatus Estimate Sent, and tag Estimate Sent.",
