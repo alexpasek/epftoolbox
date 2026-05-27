@@ -336,6 +336,12 @@ function numberValue(value) {
   return Number.isFinite(number) ? number : 0;
 }
 
+function monthLabel(value = monthISO()) {
+  const [year, month] = String(value || monthISO()).split("-").map(Number);
+  const date = new Date(year || new Date().getFullYear(), (month || 1) - 1, 1);
+  return new Intl.DateTimeFormat("en-CA", { month: "long", year: "numeric" }).format(date);
+}
+
 function createInvoiceHref(client = {}, invoices = []) {
   const attachedEstimate = getClientEstimates(client, invoices)[0];
   if (attachedEstimate?.id) {
@@ -917,6 +923,15 @@ function lastContactDate(client) {
   return event?.date?.slice(0, 10) || "";
 }
 
+function clientCardNote(client = {}) {
+  const directNote = String(client.notes || "").trim();
+  if (directNote) return directNote;
+  const timelineNote = (client.communicationLog || []).find((entry) =>
+    String(entry.content || "").trim()
+  );
+  return String(timelineNote?.content || "").trim();
+}
+
 export default function CrmPage() {
   const [clients, setClients] = useState(sampleClients);
   const [form, setForm] = useState(emptyClient);
@@ -1242,6 +1257,19 @@ export default function CrmPage() {
       { label: "Balance Due", count: balanceDue.length, amount: balanceDue.reduce((sum, c) => sum + numberValue(c.balanceDue || c.estimateAmount), 0) },
       { label: "Completed Jobs", count: completed.length, amount: completed.reduce((sum, c) => sum + numberValue(c.estimateAmount), 0) },
     ];
+  }, [dailyClients]);
+
+  const clientMonthStats = useMemo(() => {
+    const thisMonth = monthISO();
+    const monthClients = dailyClients.filter(
+      (client) => String(client.createdAt || client.updatedAt || "").slice(0, 7) === thisMonth
+    );
+    return {
+      label: monthLabel(thisMonth),
+      count: monthClients.length,
+      won: monthClients.filter((client) => client.leadStatus === "Won").length,
+      amount: monthClients.reduce((sum, client) => sum + numberValue(client.estimateAmount), 0),
+    };
   }, [dailyClients]);
 
   const updateClientList = useCallback((mutator) => {
@@ -2014,6 +2042,7 @@ export default function CrmPage() {
         {activeView === "Clients" && (
           <ClientsView
             clients={filteredClients}
+            monthlyStats={clientMonthStats}
             savedInvoices={visibleSavedInvoices}
             filters={filters}
             setFilters={setFilters}
@@ -2762,7 +2791,7 @@ function PipelineCard({ client, openClient, changeStatus, compact = false }) {
   );
 }
 
-function ClientsView({ clients, savedInvoices, filters, setFilters, filterOptions, search, setSearch, openClient, editClient, deleteClient, quickAction, clearFollowUp }) {
+function ClientsView({ clients, monthlyStats, savedInvoices, filters, setFilters, filterOptions, search, setSearch, openClient, editClient, deleteClient, quickAction, clearFollowUp }) {
   const [controlsOpen, setControlsOpen] = useState(false);
   const activeFilterCount =
     (search.trim() ? 1 : 0) +
@@ -2777,6 +2806,11 @@ function ClientsView({ clients, savedInvoices, filters, setFilters, filterOption
             <p className="text-xs font-bold text-slate-500">
               {clients.length} shown{activeFilterCount ? ` • ${activeFilterCount} search/filter active` : ""}
             </p>
+            {monthlyStats && (
+              <p className="mt-0.5 text-xs font-black text-blue-700">
+                {monthlyStats.label}: {monthlyStats.count} {monthlyStats.count === 1 ? "client" : "clients"} added · {monthlyStats.won} won · {money(monthlyStats.amount)}
+              </p>
+            )}
           </div>
           <div className="flex gap-2">
             {activeFilterCount > 0 && (
@@ -2851,6 +2885,9 @@ function ClientsView({ clients, savedInvoices, filters, setFilters, filterOption
 }
 
 function ClientCard({ client, estimates = [], openClient, editClient, deleteClient, quickAction, clearFollowUp }) {
+  const lastContact = lastContactDate(client);
+  const note = clientCardNote(client);
+
   return (
     <article className={`rounded-lg p-3 transition hover:border-blue-300 hover:shadow-lg ${crmCardClass} ${needsReminder(client) ? "ring-2 ring-amber-300" : ""}`}>
       <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
@@ -2871,6 +2908,19 @@ function ClientCard({ client, estimates = [], openClient, editClient, deleteClie
         <Info label="Follow-Up" value={client.followUpDate || "-"} />
         <Info label="Sales" value={client.assignedTo || "-"} />
       </div>
+
+      <button
+        type="button"
+        onClick={() => openClient(client)}
+        className="mt-3 block w-full rounded-md border border-slate-200 bg-slate-50 p-3 text-left"
+      >
+        <p className="text-xs font-black uppercase text-slate-500">
+          Last contact: {lastContact || "No contact logged"}
+        </p>
+        <p className="mt-1 line-clamp-2 break-words text-sm font-semibold text-slate-700">
+          {note || "No note yet"}
+        </p>
+      </button>
 
       <WorkflowWarnings client={client} />
 
