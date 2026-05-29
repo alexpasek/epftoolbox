@@ -324,6 +324,7 @@ function downloadFollowUpCalendar(client = {}, dateISO = addDaysISO(2), selected
 function money(value) {
   const number = Number(String(value || "").replace(/[^0-9.-]/g, ""));
   if (!Number.isFinite(number) || number === 0) return value ? String(value) : "$0";
+  if (Math.abs(number) >= 1000000) return "Check amount";
   return new Intl.NumberFormat("en-CA", {
     style: "currency",
     currency: "CAD",
@@ -334,6 +335,29 @@ function money(value) {
 function numberValue(value) {
   const number = Number(String(value || "").replace(/[^0-9.-]/g, ""));
   return Number.isFinite(number) ? number : 0;
+}
+
+function estimateDisplay(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "TBD";
+  if (/[a-z/$]|–|-/.test(raw.toLowerCase()) && !/^\$?[\d,.\s-]+$/.test(raw)) return raw;
+  const number = numberValue(raw);
+  if (!number) return raw || "TBD";
+  if (Math.abs(number) >= 1000000) return "Check estimate";
+  return money(number);
+}
+
+function estimateStatValue(value) {
+  const number = numberValue(value);
+  return Math.abs(number) >= 1000000 ? 0 : number;
+}
+
+function shortDate(value = "") {
+  const dateText = String(value || "").slice(0, 10);
+  if (!dateText) return "";
+  const date = new Date(`${dateText}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return dateText;
+  return new Intl.DateTimeFormat("en-CA", { month: "short", day: "numeric" }).format(date);
 }
 
 function monthLabel(value = monthISO()) {
@@ -433,7 +457,7 @@ function clientShareText(client = {}) {
     client.address ? `Address: ${client.address}` : "",
     client.leadStatus ? `Status: ${client.leadStatus}` : "",
     client.followUpDate ? `Follow-up: ${client.followUpDate}` : "",
-    numberValue(client.estimateAmount) ? `Estimate: ${money(client.estimateAmount)}` : "",
+    client.estimateAmount ? `Estimate: ${estimateDisplay(client.estimateAmount)}` : "",
     clientCardNote(client) ? `Note: ${clientCardNote(client).slice(0, 220)}` : "",
   ];
   return parts.filter(Boolean).join("\n");
@@ -948,6 +972,14 @@ function lastContactDate(client) {
   return event?.date?.slice(0, 10) || "";
 }
 
+function latestTimelineContent(client = {}, direction = "") {
+  const entry = (client.communicationLog || []).find((item) => {
+    if (!String(item.content || "").trim()) return false;
+    return direction ? item.direction === direction : true;
+  });
+  return String(entry?.content || "").trim();
+}
+
 function clientCardNote(client = {}) {
   const directNote = String(client.notes || "").trim();
   if (directNote) return directNote;
@@ -955,6 +987,126 @@ function clientCardNote(client = {}) {
     String(entry.content || "").trim()
   );
   return String(timelineNote?.content || "").trim();
+}
+
+function followUpState(client = {}) {
+  if (client.leadStatus === "Won" || ["Scheduled", "In Progress", "Completed"].includes(client.projectStatus)) {
+    return {
+      label: client.startDate ? `Job starts ${shortDate(client.startDate)}` : client.projectStatus || "Job booked",
+      className: "border-emerald-200 bg-emerald-50 text-emerald-800",
+    };
+  }
+  if (!client.followUpDate) {
+    return {
+      label: "No follow-up set",
+      className: "border-amber-200 bg-amber-50 text-amber-900",
+    };
+  }
+  if (client.followUpDate < todayISO()) {
+    return {
+      label: `Follow-up overdue: ${shortDate(client.followUpDate)}`,
+      className: "border-red-200 bg-red-50 text-red-800",
+    };
+  }
+  if (client.followUpDate === todayISO()) {
+    return {
+      label: "Follow-up today",
+      className: "border-blue-200 bg-blue-50 text-blue-800",
+    };
+  }
+  return {
+    label: `Follow-up ${shortDate(client.followUpDate)}`,
+    className: "border-slate-200 bg-slate-50 text-slate-600",
+  };
+}
+
+function clientActionState(client = {}) {
+  const lastContact = lastContactDate(client);
+  const noContactYet = !lastContact;
+
+  if (client.leadStatus === "Lost") {
+    return {
+      key: "lost",
+      label: "Lost / No Response",
+      nextAction: "Archive or remarket later",
+      primaryAction: "remarket",
+      primaryLabel: "Remarket",
+      priority: 90,
+      className: "border-slate-300 bg-slate-100 text-slate-700",
+    };
+  }
+
+  if (client.leadStatus === "Won" || ["Scheduled", "In Progress", "Completed"].includes(client.projectStatus)) {
+    return {
+      key: "booked",
+      label: "Won / Booked",
+      nextAction: client.paymentStatus === "Balance Due" ? "Collect balance" : "Open job details",
+      primaryAction: client.paymentStatus === "Balance Due" ? "invoice" : "open",
+      primaryLabel: client.paymentStatus === "Balance Due" ? "Invoice" : "Open Job",
+      priority: 70,
+      className: "border-emerald-200 bg-emerald-50 text-emerald-800",
+    };
+  }
+
+  if (client.followUpDate && client.followUpDate <= todayISO()) {
+    return {
+      key: "need-follow-up",
+      label: "Need Follow-Up",
+      nextAction: isFollowUpOverdue(client) ? "Send follow-up text now" : "Follow up today",
+      primaryAction: "followUp",
+      primaryLabel: "Follow Up",
+      priority: isFollowUpOverdue(client) ? 0 : 10,
+      className: isFollowUpOverdue(client)
+        ? "border-red-200 bg-red-50 text-red-800"
+        : "border-blue-200 bg-blue-50 text-blue-800",
+    };
+  }
+
+  if (client.leadStatus === "Estimate Booked") {
+    return {
+      key: "estimate-booked",
+      label: "Estimate Booked",
+      nextAction: client.estimateDate ? `Confirm appointment ${shortDate(client.estimateDate)}` : "Confirm estimate appointment",
+      primaryAction: "text",
+      primaryLabel: "Confirm",
+      priority: 25,
+      className: "border-indigo-200 bg-indigo-50 text-indigo-800",
+    };
+  }
+
+  if (client.leadStatus === "Estimate Sent") {
+    return {
+      key: "estimate-sent",
+      label: "Estimate Sent",
+      nextAction: shouldMoveEstimateToFollowUp(client) ? "Check in about estimate" : "Wait for client reply",
+      primaryAction: "followUp",
+      primaryLabel: "Check In",
+      priority: shouldMoveEstimateToFollowUp(client) ? 12 : 40,
+      className: "border-violet-200 bg-violet-50 text-violet-800",
+    };
+  }
+
+  if (client.leadStatus === "New Lead" || noContactYet) {
+    return {
+      key: "needs-first-reply",
+      label: "Needs First Reply",
+      nextAction: client.phone ? "Reply now by text or call" : "Add contact info",
+      primaryAction: client.phone ? "text" : "open",
+      primaryLabel: client.phone ? "Reply Now" : "Open",
+      priority: 20,
+      className: "border-amber-200 bg-amber-50 text-amber-900",
+    };
+  }
+
+  return {
+    key: "waiting-for-client",
+    label: "Waiting for Client",
+    nextAction: client.followUpDate ? `Call after ${shortDate(client.followUpDate)}` : "Set follow-up date",
+    primaryAction: "followUp",
+    primaryLabel: "Follow Up",
+    priority: client.followUpDate ? 50 : 30,
+    className: "border-yellow-200 bg-yellow-50 text-yellow-900",
+  };
 }
 
 export default function CrmPage() {
@@ -1237,6 +1389,15 @@ export default function CrmPage() {
           .toLowerCase();
         const specialOk =
           filters.special === "All" ||
+          (filters.special === "Needs Action" && clientActionState(client).priority < 30) ||
+          (filters.special === "Not Contacted" && clientActionState(client).key === "needs-first-reply") ||
+          (filters.special === "Follow-Up Today" && client.followUpDate === todayISO()) ||
+          (filters.special === "Estimate Sent" && client.leadStatus === "Estimate Sent") ||
+          (filters.special === "Waiting for Reply" && clientActionState(client).key === "waiting-for-client") ||
+          (filters.special === "Booked" && (client.leadStatus === "Won" || ["Scheduled", "In Progress", "Completed"].includes(client.projectStatus))) ||
+          (filters.special === "No Invoice" && client.paymentStatus === "No Invoice") ||
+          (filters.special === "Calgary" && isLimitedClient(client)) ||
+          (filters.special === "GTA" && !isLimitedClient(client)) ||
           (filters.special === "Follow-up overdue" && isFollowUpOverdue(client)) ||
           (filters.special === "Balance due" && client.paymentStatus === "Balance Due") ||
           (filters.special === "Completed unpaid" &&
@@ -1254,10 +1415,10 @@ export default function CrmPage() {
         );
       })
       .sort((a, b) => {
-        if (a.leadStatus === "Lost" && b.leadStatus !== "Lost") return 1;
-        if (a.leadStatus !== "Lost" && b.leadStatus === "Lost") return -1;
-        if (needsReminder(a) && !needsReminder(b)) return -1;
-        if (!needsReminder(a) && needsReminder(b)) return 1;
+        const actionDiff = clientActionState(a).priority - clientActionState(b).priority;
+        if (actionDiff) return actionDiff;
+        const followUpDiff = String(a.followUpDate || "9999-99-99").localeCompare(String(b.followUpDate || "9999-99-99"));
+        if (followUpDiff) return followUpDiff;
         return new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime();
       });
   }, [dailyClients, filters, search]);
@@ -1275,12 +1436,12 @@ export default function CrmPage() {
     );
 
     return [
-      { label: "New Leads", count: byLead("New Lead").length, amount: byLead("New Lead").reduce((sum, c) => sum + numberValue(c.estimateAmount), 0) },
-      { label: "Follow-Ups Today", count: followUpsToday.length, amount: followUpsToday.reduce((sum, c) => sum + numberValue(c.estimateAmount), 0) },
-      { label: "Estimates Sent", count: byLead("Estimate Sent").length, amount: byLead("Estimate Sent").reduce((sum, c) => sum + numberValue(c.estimateAmount), 0) },
-      { label: "Won This Month", count: wonThisMonth.length, amount: wonThisMonth.reduce((sum, c) => sum + numberValue(c.estimateAmount), 0) },
-      { label: "Balance Due", count: balanceDue.length, amount: balanceDue.reduce((sum, c) => sum + numberValue(c.balanceDue || c.estimateAmount), 0) },
-      { label: "Completed Jobs", count: completed.length, amount: completed.reduce((sum, c) => sum + numberValue(c.estimateAmount), 0) },
+      { label: "New Leads", count: byLead("New Lead").length, amount: byLead("New Lead").reduce((sum, c) => sum + estimateStatValue(c.estimateAmount), 0) },
+      { label: "Follow-Ups Today", count: followUpsToday.length, amount: followUpsToday.reduce((sum, c) => sum + estimateStatValue(c.estimateAmount), 0) },
+      { label: "Estimates Sent", count: byLead("Estimate Sent").length, amount: byLead("Estimate Sent").reduce((sum, c) => sum + estimateStatValue(c.estimateAmount), 0) },
+      { label: "Won This Month", count: wonThisMonth.length, amount: wonThisMonth.reduce((sum, c) => sum + estimateStatValue(c.estimateAmount), 0) },
+      { label: "Balance Due", count: balanceDue.length, amount: balanceDue.reduce((sum, c) => sum + estimateStatValue(c.balanceDue || c.estimateAmount), 0) },
+      { label: "Completed Jobs", count: completed.length, amount: completed.reduce((sum, c) => sum + estimateStatValue(c.estimateAmount), 0) },
     ];
   }, [dailyClients]);
 
@@ -1293,7 +1454,7 @@ export default function CrmPage() {
       label: monthLabel(thisMonth),
       count: monthClients.length,
       won: monthClients.filter((client) => client.leadStatus === "Won").length,
-      amount: monthClients.reduce((sum, client) => sum + numberValue(client.estimateAmount), 0),
+      amount: monthClients.reduce((sum, client) => sum + estimateStatValue(client.estimateAmount), 0),
     };
   }, [dailyClients]);
 
@@ -2129,6 +2290,7 @@ export default function CrmPage() {
         {activeView === "Clients" && (
           <ClientsView
             clients={filteredClients}
+            summaryClients={dailyClients}
             monthlyStats={clientMonthStats}
             savedInvoices={visibleSavedInvoices}
             filters={filters}
@@ -2631,7 +2793,7 @@ function Dashboard({ stats, clients, savedInvoices = [], setActiveView, openClie
   const moneyQueue = clients
     .filter((client) => client.paymentStatus === "Balance Due" || (client.projectStatus === "Completed" && client.paymentStatus !== "Paid"))
     .sort((a, b) => numberValue(b.balanceDue || b.estimateAmount) - numberValue(a.balanceDue || a.estimateAmount));
-  const pipelineValue = openLeads.reduce((sum, client) => sum + numberValue(client.estimateAmount), 0);
+  const pipelineValue = openLeads.reduce((sum, client) => sum + estimateStatValue(client.estimateAmount), 0);
   const closeRate = sentEstimates.length ? Math.round((wonClients.length / sentEstimates.length) * 100) : 0;
   const invoiceValue = savedInvoices.reduce((sum, invoice) => sum + invoiceTotal(invoice), 0);
   const invoiceTotalDue = clients.reduce((sum, client) => sum + numberValue(client.balanceDue), 0);
@@ -2863,7 +3025,7 @@ function PipelineCard({ client, openClient, changeStatus, compact = false }) {
         <p className="text-xs font-bold text-slate-500">{[compact ? client.service : "", client.city].filter(Boolean).join(" - ") || "No city"}</p>
       </button>
       <div className={`mt-2 grid gap-2 text-xs font-bold text-slate-600 ${compact ? "grid-cols-1" : "grid-cols-2"}`}>
-        <p>{money(client.estimateAmount)}</p>
+        <p>{estimateDisplay(client.estimateAmount)}</p>
         {!compact && <p>Next: {client.followUpDate || "-"}</p>}
         <p className={compact ? "" : "col-span-2"}>Last: {lastContactDate(client) || "-"}</p>
       </div>
@@ -2880,11 +3042,59 @@ function PipelineCard({ client, openClient, changeStatus, compact = false }) {
   );
 }
 
-function ClientsView({ clients, monthlyStats, savedInvoices, filters, setFilters, filterOptions, search, setSearch, openClient, editClient, deleteClient, quickAction, addClientNote, addAiClientNote, clearFollowUp }) {
+function SummaryButton({ label, value, tone = "slate", onClick }) {
+  const toneClass =
+    tone === "red"
+      ? "border-red-200 bg-red-50 text-red-800"
+      : tone === "amber"
+        ? "border-amber-200 bg-amber-50 text-amber-900"
+        : tone === "blue"
+          ? "border-blue-200 bg-blue-50 text-blue-800"
+          : tone === "violet"
+            ? "border-violet-200 bg-violet-50 text-violet-800"
+            : tone === "emerald"
+              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+              : "border-slate-200 bg-slate-50 text-slate-700";
+
+  return (
+    <button type="button" onClick={onClick} className={`rounded-md border p-3 text-left ${toneClass}`}>
+      <p className="text-xl font-black">{value}</p>
+      <p className="text-xs font-black uppercase">{label}</p>
+    </button>
+  );
+}
+
+function ClientsView({ clients, summaryClients = clients, monthlyStats, savedInvoices, filters, setFilters, filterOptions, search, setSearch, openClient, editClient, deleteClient, quickAction, addClientNote, addAiClientNote, clearFollowUp }) {
   const [controlsOpen, setControlsOpen] = useState(false);
   const activeFilterCount =
     (search.trim() ? 1 : 0) +
     Object.values(filters).filter((value) => value && value !== "All").length;
+  const clientCounts = {
+    needsAction: summaryClients.filter((client) => clientActionState(client).priority < 30).length,
+    notContacted: summaryClients.filter((client) => clientActionState(client).key === "needs-first-reply").length,
+    followUpToday: summaryClients.filter((client) => client.followUpDate === todayISO()).length,
+    waitingReply: summaryClients.filter((client) => clientActionState(client).key === "waiting-for-client").length,
+    estimateSent: summaryClients.filter((client) => client.leadStatus === "Estimate Sent").length,
+    booked: summaryClients.filter((client) => client.leadStatus === "Won" || ["Scheduled", "In Progress", "Completed"].includes(client.projectStatus)).length,
+    noInvoice: summaryClients.filter((client) => client.paymentStatus === "No Invoice").length,
+  };
+  const estimateSentValue = summaryClients
+    .filter((client) => client.leadStatus === "Estimate Sent")
+    .reduce((sum, client) => sum + estimateStatValue(client.estimateAmount), 0);
+  const bookedValue = summaryClients
+    .filter((client) => client.leadStatus === "Won" || ["Scheduled", "In Progress", "Completed"].includes(client.projectStatus))
+    .reduce((sum, client) => sum + estimateStatValue(client.estimateAmount), 0);
+  const quickFilters = [
+    ["Needs Action", clientCounts.needsAction],
+    ["Not Contacted", clientCounts.notContacted],
+    ["Follow-Up Today", clientCounts.followUpToday],
+    ["Waiting for Reply", clientCounts.waitingReply],
+    ["Estimate Sent", clientCounts.estimateSent],
+    ["Booked", clientCounts.booked],
+    ["No Invoice", clientCounts.noInvoice],
+    ["Calgary", summaryClients.filter(isLimitedClient).length],
+    ["GTA", summaryClients.filter((client) => !isLimitedClient(client)).length],
+  ];
 
   return (
     <section className="space-y-3">
@@ -2944,11 +3154,37 @@ function ClientsView({ clients, monthlyStats, savedInvoices, filters, setFilters
               <Filter label="City" value={filters.city} options={["All", ...filterOptions.city]} onChange={(v) => setFilters({ ...filters, city: v })} />
               <Filter label="Service" value={filters.service} options={["All", ...filterOptions.service]} onChange={(v) => setFilters({ ...filters, service: v })} />
               <Filter label="Payment" value={filters.paymentStatus} options={["All", ...paymentStatuses]} onChange={(v) => setFilters({ ...filters, paymentStatus: v })} />
-              <Filter label="Special" value={filters.special} options={["All", "Follow-up overdue", "Balance due", "Completed unpaid"]} onChange={(v) => setFilters({ ...filters, special: v })} />
+              <Filter label="Special" value={filters.special} options={["All", "Needs Action", "Not Contacted", "Follow-Up Today", "Waiting for Reply", "Estimate Sent", "Booked", "No Invoice", "Calgary", "GTA", "Follow-up overdue", "Balance due", "Completed unpaid"]} onChange={(v) => setFilters({ ...filters, special: v })} />
             </div>
           </div>
         )}
       </div>
+
+      <section className={`rounded-lg p-3 ${crmPanelClass}`}>
+        <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
+          <SummaryButton label="Needs action" value={clientCounts.needsAction} tone="red" onClick={() => setFilters({ ...filters, special: "Needs Action" })} />
+          <SummaryButton label="Need reply" value={clientCounts.notContacted} tone="amber" onClick={() => setFilters({ ...filters, special: "Not Contacted" })} />
+          <SummaryButton label="Follow-ups due" value={clientCounts.followUpToday} tone="blue" onClick={() => setFilters({ ...filters, special: "Follow-Up Today" })} />
+          <SummaryButton label="Estimates sent" value={money(estimateSentValue)} tone="violet" onClick={() => setFilters({ ...filters, special: "Estimate Sent" })} />
+          <SummaryButton label="Booked" value={money(bookedValue)} tone="emerald" onClick={() => setFilters({ ...filters, special: "Booked" })} />
+        </div>
+        <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+          {quickFilters.map(([label, count]) => (
+            <button
+              key={label}
+              type="button"
+              onClick={() => setFilters({ ...filters, special: filters.special === label ? "All" : label })}
+              className={`shrink-0 rounded-full border px-3 py-2 text-xs font-black ${
+                filters.special === label
+                  ? "border-blue-700 bg-blue-700 text-white"
+                  : "border-slate-300 bg-white text-slate-700"
+              }`}
+            >
+              {label} ({count})
+            </button>
+          ))}
+        </div>
+      </section>
 
       <div className="grid gap-3 lg:grid-cols-2">
         {clients.map((client) => (
@@ -2979,8 +3215,13 @@ function ClientCard({ client, estimates = [], openClient, editClient, deleteClie
   const [noteOpen, setNoteOpen] = useState(false);
   const [noteDraft, setNoteDraft] = useState("");
   const [noteSaving, setNoteSaving] = useState(false);
+  const action = clientActionState(client);
+  const followUp = followUpState(client);
   const lastContact = lastContactDate(client);
   const note = clientCardNote(client);
+  const lastMessage = latestTimelineContent(client, "inbound") || latestTimelineContent(client);
+  const yourReply = latestTimelineContent(client, "outbound");
+  const mainButtonAction = action.primaryAction;
 
   async function saveQuickNote(useAi = false) {
     const cleanNote = noteDraft.trim();
@@ -3006,17 +3247,22 @@ function ClientCard({ client, estimates = [], openClient, editClient, deleteClie
           <h3 className="truncate text-lg font-black">{client.name || "Unnamed Lead"}</h3>
           <p className="mt-1 break-words text-sm font-semibold text-slate-600">{[client.service, client.city].filter(Boolean).join(" - ") || "No service"}</p>
         </button>
-        <div className="flex min-w-0 flex-wrap gap-1 sm:justify-end">
-          <StatusBadge value={client.leadStatus} />
-          <PaymentBadge value={client.paymentStatus} />
-        </div>
+        <span className={`rounded-md border px-3 py-2 text-center text-xs font-black uppercase ${action.className}`}>
+          {action.label}
+        </span>
       </div>
 
-      <div className="mt-3 grid grid-cols-2 gap-2 text-sm md:grid-cols-5">
+      <div className="mt-3 rounded-md border border-slate-200 bg-white p-3">
+        <p className="text-sm font-black text-slate-950">Next action: {action.nextAction}</p>
+        <p className={`mt-2 inline-flex rounded-full border px-2.5 py-1 text-xs font-black ${followUp.className}`}>
+          {followUp.label}
+        </p>
+      </div>
+
+      <div className="mt-3 grid grid-cols-2 gap-2 text-sm md:grid-cols-4">
         <Info label="Phone" value={client.phone} />
-        <Info label="Estimate" value={money(client.estimateAmount)} />
-        <Info label="Saved Estimates" value={estimates.length ? `${estimates.length}` : "-"} />
-        <Info label="Follow-Up" value={client.followUpDate || "-"} />
+        <Info label="Estimate" value={estimateDisplay(client.estimateAmount)} />
+        <Info label="Last Contact" value={shortDate(lastContact) || "-"} />
         <Info label="Sales" value={client.assignedTo || "-"} />
       </div>
 
@@ -3026,9 +3272,15 @@ function ClientCard({ client, estimates = [], openClient, editClient, deleteClie
         className="mt-3 block w-full rounded-md border border-slate-200 bg-slate-50 p-3 text-left"
       >
         <p className="text-xs font-black uppercase text-slate-500">
-          Last contact: {lastContact || "No contact logged"}
+          Message Context
         </p>
         <p className="mt-1 line-clamp-2 break-words text-sm font-semibold text-slate-700">
+          Last message: {lastMessage || "No message logged"}
+        </p>
+        <p className="mt-1 line-clamp-2 break-words text-sm font-semibold text-slate-600">
+          Your reply: {yourReply || "Not sent yet"}
+        </p>
+        <p className="mt-1 line-clamp-3 break-words text-sm font-bold text-slate-800">
           {note || "No note yet"}
         </p>
       </button>
@@ -3083,19 +3335,24 @@ function ClientCard({ client, estimates = [], openClient, editClient, deleteClie
 
       <WorkflowWarnings client={client} />
 
-      <div className="mt-3 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
-        <button onClick={() => quickAction(client, "call")} className="min-h-11 rounded-md bg-blue-700 px-3 py-2 text-sm font-black text-white hover:bg-blue-800">
-          Call
+      <div className="mt-3 grid grid-cols-4 gap-2">
+        <button
+          onClick={() => (mainButtonAction === "open" ? openClient(client) : quickAction(client, mainButtonAction))}
+          className="col-span-2 min-h-11 rounded-md bg-blue-700 px-3 py-2 text-sm font-black text-white hover:bg-blue-800"
+        >
+          {action.primaryLabel}
         </button>
         <button onClick={() => quickAction(client, "text")} className="min-h-11 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-bold">
           Text
         </button>
-        <button onClick={() => quickAction(client, "estimate")} className="min-h-11 rounded-md border border-blue-700 bg-blue-700 px-3 py-2 text-sm font-black text-white hover:bg-blue-800">
-          Estimate
+        <button onClick={() => quickAction(client, "call")} className="min-h-11 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-bold">
+          Call
         </button>
-        <LongPressFollowUpButton client={client} quickAction={quickAction} clearFollowUp={clearFollowUp} />
         <button onClick={() => openClient(client)} className="min-h-11 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-bold">
           Open
+        </button>
+        <button onClick={() => quickAction(client, "estimate")} className="min-h-11 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-bold">
+          Estimate
         </button>
         <button onClick={() => quickAction(client, "share")} className="min-h-11 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-bold">
           Share
