@@ -68,14 +68,16 @@ const workNeededOptions = [
   "Other",
 ];
 const paymentMethodOptions = ["Cash", "e-Transfer", "Check"];
+const receiptCategories = ["Materials", "Tools", "Subcontractor", "Dump / Disposal", "Parking", "Fuel", "Other"];
 
-const navItems = ["Dashboard", "Pipeline", "Clients", "Calendar", "Invoices"];
+const navItems = ["Dashboard", "Pipeline", "Clients", "Calendar", "Invoices", "Receipts"];
 const mobileNavLabels = {
   Dashboard: "Dash",
   Pipeline: "Pipe",
   Clients: "Clients",
   Calendar: "Cal",
   Invoices: "Bills",
+  Receipts: "Costs",
 };
 const CRM_SCHEMA_VERSION = 2;
 const crmPanelClass = "border border-slate-300 bg-white shadow-md shadow-slate-300/50";
@@ -350,6 +352,92 @@ function estimateDisplay(value) {
 function estimateStatValue(value) {
   const number = numberValue(value);
   return Math.abs(number) >= 1000000 ? 0 : number;
+}
+
+function extractReceiptAmount(value = "") {
+  const text = String(value || "");
+  const matches = [...text.matchAll(/(?:total|amount|cad|\$)?\s*\$?\s*(\d{1,5}(?:,\d{3})*(?:\.\d{2})?)/gi)]
+    .map((match) => numberValue(match[1]))
+    .filter((amount) => amount > 0 && amount < 100000);
+  if (!matches.length) return "";
+  return String(Math.round(matches[matches.length - 1] * 100) / 100);
+}
+
+function normalizeReceipt(receipt = {}) {
+  const fileName = receipt.fileName || receipt.name || "";
+  const detectedAmount = receipt.amount || extractReceiptAmount([fileName, receipt.notes, receipt.vendor].filter(Boolean).join(" "));
+  return {
+    id: receipt.id || makeId(),
+    date: String(receipt.date || todayISO()).slice(0, 10),
+    vendor: receipt.vendor || "",
+    category: receiptCategories.includes(receipt.category) ? receipt.category : "Materials",
+    amount: detectedAmount || "",
+    hst: receipt.hst || "",
+    taxReady: receipt.taxReady !== false,
+    notes: receipt.notes || "",
+    fileName,
+    fileType: receipt.fileType || "",
+    fileSize: receipt.fileSize || 0,
+    fileData: receipt.fileData || "",
+    createdAt: receipt.createdAt || nowISO(),
+    updatedAt: receipt.updatedAt || receipt.createdAt || nowISO(),
+  };
+}
+
+function clientReceipts(client = {}) {
+  return (client.receipts || []).map(normalizeReceipt).sort((a, b) => String(b.date).localeCompare(String(a.date)));
+}
+
+function receiptTotal(receipts = []) {
+  return receipts.reduce((sum, receipt) => sum + numberValue(receipt.amount), 0);
+}
+
+function clientMaterialsTotal(client = {}) {
+  return receiptTotal(clientReceipts(client));
+}
+
+function profitAfterMaterials(client = {}) {
+  const estimate = estimateStatValue(client.estimateAmount);
+  return estimate ? estimate - clientMaterialsTotal(client) : 0;
+}
+
+function csvCell(value = "") {
+  return `"${String(value ?? "").replace(/"/g, '""')}"`;
+}
+
+function downloadTextFile(filename, content, type = "text/plain;charset=utf-8") {
+  if (typeof window === "undefined") return;
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function downloadReceiptsCsv(clients = [], filename = `crm-receipts-${todayISO()}.csv`) {
+  const rows = [
+    ["Client", "Phone", "City", "Job", "Receipt Date", "Vendor", "Category", "Amount", "HST", "Tax Ready", "File", "Notes"],
+    ...clients.flatMap((client) =>
+      clientReceipts(client).map((receipt) => [
+        client.name || client.phone || "Unnamed client",
+        client.phone || "",
+        client.city || "",
+        client.service || client.workNeeded || "",
+        receipt.date,
+        receipt.vendor,
+        receipt.category,
+        receipt.amount,
+        receipt.hst,
+        receipt.taxReady ? "Yes" : "No",
+        receipt.fileName,
+        receipt.notes,
+      ])
+    ),
+  ];
+  const csv = rows.map((row) => row.map(csvCell).join(",")).join("\n");
+  downloadTextFile(filename, csv, "text/csv;charset=utf-8");
 }
 
 function shortDate(value = "") {
@@ -840,6 +928,7 @@ function normalizeClient(client = {}) {
     paymentAmount: client.paymentAmount || "",
     balanceDue: client.balanceDue || "",
     paymentMethod: client.paymentMethod || "",
+    receipts: Array.isArray(client.receipts) ? client.receipts.map(normalizeReceipt) : [],
     notes: client.notes || client.projectNotes || "",
     communicationLog: getClientTimeline(client),
   };
@@ -2316,6 +2405,10 @@ export default function CrmPage() {
           <InvoicesView clients={dailyClients} savedInvoices={visibleSavedInvoices} openClient={(client) => setSelectedClientId(client.id)} quickAction={quickAction} />
         )}
 
+        {activeView === "Receipts" && (
+          <ReceiptsView clients={dailyClients} openClient={(client) => setSelectedClientId(client.id)} />
+        )}
+
         {activeView === "Archive" && (
           <ArchiveView
             clients={archivedClients}
@@ -3222,6 +3315,7 @@ function ClientCard({ client, estimates = [], openClient, editClient, deleteClie
   const lastMessage = latestTimelineContent(client, "inbound") || latestTimelineContent(client);
   const yourReply = latestTimelineContent(client, "outbound");
   const mainButtonAction = action.primaryAction;
+  const materialsTotal = clientMaterialsTotal(client);
 
   async function saveQuickNote(useAi = false) {
     const cleanNote = noteDraft.trim();
@@ -3262,6 +3356,7 @@ function ClientCard({ client, estimates = [], openClient, editClient, deleteClie
       <div className="mt-3 grid grid-cols-2 gap-2 text-sm md:grid-cols-4">
         <Info label="Phone" value={client.phone} />
         <Info label="Estimate" value={estimateDisplay(client.estimateAmount)} />
+        <Info label="Materials" value={materialsTotal ? money(materialsTotal) : "-"} />
         <Info label="Last Contact" value={shortDate(lastContact) || "-"} />
         <Info label="Sales" value={client.assignedTo || "-"} />
       </div>
@@ -3462,6 +3557,96 @@ function InvoicesView({ clients, savedInvoices = [], openClient, quickAction }) 
   );
 }
 
+function ReceiptsView({ clients, openClient }) {
+  const clientsWithReceipts = clients
+    .map((client) => {
+      const receipts = clientReceipts(client);
+      return {
+        client,
+        receipts,
+        total: receiptTotal(receipts),
+        taxReady: receipts.filter((receipt) => receipt.taxReady).length,
+      };
+    })
+    .filter((row) => row.receipts.length)
+    .sort((a, b) => b.total - a.total);
+  const allReceipts = clientsWithReceipts.flatMap((row) => row.receipts.map((receipt) => ({ ...receipt, client: row.client })));
+  const total = allReceipts.reduce((sum, receipt) => sum + numberValue(receipt.amount), 0);
+  const taxReadyTotal = allReceipts
+    .filter((receipt) => receipt.taxReady)
+    .reduce((sum, receipt) => sum + numberValue(receipt.amount), 0);
+
+  return (
+    <section className="space-y-3">
+      <section className={`rounded-lg p-3 ${crmPanelClass}`}>
+        <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+          <div>
+            <h2 className="text-xl font-black">Receipts & Material Costs</h2>
+            <p className="text-sm font-bold text-slate-500">
+              Attach receipt photos to each client, track job material cost, then export the tax CSV.
+            </p>
+          </div>
+          <button
+            type="button"
+            disabled={!allReceipts.length}
+            onClick={() => downloadReceiptsCsv(clients)}
+            className="min-h-11 rounded-md bg-blue-700 px-3 py-2 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-45"
+          >
+            Export Tax CSV
+          </button>
+        </div>
+        <div className="mt-3 grid grid-cols-3 gap-2 text-sm">
+          <Info label="Receipts" value={allReceipts.length} />
+          <Info label="Total Cost" value={money(total)} />
+          <Info label="Tax Ready" value={money(taxReadyTotal)} />
+        </div>
+      </section>
+
+      <div className="grid gap-3 lg:grid-cols-2">
+        {clientsWithReceipts.map(({ client, receipts, total, taxReady }) => (
+          <article key={client.id} className={`rounded-lg p-3 ${crmCardClass}`}>
+            <button type="button" onClick={() => openClient(client)} className="block w-full min-w-0 text-left">
+              <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+                <span className="min-w-0">
+                  <span className="block truncate text-lg font-black">{client.name || client.phone || "Unnamed client"}</span>
+                  <span className="block truncate text-sm font-semibold text-slate-600">
+                    {[client.service, client.city].filter(Boolean).join(" - ") || "No job details"}
+                  </span>
+                </span>
+                <span className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-right text-sm font-black">
+                  {money(total)}
+                </span>
+              </div>
+            </button>
+            <div className="mt-3 grid grid-cols-3 gap-2 text-sm">
+              <Info label="Count" value={receipts.length} />
+              <Info label="Tax Ready" value={`${taxReady}/${receipts.length}`} />
+              <Info label="Profit Est." value={profitAfterMaterials(client) ? money(profitAfterMaterials(client)) : "-"} />
+            </div>
+            <div className="mt-3 space-y-2">
+              {receipts.slice(0, 3).map((receipt) => (
+                <div key={receipt.id} className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                  <span className="min-w-0">
+                    <span className="block truncate font-black">{receipt.vendor || receipt.fileName || receipt.category}</span>
+                    <span className="block truncate text-xs font-bold text-slate-500">{receipt.date} - {receipt.category}</span>
+                  </span>
+                  <span className="font-black">{money(receipt.amount)}</span>
+                </div>
+              ))}
+            </div>
+          </article>
+        ))}
+      </div>
+
+      {!clientsWithReceipts.length && (
+        <p className={`rounded-lg p-8 text-center text-sm font-bold text-slate-500 ${crmPanelClass}`}>
+          No receipts attached yet. Open a client and use Receipts / Materials.
+        </p>
+      )}
+    </section>
+  );
+}
+
 function ArchiveView({ clients, openClient, quickAction }) {
   const archivedValue = clients.reduce((sum, client) => sum + numberValue(client.estimateAmount), 0);
 
@@ -3540,6 +3725,7 @@ function nextClientStep(client = {}) {
 function ClientDetail({ client, savedInvoices = [], close, editClient, updateClient, changeStatus, quickAction, clearFollowUp, addCommunication }) {
   const attachedEstimates = getClientEstimates(client, savedInvoices);
   const invoiceSummary = summarizeClientInvoices(client, savedInvoices);
+  const receipts = clientReceipts(client);
   const editField = (field, label, currentValue = "", displayValue = currentValue) => {
     const nextValue = window.prompt(`Edit ${label}`, String(currentValue || ""));
     if (nextValue === null) return;
@@ -3549,6 +3735,46 @@ function ClientDetail({ client, savedInvoices = [], close, editClient, updateCli
       makeTimelineEntry({
         type: "edit",
         content: `${label} changed from ${displayValue || "-"} to ${nextValue || "-"}.`,
+        createdBy: "CRM",
+      })
+    );
+  };
+  const addReceipt = (receipt) => {
+    const normalized = normalizeReceipt(receipt);
+    updateClient(
+      client.id,
+      { receipts: [normalized, ...receipts] },
+      makeTimelineEntry({
+        type: "receipt",
+        content: `Receipt added: ${normalized.vendor || normalized.fileName || normalized.category} for ${money(normalized.amount)}.`,
+        createdBy: "CRM",
+      })
+    );
+  };
+  const updateReceipt = (receiptId, updates) => {
+    const nextReceipts = receipts.map((receipt) =>
+      receipt.id === receiptId ? normalizeReceipt({ ...receipt, ...updates, updatedAt: nowISO() }) : receipt
+    );
+    updateClient(
+      client.id,
+      { receipts: nextReceipts },
+      makeTimelineEntry({
+        type: "receipt",
+        content: "Receipt details updated.",
+        createdBy: "CRM",
+      })
+    );
+  };
+  const deleteReceipt = (receiptId) => {
+    const receipt = receipts.find((item) => item.id === receiptId);
+    if (!receipt) return;
+    if (!window.confirm("Delete this receipt from the client record?")) return;
+    updateClient(
+      client.id,
+      { receipts: receipts.filter((item) => item.id !== receiptId) },
+      makeTimelineEntry({
+        type: "receipt",
+        content: `Receipt deleted: ${receipt.vendor || receipt.fileName || receipt.category}.`,
         createdBy: "CRM",
       })
     );
@@ -3679,6 +3905,16 @@ function ClientDetail({ client, savedInvoices = [], close, editClient, updateCli
             )}
           </CrmSection>
 
+          <CrmSection title="Receipts / Materials" defaultOpen={receipts.length > 0}>
+            <ReceiptManager
+              client={client}
+              receipts={receipts}
+              addReceipt={addReceipt}
+              updateReceipt={updateReceipt}
+              deleteReceipt={deleteReceipt}
+            />
+          </CrmSection>
+
           <CrmSection title="Timeline / Notes">
             {client.notes && <p className="mb-3 whitespace-pre-wrap rounded-md bg-white p-3 text-sm font-semibold text-slate-700">{client.notes}</p>}
             <Timeline entries={client.communicationLog || []} />
@@ -3692,6 +3928,240 @@ function ClientDetail({ client, savedInvoices = [], close, editClient, updateCli
         </footer>
       </div>
     </aside>
+  );
+}
+
+function ReceiptManager({ client, receipts = [], addReceipt, updateReceipt, deleteReceipt }) {
+  const [draft, setDraft] = useState({
+    date: todayISO(),
+    vendor: "",
+    category: "Materials",
+    amount: "",
+    hst: "",
+    notes: "",
+    taxReady: true,
+    fileName: "",
+    fileType: "",
+    fileSize: 0,
+    fileData: "",
+  });
+  const [fileStatus, setFileStatus] = useState("");
+  const materialsTotal = receiptTotal(receipts);
+  const taxReadyTotal = receiptTotal(receipts.filter((receipt) => receipt.taxReady));
+  const profit = profitAfterMaterials(client);
+
+  function updateDraft(field, value) {
+    setDraft((current) => ({ ...current, [field]: value }));
+  }
+
+  function resetDraft() {
+    setDraft({
+      date: todayISO(),
+      vendor: "",
+      category: "Materials",
+      amount: "",
+      hst: "",
+      notes: "",
+      taxReady: true,
+      fileName: "",
+      fileType: "",
+      fileSize: 0,
+      fileData: "",
+    });
+    setFileStatus("");
+  }
+
+  function handleFile(file) {
+    if (!file) return;
+    const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+    const maxBytes = isPdf ? 4 * 1024 * 1024 : 1600 * 1024;
+    if (file.size > maxBytes) {
+      setFileStatus(
+        isPdf
+          ? "PDF is too large. In Notes, share a smaller scan or split a big receipt package before uploading."
+          : "Photo is too large. Take a lower-resolution photo or crop the receipt before uploading."
+      );
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const fileData = String(reader.result || "");
+      const amount = draft.amount || extractReceiptAmount(file.name);
+      setDraft((current) => ({
+        ...current,
+        fileName: file.name,
+        fileType: file.type,
+        fileSize: file.size,
+        fileData,
+        amount: current.amount || amount,
+      }));
+      setFileStatus(
+        amount
+          ? `Attached ${file.name}. Amount was guessed from the file name.`
+          : `Attached ${file.name}. Enter or correct the amount.`
+      );
+    };
+    reader.onerror = () => setFileStatus("Could not read that file.");
+    reader.readAsDataURL(file);
+  }
+
+  function saveReceipt() {
+    const normalized = normalizeReceipt(draft);
+    if (!normalized.amount && !normalized.fileData && !normalized.vendor) {
+      alert("Add a receipt photo/file, vendor, or amount.");
+      return;
+    }
+    addReceipt(normalized);
+    resetDraft();
+  }
+
+  function editReceiptAmount(receipt) {
+    const nextAmount = window.prompt("Receipt amount", receipt.amount || "");
+    if (nextAmount === null) return;
+    updateReceipt(receipt.id, { amount: nextAmount });
+  }
+
+  function editReceiptVendor(receipt) {
+    const nextVendor = window.prompt("Vendor / store", receipt.vendor || "");
+    if (nextVendor === null) return;
+    updateReceipt(receipt.id, { vendor: nextVendor });
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-3 gap-2 text-sm">
+        <Info label="Receipts" value={receipts.length} />
+        <Info label="Materials" value={money(materialsTotal)} />
+        <Info label="Profit Est." value={profit ? money(profit) : "-"} />
+      </div>
+
+      <div className="rounded-md border border-blue-200 bg-blue-50 p-3">
+        <p className="text-xs font-black uppercase text-blue-900">Add receipt</p>
+        <div className="mt-3 grid gap-3 md:grid-cols-2">
+          <label className="block text-sm font-bold">
+            Take Photo
+            <input
+              type="file"
+              accept="image/*"
+              capture="environment"
+              onChange={(event) => handleFile(event.target.files?.[0])}
+              className="mt-1 w-full rounded-md border border-slate-300 bg-white p-2 text-sm"
+            />
+          </label>
+          <label className="block text-sm font-bold">
+            Upload PDF / Notes Scan
+            <input
+              type="file"
+              accept="application/pdf,.pdf,image/*"
+              onChange={(event) => handleFile(event.target.files?.[0])}
+              className="mt-1 w-full rounded-md border border-slate-300 bg-white p-2 text-sm"
+            />
+          </label>
+          <Input label="Vendor / Store" value={draft.vendor} onChange={(v) => updateDraft("vendor", v)} />
+          <DateInput label="Receipt Date" value={draft.date} onChange={(v) => updateDraft("date", v)} />
+          <Select label="Category" value={draft.category} options={receiptCategories} onChange={(v) => updateDraft("category", v)} />
+          <Input label="Amount" value={draft.amount} onChange={(v) => updateDraft("amount", v)} />
+          <Input label="HST / Tax" value={draft.hst} onChange={(v) => updateDraft("hst", v)} />
+        </div>
+        <label className="mt-3 block text-sm font-bold">
+          Notes / OCR Text
+          <textarea
+            value={draft.notes || ""}
+            onChange={(event) => {
+              const nextNotes = event.target.value;
+              const guessedAmount = draft.amount || extractReceiptAmount(nextNotes);
+              setDraft((current) => ({ ...current, notes: nextNotes, amount: current.amount || guessedAmount }));
+            }}
+            className="mt-1 min-h-20 w-full rounded-md border border-slate-300 bg-white p-3 text-sm outline-none focus:border-blue-700"
+            placeholder="Paste receipt text or write details. Amount can be guessed from text like Total $123.45."
+          />
+        </label>
+        <label className="mt-3 flex items-center gap-2 text-sm font-black text-slate-800">
+          <input
+            type="checkbox"
+            checked={draft.taxReady}
+            onChange={(event) => updateDraft("taxReady", event.target.checked)}
+            className="h-4 w-4"
+          />
+          Tax ready
+        </label>
+        {fileStatus && <p className="mt-2 rounded-md bg-white px-3 py-2 text-xs font-bold text-slate-600">{fileStatus}</p>}
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <button type="button" onClick={resetDraft} className="min-h-11 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-black">
+            Reset
+          </button>
+          <button type="button" onClick={saveReceipt} className="min-h-11 rounded-md bg-blue-700 px-3 py-2 text-sm font-black text-white hover:bg-blue-800">
+            Save Receipt
+          </button>
+        </div>
+      </div>
+
+      <div className="grid gap-2">
+        {receipts.map((receipt) => (
+          <article key={receipt.id} className="rounded-md border border-slate-300 bg-white p-3 shadow-sm shadow-slate-200">
+            <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-black">{receipt.vendor || receipt.fileName || receipt.category}</p>
+                <p className="mt-0.5 text-xs font-bold text-slate-500">
+                  {receipt.date} - {receipt.category} - {receipt.taxReady ? "Tax ready" : "Not tax ready"}
+                </p>
+                {receipt.notes && <p className="mt-2 whitespace-pre-wrap text-sm font-semibold text-slate-700">{receipt.notes}</p>}
+              </div>
+              <p className="text-right text-lg font-black">{money(receipt.amount)}</p>
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-5">
+              {receipt.fileData ? (
+                <a
+                  href={receipt.fileData}
+                  target="_blank"
+                  rel="noreferrer"
+                  download={receipt.fileName || `receipt-${receipt.date}`}
+                  className="min-h-10 rounded-md bg-slate-900 px-3 py-2 text-center text-xs font-black text-white"
+                >
+                  Open File
+                </a>
+              ) : (
+                <span className="min-h-10 rounded-md border border-dashed border-slate-300 px-3 py-2 text-center text-xs font-black text-slate-400">
+                  No File
+                </span>
+              )}
+              <button type="button" onClick={() => editReceiptAmount(receipt)} className="min-h-10 rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-black">
+                Amount
+              </button>
+              <button type="button" onClick={() => editReceiptVendor(receipt)} className="min-h-10 rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-black">
+                Vendor
+              </button>
+              <button
+                type="button"
+                onClick={() => updateReceipt(receipt.id, { taxReady: !receipt.taxReady })}
+                className="min-h-10 rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-black"
+              >
+                {receipt.taxReady ? "Unmark Tax" : "Tax Ready"}
+              </button>
+              <button type="button" onClick={() => deleteReceipt(receipt.id)} className="min-h-10 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs font-black text-red-700">
+                Delete
+              </button>
+            </div>
+          </article>
+        ))}
+        {!receipts.length && (
+          <p className="rounded-md border border-dashed border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-500">
+            No receipts yet. Use your phone camera or upload a receipt image/PDF.
+          </p>
+        )}
+      </div>
+
+      {receipts.length > 0 && (
+        <button
+          type="button"
+          onClick={() => downloadReceiptsCsv([client], `crm-receipts-${client.name || client.phone || client.id}-${todayISO()}.csv`)}
+          className="w-full min-h-11 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-black"
+        >
+          Export This Client CSV
+        </button>
+      )}
+    </div>
   );
 }
 
