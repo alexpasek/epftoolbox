@@ -69,6 +69,7 @@ const workNeededOptions = [
 ];
 const paymentMethodOptions = ["Cash", "e-Transfer", "Check"];
 const receiptCategories = ["Materials", "Tools", "Subcontractor", "Dump / Disposal", "Parking", "Fuel", "Other"];
+const clientDocumentTypes = ["Before Photo", "After Photo", "Approval / Signed", "Supplier PDF", "Other"];
 
 const navItems = ["Dashboard", "Pipeline", "Clients", "Calendar", "Invoices", "Receipts"];
 const mobileNavLabels = {
@@ -366,22 +367,61 @@ function extractReceiptAmount(value = "") {
 function normalizeReceipt(receipt = {}) {
   const fileName = receipt.fileName || receipt.name || "";
   const detectedAmount = receipt.amount || extractReceiptAmount([fileName, receipt.notes, receipt.vendor].filter(Boolean).join(" "));
+  const projectLinks = Array.isArray(receipt.projectLinks)
+    ? receipt.projectLinks
+        .map((link) => ({
+          clientId: link.clientId || "",
+          clientName: link.clientName || "",
+          amount: link.amount || "",
+        }))
+        .filter((link) => link.clientId || link.clientName)
+    : [];
   return {
     id: receipt.id || makeId(),
+    sourceReceiptId: receipt.sourceReceiptId || receipt.id || "",
     date: String(receipt.date || todayISO()).slice(0, 10),
     vendor: receipt.vendor || "",
     category: receiptCategories.includes(receipt.category) ? receipt.category : "Materials",
     amount: detectedAmount || "",
+    originalAmount: receipt.originalAmount || detectedAmount || "",
     hst: receipt.hst || "",
     taxReady: receipt.taxReady !== false,
+    projectLinks,
     notes: receipt.notes || "",
     fileName,
     fileType: receipt.fileType || "",
     fileSize: receipt.fileSize || 0,
+    fileKey: receipt.fileKey || "",
+    fileUrl: receipt.fileUrl || (receipt.fileKey ? `/api/crm/receipts?key=${encodeURIComponent(receipt.fileKey)}` : ""),
+    storage: receipt.storage || (receipt.fileKey ? "r2" : receipt.fileData ? "inline" : ""),
     fileData: receipt.fileData || "",
     createdAt: receipt.createdAt || nowISO(),
     updatedAt: receipt.updatedAt || receipt.createdAt || nowISO(),
   };
+}
+
+function normalizeClientDocument(document = {}) {
+  const fileName = document.fileName || document.name || "";
+  return {
+    id: document.id || makeId(),
+    title: document.title || fileName || "Client document",
+    type: clientDocumentTypes.includes(document.type) ? document.type : "Other",
+    date: String(document.date || todayISO()).slice(0, 10),
+    notes: document.notes || "",
+    fileName,
+    fileType: document.fileType || "",
+    fileSize: document.fileSize || 0,
+    fileKey: document.fileKey || "",
+    fileUrl: document.fileUrl || (document.fileKey ? `/api/crm/receipts?key=${encodeURIComponent(document.fileKey)}` : ""),
+    storage: document.storage || (document.fileKey ? "r2" : document.fileData ? "inline" : ""),
+    fileData: document.fileData || "",
+    createdAt: document.createdAt || nowISO(),
+    updatedAt: document.updatedAt || document.createdAt || nowISO(),
+  };
+}
+
+function clientDocuments(client = {}) {
+  return (client.documents || []).map(normalizeClientDocument).sort((a, b) => String(b.date).localeCompare(String(a.date)));
 }
 
 function clientReceipts(client = {}) {
@@ -398,7 +438,13 @@ function clientMaterialsTotal(client = {}) {
 
 function profitAfterMaterials(client = {}) {
   const estimate = estimateStatValue(client.estimateAmount);
-  return estimate ? estimate - clientMaterialsTotal(client) : 0;
+  return estimate ? estimate - clientMaterialsTotal(client) - numberValue(client.laborCost) : 0;
+}
+
+function profitMargin(client = {}) {
+  const estimate = estimateStatValue(client.estimateAmount);
+  if (!estimate) return 0;
+  return Math.round((profitAfterMaterials(client) / estimate) * 100);
 }
 
 function csvCell(value = "") {
@@ -418,20 +464,23 @@ function downloadTextFile(filename, content, type = "text/plain;charset=utf-8") 
 
 function downloadReceiptsCsv(clients = [], filename = `crm-receipts-${todayISO()}.csv`) {
   const rows = [
-    ["Client", "Phone", "City", "Job", "Receipt Date", "Vendor", "Category", "Amount", "HST", "Tax Ready", "File", "Notes"],
+    ["Client", "Phone", "City", "Job", "Linked Clients", "Receipt Date", "Vendor", "Category", "Amount", "Original Total", "HST", "Tax Ready", "File", "File URL", "Notes"],
     ...clients.flatMap((client) =>
       clientReceipts(client).map((receipt) => [
         client.name || client.phone || "Unnamed client",
         client.phone || "",
         client.city || "",
         client.service || client.workNeeded || "",
+        (receipt.projectLinks || []).map((link) => [link.clientName, link.amount ? money(link.amount) : ""].filter(Boolean).join(" ")).join("; "),
         receipt.date,
         receipt.vendor,
         receipt.category,
         receipt.amount,
+        receipt.originalAmount,
         receipt.hst,
         receipt.taxReady ? "Yes" : "No",
         receipt.fileName,
+        receipt.fileUrl,
         receipt.notes,
       ])
     ),
@@ -928,7 +977,9 @@ function normalizeClient(client = {}) {
     paymentAmount: client.paymentAmount || "",
     balanceDue: client.balanceDue || "",
     paymentMethod: client.paymentMethod || "",
+    laborCost: client.laborCost || "",
     receipts: Array.isArray(client.receipts) ? client.receipts.map(normalizeReceipt) : [],
+    documents: Array.isArray(client.documents) ? client.documents.map(normalizeClientDocument) : [],
     notes: client.notes || client.projectNotes || "",
     communicationLog: getClientTimeline(client),
   };
@@ -2441,9 +2492,11 @@ export default function CrmPage() {
         {selectedClient && (
           <ClientDetail
             client={selectedClient}
+            clients={dailyClients}
             savedInvoices={visibleSavedInvoices}
             close={() => setSelectedClientId(null)}
             editClient={editClient}
+            updateClientList={updateClientList}
             updateClient={updateClient}
             changeStatus={changeStatus}
             quickAction={quickAction}
@@ -3353,7 +3406,7 @@ function ClientCard({ client, estimates = [], openClient, editClient, deleteClie
         </p>
       </div>
 
-      <div className="mt-3 grid grid-cols-2 gap-2 text-sm md:grid-cols-4">
+      <div className="mt-3 grid grid-cols-2 gap-2 text-sm md:grid-cols-5">
         <Info label="Phone" value={client.phone} />
         <Info label="Estimate" value={estimateDisplay(client.estimateAmount)} />
         <Info label="Materials" value={materialsTotal ? money(materialsTotal) : "-"} />
@@ -3558,6 +3611,7 @@ function InvoicesView({ clients, savedInvoices = [], openClient, quickAction }) 
 }
 
 function ReceiptsView({ clients, openClient }) {
+  const [reportMonth, setReportMonth] = useState(monthISO());
   const clientsWithReceipts = clients
     .map((client) => {
       const receipts = clientReceipts(client);
@@ -3571,10 +3625,31 @@ function ReceiptsView({ clients, openClient }) {
     .filter((row) => row.receipts.length)
     .sort((a, b) => b.total - a.total);
   const allReceipts = clientsWithReceipts.flatMap((row) => row.receipts.map((receipt) => ({ ...receipt, client: row.client })));
+  const reportReceipts = allReceipts.filter((receipt) => String(receipt.date || "").slice(0, 7) === reportMonth);
   const total = allReceipts.reduce((sum, receipt) => sum + numberValue(receipt.amount), 0);
   const taxReadyTotal = allReceipts
     .filter((receipt) => receipt.taxReady)
     .reduce((sum, receipt) => sum + numberValue(receipt.amount), 0);
+  const reportTotal = reportReceipts.reduce((sum, receipt) => sum + numberValue(receipt.amount), 0);
+  const reportHst = reportReceipts.reduce((sum, receipt) => sum + numberValue(receipt.hst), 0);
+  const reportTaxReadyTotal = reportReceipts
+    .filter((receipt) => receipt.taxReady)
+    .reduce((sum, receipt) => sum + numberValue(receipt.amount), 0);
+  const categoryRows = receiptCategories
+    .map((category) => ({
+      category,
+      count: reportReceipts.filter((receipt) => receipt.category === category).length,
+      total: reportReceipts
+        .filter((receipt) => receipt.category === category)
+        .reduce((sum, receipt) => sum + numberValue(receipt.amount), 0),
+    }))
+    .filter((row) => row.count || row.total);
+  const exportClients = clients
+    .map((client) => ({
+      ...client,
+      receipts: clientReceipts(client).filter((receipt) => String(receipt.date || "").slice(0, 7) === reportMonth),
+    }))
+    .filter((client) => client.receipts.length);
 
   return (
     <section className="space-y-3">
@@ -3602,6 +3677,43 @@ function ReceiptsView({ clients, openClient }) {
         </div>
       </section>
 
+      <section className={`rounded-lg p-3 ${crmPanelClass}`}>
+        <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+          <label className="block text-sm font-black">
+            Tax Month
+            <input
+              type="month"
+              value={reportMonth}
+              onChange={(event) => setReportMonth(event.target.value || monthISO())}
+              className="mt-1 w-full rounded-md border border-slate-300 bg-white p-2.5 text-sm outline-none focus:border-blue-700 sm:max-w-xs"
+            />
+          </label>
+          <button
+            type="button"
+            disabled={!reportReceipts.length}
+            onClick={() => downloadReceiptsCsv(exportClients, `crm-receipts-tax-${reportMonth}.csv`)}
+            className="min-h-11 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-black disabled:cursor-not-allowed disabled:opacity-45"
+          >
+            Export Month CSV
+          </button>
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-2 text-sm md:grid-cols-4">
+          <Info label="Month Total" value={money(reportTotal)} />
+          <Info label="HST / Tax" value={money(reportHst)} />
+          <Info label="Tax Ready" value={money(reportTaxReadyTotal)} />
+          <Info label="Need Review" value={reportReceipts.filter((receipt) => !receipt.taxReady || !numberValue(receipt.amount)).length} />
+        </div>
+        <div className="mt-3 grid gap-2 md:grid-cols-2">
+          {categoryRows.map((row) => (
+            <div key={row.category} className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+              <span className="font-black">{row.category} ({row.count})</span>
+              <span className="font-black">{money(row.total)}</span>
+            </div>
+          ))}
+          {!categoryRows.length && <p className="text-sm font-bold text-slate-500">No receipts in this month.</p>}
+        </div>
+      </section>
+
       <div className="grid gap-3 lg:grid-cols-2">
         {clientsWithReceipts.map(({ client, receipts, total, taxReady }) => (
           <article key={client.id} className={`rounded-lg p-3 ${crmCardClass}`}>
@@ -3621,7 +3733,7 @@ function ReceiptsView({ clients, openClient }) {
             <div className="mt-3 grid grid-cols-3 gap-2 text-sm">
               <Info label="Count" value={receipts.length} />
               <Info label="Tax Ready" value={`${taxReady}/${receipts.length}`} />
-              <Info label="Profit Est." value={profitAfterMaterials(client) ? money(profitAfterMaterials(client)) : "-"} />
+              <Info label="Profit Est." value={profitAfterMaterials(client) ? `${money(profitAfterMaterials(client))} / ${profitMargin(client)}%` : "-"} />
             </div>
             <div className="mt-3 space-y-2">
               {receipts.slice(0, 3).map((receipt) => (
@@ -3722,10 +3834,11 @@ function nextClientStep(client = {}) {
   return "Keep contact info updated and log the next client action.";
 }
 
-function ClientDetail({ client, savedInvoices = [], close, editClient, updateClient, changeStatus, quickAction, clearFollowUp, addCommunication }) {
+function ClientDetail({ client, clients = [], savedInvoices = [], close, editClient, updateClientList, updateClient, changeStatus, quickAction, clearFollowUp, addCommunication }) {
   const attachedEstimates = getClientEstimates(client, savedInvoices);
   const invoiceSummary = summarizeClientInvoices(client, savedInvoices);
   const receipts = clientReceipts(client);
+  const documents = clientDocuments(client);
   const editField = (field, label, currentValue = "", displayValue = currentValue) => {
     const nextValue = window.prompt(`Edit ${label}`, String(currentValue || ""));
     if (nextValue === null) return;
@@ -3741,13 +3854,51 @@ function ClientDetail({ client, savedInvoices = [], close, editClient, updateCli
   };
   const addReceipt = (receipt) => {
     const normalized = normalizeReceipt(receipt);
-    updateClient(
+    const linkedClientIds = [
       client.id,
-      { receipts: [normalized, ...receipts] },
-      makeTimelineEntry({
-        type: "receipt",
-        content: `Receipt added: ${normalized.vendor || normalized.fileName || normalized.category} for ${money(normalized.amount)}.`,
-        createdBy: "CRM",
+      ...(normalized.projectLinks || []).map((link) => link.clientId).filter(Boolean),
+    ];
+    const uniqueClientIds = [...new Set(linkedClientIds)];
+    const sourceReceiptId = normalized.sourceReceiptId || normalized.id;
+    const projectLinks = uniqueClientIds.map((clientId) => {
+      const linkedClient = clients.find((item) => item.id === clientId) || (client.id === clientId ? client : null);
+      const existingLink = (normalized.projectLinks || []).find((link) => link.clientId === clientId);
+      return {
+        clientId,
+        clientName: linkedClient?.name || linkedClient?.phone || "Unnamed client",
+        amount: clientId === client.id ? normalized.amount : existingLink?.amount || "",
+      };
+    });
+
+    updateClientList((current) =>
+      current.map((item) => {
+        if (!uniqueClientIds.includes(item.id)) return item;
+        const link = projectLinks.find((projectLink) => projectLink.clientId === item.id);
+        const sharedReceipt = normalizeReceipt({
+          ...normalized,
+          id: item.id === client.id ? normalized.id : `${sourceReceiptId}-${item.id}`,
+          sourceReceiptId,
+          amount: link?.amount || "",
+          originalAmount: normalized.originalAmount || normalized.amount,
+          projectLinks,
+          notes:
+            item.id === client.id
+              ? normalized.notes
+              : [normalized.notes, `Shared receipt from ${client.name || client.phone || "another client"}.`].filter(Boolean).join("\n"),
+        });
+        return normalizeClient({
+          ...item,
+          receipts: [sharedReceipt, ...(Array.isArray(item.receipts) ? item.receipts : [])],
+          updatedAt: nowISO(),
+          communicationLog: [
+            makeTimelineEntry({
+              type: "receipt",
+              content: `Receipt added: ${sharedReceipt.vendor || sharedReceipt.fileName || sharedReceipt.category} for ${money(sharedReceipt.amount || sharedReceipt.originalAmount)}.`,
+              createdBy: "CRM",
+            }),
+            ...(item.communicationLog || []),
+          ],
+        });
       })
     );
   };
@@ -3765,16 +3916,52 @@ function ClientDetail({ client, savedInvoices = [], close, editClient, updateCli
       })
     );
   };
-  const deleteReceipt = (receiptId) => {
+  const deleteReceipt = async (receiptId) => {
     const receipt = receipts.find((item) => item.id === receiptId);
     if (!receipt) return;
     if (!window.confirm("Delete this receipt from the client record?")) return;
+    if (receipt.fileKey && (receipt.projectLinks || []).length <= 1) {
+      try {
+        await fetch(`/api/crm/receipts?key=${encodeURIComponent(receipt.fileKey)}`, { method: "DELETE" });
+      } catch {}
+    }
     updateClient(
       client.id,
       { receipts: receipts.filter((item) => item.id !== receiptId) },
       makeTimelineEntry({
         type: "receipt",
         content: `Receipt deleted: ${receipt.vendor || receipt.fileName || receipt.category}.`,
+        createdBy: "CRM",
+      })
+    );
+  };
+  const addDocument = (document) => {
+    const normalized = normalizeClientDocument(document);
+    updateClient(
+      client.id,
+      { documents: [normalized, ...documents] },
+      makeTimelineEntry({
+        type: "document",
+        content: `Document added: ${normalized.title || normalized.fileName}.`,
+        createdBy: "CRM",
+      })
+    );
+  };
+  const deleteDocument = async (documentId) => {
+    const document = documents.find((item) => item.id === documentId);
+    if (!document) return;
+    if (!window.confirm("Delete this document from the client folder?")) return;
+    if (document.fileKey) {
+      try {
+        await fetch(`/api/crm/receipts?key=${encodeURIComponent(document.fileKey)}`, { method: "DELETE" });
+      } catch {}
+    }
+    updateClient(
+      client.id,
+      { documents: documents.filter((item) => item.id !== documentId) },
+      makeTimelineEntry({
+        type: "document",
+        content: `Document deleted: ${document.title || document.fileName}.`,
         createdBy: "CRM",
       })
     );
@@ -3897,6 +4084,7 @@ function ClientDetail({ client, savedInvoices = [], close, editClient, updateCli
               <EditableInfo label="Deposit" value={money(client.depositAmount)} onEdit={() => editField("depositAmount", "Deposit", client.depositAmount, money(client.depositAmount))} />
               <EditableInfo label="Paid" value={money(client.paymentAmount)} onEdit={() => editField("paymentAmount", "Paid", client.paymentAmount, money(client.paymentAmount))} />
               <EditableInfo label="Balance" value={money(client.balanceDue)} onEdit={() => editField("balanceDue", "Balance", client.balanceDue, money(client.balanceDue))} />
+              <EditableInfo label="Labor Cost" value={money(client.laborCost)} onEdit={() => editField("laborCost", "Labor Cost", client.laborCost, money(client.laborCost))} />
             </div>
             {client.paymentStatus === "Paid" && (
               <button onClick={() => quickAction(client, "note")} className="mt-3 rounded-md bg-blue-700 px-3 py-2 text-sm font-black text-white hover:bg-blue-800">
@@ -3908,10 +4096,22 @@ function ClientDetail({ client, savedInvoices = [], close, editClient, updateCli
           <CrmSection title="Receipts / Materials" defaultOpen={receipts.length > 0}>
             <ReceiptManager
               client={client}
+              clients={clients}
               receipts={receipts}
               addReceipt={addReceipt}
               updateReceipt={updateReceipt}
               deleteReceipt={deleteReceipt}
+            />
+          </CrmSection>
+
+          <CrmSection title="Client Folder" defaultOpen={documents.length > 0}>
+            <ClientFolder
+              client={client}
+              estimates={attachedEstimates}
+              receipts={receipts}
+              documents={documents}
+              addDocument={addDocument}
+              deleteDocument={deleteDocument}
             />
           </CrmSection>
 
@@ -3931,12 +4131,15 @@ function ClientDetail({ client, savedInvoices = [], close, editClient, updateCli
   );
 }
 
-function ReceiptManager({ client, receipts = [], addReceipt, updateReceipt, deleteReceipt }) {
+function ReceiptManager({ client, clients = [], receipts = [], addReceipt, updateReceipt, deleteReceipt }) {
   const [draft, setDraft] = useState({
     date: todayISO(),
     vendor: "",
     category: "Materials",
     amount: "",
+    currentClientAmount: "",
+    linkedClientAmount: "",
+    linkedClientIds: [],
     hst: "",
     notes: "",
     taxReady: true,
@@ -3946,12 +4149,58 @@ function ReceiptManager({ client, receipts = [], addReceipt, updateReceipt, dele
     fileData: "",
   });
   const [fileStatus, setFileStatus] = useState("");
+  const [receiptBusy, setReceiptBusy] = useState("");
   const materialsTotal = receiptTotal(receipts);
   const taxReadyTotal = receiptTotal(receipts.filter((receipt) => receipt.taxReady));
   const profit = profitAfterMaterials(client);
+  const estimate = estimateStatValue(client.estimateAmount);
+  const labor = numberValue(client.laborCost);
 
   function updateDraft(field, value) {
     setDraft((current) => ({ ...current, [field]: value }));
+  }
+
+  function toggleLinkedClient(clientId) {
+    setDraft((current) => {
+      const selected = current.linkedClientIds || [];
+      return {
+        ...current,
+        linkedClientIds: selected.includes(clientId)
+          ? selected.filter((id) => id !== clientId)
+          : [...selected, clientId],
+      };
+    });
+  }
+
+  async function shareReceipt(receipt) {
+    const url = receipt.fileUrl || receipt.fileData || "";
+    const linkedClients = (receipt.projectLinks || []).map((link) => link.clientName).filter(Boolean).join(", ");
+    const text = [
+      `Receipt: ${receipt.vendor || receipt.fileName || receipt.category}`,
+      `Date: ${receipt.date || "-"}`,
+      `Amount: ${money(receipt.amount || receipt.originalAmount)}`,
+      linkedClients ? `Clients: ${linkedClients}` : `Client: ${client.name || client.phone || "Unnamed client"}`,
+      receipt.notes ? `Notes: ${receipt.notes}` : "",
+      url,
+    ]
+      .filter(Boolean)
+      .join("\n");
+
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title: `Receipt - ${receipt.vendor || receipt.fileName || client.name || "CRM"}`,
+          text,
+          url: url || undefined,
+        });
+        return;
+      }
+      await navigator.clipboard.writeText(text);
+      alert("Receipt details copied. You can paste them into text, email, or WhatsApp.");
+    } catch (error) {
+      if (error?.name === "AbortError") return;
+      window.prompt("Copy this receipt", text);
+    }
   }
 
   function resetDraft() {
@@ -3960,6 +4209,9 @@ function ReceiptManager({ client, receipts = [], addReceipt, updateReceipt, dele
       vendor: "",
       category: "Materials",
       amount: "",
+      currentClientAmount: "",
+      linkedClientAmount: "",
+      linkedClientIds: [],
       hst: "",
       notes: "",
       taxReady: true,
@@ -3969,6 +4221,7 @@ function ReceiptManager({ client, receipts = [], addReceipt, updateReceipt, dele
       fileData: "",
     });
     setFileStatus("");
+    setReceiptBusy("");
   }
 
   function handleFile(file) {
@@ -4006,14 +4259,117 @@ function ReceiptManager({ client, receipts = [], addReceipt, updateReceipt, dele
     reader.readAsDataURL(file);
   }
 
-  function saveReceipt() {
-    const normalized = normalizeReceipt(draft);
+  async function uploadReceiptFile(receiptId) {
+    if (!draft.fileData) return {};
+    const res = await fetch("/api/crm/receipts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        clientId: client.id,
+        receiptId,
+        fileName: draft.fileName,
+        fileType: draft.fileType,
+        fileData: draft.fileData,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data?.error || "Receipt upload failed");
+    return {
+      fileName: data.fileName || draft.fileName,
+      fileType: data.fileType || draft.fileType,
+      fileSize: data.fileSize || draft.fileSize,
+      fileKey: data.key || "",
+      fileUrl: data.url || "",
+      storage: "r2",
+      fileData: "",
+    };
+  }
+
+  async function runReceiptOcr() {
+    if (!draft.fileData && !draft.notes) {
+      alert("Attach a receipt photo/PDF or paste receipt text first.");
+      return;
+    }
+    setReceiptBusy("Scanning receipt...");
+    try {
+      const res = await fetch("/api/crm/receipts/ocr", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fileData: draft.fileData,
+          fileName: draft.fileName,
+          fileType: draft.fileType,
+          text: draft.notes,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.detail || data?.error || "OCR failed");
+      const receipt = data.receipt || {};
+      setDraft((current) => ({
+        ...current,
+        vendor: receipt.vendor || current.vendor,
+        date: /^\d{4}-\d{2}-\d{2}$/.test(receipt.date || "") ? receipt.date : current.date,
+        amount: receipt.amount || current.amount,
+        hst: receipt.hst || current.hst,
+        category: receiptCategories.includes(receipt.category) ? receipt.category : current.category,
+        notes: [current.notes, receipt.notes ? `OCR: ${receipt.notes}` : "", receipt.confidence ? `OCR confidence: ${receipt.confidence}` : ""]
+          .filter(Boolean)
+          .join("\n"),
+      }));
+      setFileStatus("Receipt scan finished. Review the fields before saving.");
+    } catch (err) {
+      alert(`Receipt scan unavailable. ${err.message || "Enter the fields manually."}`);
+    } finally {
+      setReceiptBusy("");
+    }
+  }
+
+  async function saveReceipt() {
+    const linkedClientIds = (draft.linkedClientIds || []).filter((id) => id && id !== client.id);
+    const originalAmount = draft.amount || "";
+    const primaryAmount = draft.currentClientAmount || draft.amount || "";
+    const linkedAmount = draft.linkedClientAmount || "";
+    let normalized = normalizeReceipt({
+      ...draft,
+      amount: primaryAmount,
+      originalAmount,
+      projectLinks: [
+        {
+          clientId: client.id,
+          clientName: client.name || client.phone || "Current client",
+          amount: primaryAmount,
+        },
+        ...linkedClientIds.map((clientId) => {
+          const linkedClient = clients.find((item) => item.id === clientId);
+          return {
+            clientId,
+            clientName: linkedClient?.name || linkedClient?.phone || "Unnamed client",
+            amount: linkedAmount,
+          };
+        }),
+      ],
+    });
     if (!normalized.amount && !normalized.fileData && !normalized.vendor) {
       alert("Add a receipt photo/file, vendor, or amount.");
       return;
     }
-    addReceipt(normalized);
-    resetDraft();
+    setReceiptBusy("Saving receipt...");
+    try {
+      const upload = await uploadReceiptFile(normalized.id);
+      normalized = normalizeReceipt({ ...normalized, ...upload });
+      addReceipt(normalized);
+      resetDraft();
+    } catch (err) {
+      const fallback = window.confirm(
+        `Receipt file storage failed: ${err.message || "upload error"}.\n\nSave the receipt in CRM anyway using local inline file storage?`
+      );
+      if (!fallback) {
+        setReceiptBusy("");
+        return;
+      }
+      addReceipt(normalized);
+      resetDraft();
+    }
   }
 
   function editReceiptAmount(receipt) {
@@ -4030,10 +4386,13 @@ function ReceiptManager({ client, receipts = [], addReceipt, updateReceipt, dele
 
   return (
     <div className="space-y-3">
-      <div className="grid grid-cols-3 gap-2 text-sm">
+      <div className="grid grid-cols-2 gap-2 text-sm md:grid-cols-6">
         <Info label="Receipts" value={receipts.length} />
+        <Info label="Estimate" value={estimate ? money(estimate) : "-"} />
         <Info label="Materials" value={money(materialsTotal)} />
-        <Info label="Profit Est." value={profit ? money(profit) : "-"} />
+        <Info label="Tax Ready" value={money(taxReadyTotal)} />
+        <Info label="Labor" value={labor ? money(labor) : "-"} />
+        <Info label="Profit" value={profit ? `${money(profit)} / ${profitMargin(client)}%` : "-"} />
       </div>
 
       <div className="rounded-md border border-blue-200 bg-blue-50 p-3">
@@ -4061,8 +4420,37 @@ function ReceiptManager({ client, receipts = [], addReceipt, updateReceipt, dele
           <Input label="Vendor / Store" value={draft.vendor} onChange={(v) => updateDraft("vendor", v)} />
           <DateInput label="Receipt Date" value={draft.date} onChange={(v) => updateDraft("date", v)} />
           <Select label="Category" value={draft.category} options={receiptCategories} onChange={(v) => updateDraft("category", v)} />
-          <Input label="Amount" value={draft.amount} onChange={(v) => updateDraft("amount", v)} />
+          <Input label="Full Receipt Total" value={draft.amount} onChange={(v) => updateDraft("amount", v)} />
+          <Input label="Amount For This Client" value={draft.currentClientAmount} onChange={(v) => updateDraft("currentClientAmount", v)} />
+          <Input label="Amount For Selected Clients" value={draft.linkedClientAmount} onChange={(v) => updateDraft("linkedClientAmount", v)} />
           <Input label="HST / Tax" value={draft.hst} onChange={(v) => updateDraft("hst", v)} />
+        </div>
+        <div className="mt-3 rounded-md border border-blue-100 bg-white p-3">
+          <p className="text-xs font-black uppercase text-slate-500">Other clients involved</p>
+          <div className="mt-2 grid max-h-48 gap-2 overflow-auto sm:grid-cols-2">
+            {clients
+              .filter((item) => item.id !== client.id && !item.deletedAt)
+              .slice(0, 80)
+              .map((item) => (
+                <label key={item.id} className="flex min-w-0 items-start gap-2 rounded-md border border-slate-200 bg-slate-50 p-2 text-xs font-bold">
+                  <input
+                    type="checkbox"
+                    checked={(draft.linkedClientIds || []).includes(item.id)}
+                    onChange={() => toggleLinkedClient(item.id)}
+                    className="mt-0.5 h-4 w-4 shrink-0"
+                  />
+                  <span className="min-w-0">
+                    <span className="block truncate text-slate-900">{item.name || item.phone || "Unnamed client"}</span>
+                    <span className="block truncate text-slate-500">{[item.service, item.city].filter(Boolean).join(" - ")}</span>
+                  </span>
+                </label>
+              ))}
+          </div>
+          {(draft.linkedClientIds || []).length > 0 && (
+            <p className="mt-2 text-xs font-bold text-blue-900">
+              Selected clients get a linked copy of this receipt. If selected-client amount is blank, it will need review before it affects their material total.
+            </p>
+          )}
         </div>
         <label className="mt-3 block text-sm font-bold">
           Notes / OCR Text
@@ -4087,12 +4475,15 @@ function ReceiptManager({ client, receipts = [], addReceipt, updateReceipt, dele
           Tax ready
         </label>
         {fileStatus && <p className="mt-2 rounded-md bg-white px-3 py-2 text-xs font-bold text-slate-600">{fileStatus}</p>}
-        <div className="mt-3 grid grid-cols-2 gap-2">
-          <button type="button" onClick={resetDraft} className="min-h-11 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-black">
+        <div className="mt-3 grid grid-cols-3 gap-2">
+          <button type="button" onClick={resetDraft} disabled={Boolean(receiptBusy)} className="min-h-11 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-black disabled:opacity-50">
             Reset
           </button>
-          <button type="button" onClick={saveReceipt} className="min-h-11 rounded-md bg-blue-700 px-3 py-2 text-sm font-black text-white hover:bg-blue-800">
-            Save Receipt
+          <button type="button" onClick={runReceiptOcr} disabled={Boolean(receiptBusy) || (!draft.fileData && !draft.notes)} className="min-h-11 rounded-md border border-blue-700 bg-white px-3 py-2 text-sm font-black text-blue-800 disabled:opacity-50">
+            Scan OCR
+          </button>
+          <button type="button" onClick={saveReceipt} disabled={Boolean(receiptBusy)} className="min-h-11 rounded-md bg-blue-700 px-3 py-2 text-sm font-black text-white hover:bg-blue-800 disabled:opacity-50">
+            {receiptBusy || "Save Receipt"}
           </button>
         </div>
       </div>
@@ -4106,14 +4497,19 @@ function ReceiptManager({ client, receipts = [], addReceipt, updateReceipt, dele
                 <p className="mt-0.5 text-xs font-bold text-slate-500">
                   {receipt.date} - {receipt.category} - {receipt.taxReady ? "Tax ready" : "Not tax ready"}
                 </p>
+                {(receipt.projectLinks || []).length > 1 && (
+                  <p className="mt-1 text-xs font-black text-blue-700">
+                    Shared: {(receipt.projectLinks || []).map((link) => link.clientName).filter(Boolean).join(", ")}
+                  </p>
+                )}
                 {receipt.notes && <p className="mt-2 whitespace-pre-wrap text-sm font-semibold text-slate-700">{receipt.notes}</p>}
               </div>
               <p className="text-right text-lg font-black">{money(receipt.amount)}</p>
             </div>
-            <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-5">
-              {receipt.fileData ? (
+            <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-6">
+              {receipt.fileUrl || receipt.fileData ? (
                 <a
-                  href={receipt.fileData}
+                  href={receipt.fileUrl || receipt.fileData}
                   target="_blank"
                   rel="noreferrer"
                   download={receipt.fileName || `receipt-${receipt.date}`}
@@ -4131,6 +4527,9 @@ function ReceiptManager({ client, receipts = [], addReceipt, updateReceipt, dele
               </button>
               <button type="button" onClick={() => editReceiptVendor(receipt)} className="min-h-10 rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-black">
                 Vendor
+              </button>
+              <button type="button" onClick={() => shareReceipt(receipt)} className="min-h-10 rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-black">
+                Share
               </button>
               <button
                 type="button"
@@ -4161,6 +4560,206 @@ function ReceiptManager({ client, receipts = [], addReceipt, updateReceipt, dele
           Export This Client CSV
         </button>
       )}
+    </div>
+  );
+}
+
+function ClientFolder({ client, estimates = [], receipts = [], documents = [], addDocument, deleteDocument }) {
+  const [draft, setDraft] = useState({
+    title: "",
+    type: "Before Photo",
+    date: todayISO(),
+    notes: "",
+    fileName: "",
+    fileType: "",
+    fileSize: 0,
+    fileData: "",
+  });
+  const [status, setStatus] = useState("");
+
+  function updateDraft(field, value) {
+    setDraft((current) => ({ ...current, [field]: value }));
+  }
+
+  function resetDraft() {
+    setDraft({
+      title: "",
+      type: "Before Photo",
+      date: todayISO(),
+      notes: "",
+      fileName: "",
+      fileType: "",
+      fileSize: 0,
+      fileData: "",
+    });
+    setStatus("");
+  }
+
+  function handleFile(file) {
+    if (!file) return;
+    const maxBytes = 8 * 1024 * 1024;
+    if (file.size > maxBytes) {
+      setStatus("File is too large. Keep folder uploads under 8 MB.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setDraft((current) => ({
+        ...current,
+        title: current.title || file.name,
+        fileName: file.name,
+        fileType: file.type,
+        fileSize: file.size,
+        fileData: String(reader.result || ""),
+      }));
+      setStatus(`Attached ${file.name}.`);
+    };
+    reader.onerror = () => setStatus("Could not read that file.");
+    reader.readAsDataURL(file);
+  }
+
+  async function saveDocument() {
+    const normalized = normalizeClientDocument(draft);
+    if (!normalized.fileData && !normalized.title) {
+      alert("Add a file or document title.");
+      return;
+    }
+    setStatus("Saving document...");
+    try {
+      let upload = {};
+      if (normalized.fileData) {
+        const res = await fetch("/api/crm/receipts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            folder: "documents",
+            clientId: client.id,
+            receiptId: normalized.id,
+            fileName: normalized.fileName,
+            fileType: normalized.fileType,
+            fileData: normalized.fileData,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error || "Document upload failed");
+        upload = {
+          fileName: data.fileName || normalized.fileName,
+          fileType: data.fileType || normalized.fileType,
+          fileSize: data.fileSize || normalized.fileSize,
+          fileKey: data.key || "",
+          fileUrl: data.url || "",
+          storage: "r2",
+          fileData: "",
+        };
+      }
+      addDocument(normalizeClientDocument({ ...normalized, ...upload }));
+      resetDraft();
+    } catch (err) {
+      const fallback = window.confirm(
+        `Document storage failed: ${err.message || "upload error"}.\n\nSave this document in CRM using local inline file storage?`
+      );
+      if (fallback) {
+        addDocument(normalized);
+        resetDraft();
+      } else {
+        setStatus("");
+      }
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-3 gap-2 text-sm">
+        <Info label="Estimates" value={estimates.length} />
+        <Info label="Receipts" value={receipts.length} />
+        <Info label="Files" value={documents.length} />
+      </div>
+
+      <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+        <p className="text-xs font-black uppercase text-slate-500">Upload to folder</p>
+        <div className="mt-3 grid gap-3 md:grid-cols-2">
+          <label className="block text-sm font-bold">
+            Photo / PDF / File
+            <input
+              type="file"
+              accept="image/*,application/pdf,.pdf"
+              onChange={(event) => handleFile(event.target.files?.[0])}
+              className="mt-1 w-full rounded-md border border-slate-300 bg-white p-2 text-sm"
+            />
+          </label>
+          <Select label="Document Type" value={draft.type} options={clientDocumentTypes} onChange={(v) => updateDraft("type", v)} />
+          <Input label="Title" value={draft.title} onChange={(v) => updateDraft("title", v)} />
+          <DateInput label="Date" value={draft.date} onChange={(v) => updateDraft("date", v)} />
+        </div>
+        <label className="mt-3 block text-sm font-bold">
+          Notes
+          <textarea
+            value={draft.notes}
+            onChange={(event) => updateDraft("notes", event.target.value)}
+            className="mt-1 min-h-16 w-full rounded-md border border-slate-300 bg-white p-3 text-sm outline-none focus:border-blue-700"
+          />
+        </label>
+        {status && <p className="mt-2 rounded-md bg-white px-3 py-2 text-xs font-bold text-slate-600">{status}</p>}
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <button type="button" onClick={resetDraft} className="min-h-11 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-black">
+            Reset
+          </button>
+          <button type="button" onClick={saveDocument} className="min-h-11 rounded-md bg-slate-900 px-3 py-2 text-sm font-black text-white">
+            Save File
+          </button>
+        </div>
+      </div>
+
+      <div className="grid gap-2">
+        {estimates.map((estimate) => (
+          <Link
+            key={estimate.id}
+            href={`/invoice-basic?id=${encodeURIComponent(estimate.id)}`}
+            className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-bold"
+          >
+            <span className="truncate">Estimate / Invoice: {invoiceLabel(estimate)}</span>
+            <span>{money(invoiceTotal(estimate))}</span>
+          </Link>
+        ))}
+        {receipts.map((receipt) => (
+          <a
+            key={receipt.id}
+            href={receipt.fileUrl || receipt.fileData || "#"}
+            target="_blank"
+            rel="noreferrer"
+            className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-bold"
+          >
+            <span className="truncate">Receipt: {receipt.vendor || receipt.fileName || receipt.category}</span>
+            <span>{money(receipt.amount)}</span>
+          </a>
+        ))}
+        {documents.map((document) => (
+          <article key={document.id} className="rounded-md border border-slate-300 bg-white p-3 shadow-sm">
+            <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-black">{document.title}</p>
+                <p className="text-xs font-bold text-slate-500">{document.type} - {document.date}</p>
+                {document.notes && <p className="mt-1 whitespace-pre-wrap text-sm font-semibold text-slate-700">{document.notes}</p>}
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {document.fileUrl || document.fileData ? (
+                  <a href={document.fileUrl || document.fileData} target="_blank" rel="noreferrer" className="rounded-md bg-slate-900 px-3 py-2 text-center text-xs font-black text-white">
+                    Open
+                  </a>
+                ) : null}
+                <button type="button" onClick={() => deleteDocument(document.id)} className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs font-black text-red-700">
+                  Delete
+                </button>
+              </div>
+            </div>
+          </article>
+        ))}
+        {!estimates.length && !receipts.length && !documents.length && (
+          <p className="rounded-md border border-dashed border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-500">
+            No client documents yet.
+          </p>
+        )}
+      </div>
     </div>
   );
 }
@@ -4301,6 +4900,7 @@ function ClientForm({
                   <Input label="Deposit" value={form.depositAmount} onChange={(v) => updateForm("depositAmount", v)} />
                   <Input label="Paid" value={form.paymentAmount} onChange={(v) => updateForm("paymentAmount", v)} />
                   <Input label="Balance Due" value={form.balanceDue} onChange={(v) => updateForm("balanceDue", v)} />
+                  <Input label="Labor Cost" value={form.laborCost} onChange={(v) => updateForm("laborCost", v)} />
                   <SuggestInput label="Payment Method" value={form.paymentMethod} options={paymentMethodOptions} onChange={(v) => updateForm("paymentMethod", v)} />
                 </div>
               </details>
@@ -4362,11 +4962,18 @@ function FollowUpTaskList({ tasks, openClient, quickAction }) {
 
 function WorkflowWarnings({ client }) {
   const warnings = [];
+  const receipts = clientReceipts(client);
   if (client.leadStatus === "Won" && client.projectStatus === "Not Scheduled") {
     warnings.push("Won job not scheduled.");
   }
   if (client.projectStatus === "Completed" && client.paymentStatus !== "Paid") {
     warnings.push("Balance due / invoice needed.");
+  }
+  if (client.projectStatus === "Completed" && !receipts.length) {
+    warnings.push("Completed job has no receipts attached.");
+  }
+  if (receipts.some((receipt) => !numberValue(receipt.amount) || !receipt.taxReady)) {
+    warnings.push("One or more receipts need amount or tax review.");
   }
   if (!warnings.length) return null;
 
