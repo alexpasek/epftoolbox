@@ -265,13 +265,7 @@ export function applyGmailEntriesToClients(clients, entries) {
     });
     const clientEntries = matchedEntries.filter((entry) => !hasMessageLogged(client, entry.sourceMessageId));
     if (!matchedEntries.length) return client;
-    if (!clientEntries.length) {
-      changed = true;
-      return {
-        ...client,
-        updatedAt: syncAt,
-      };
-    }
+    if (!clientEntries.length) return client;
     changed = true;
     const newestInbound = clientEntries.some((entry) => entry.direction === "inbound");
 

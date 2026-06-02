@@ -1003,7 +1003,6 @@ function latestClientChange(client = {}) {
   const latestReceipt = [...(client.receipts || [])].sort((a, b) => isoTimeValue(b.updatedAt || b.createdAt) - isoTimeValue(a.updatedAt || a.createdAt))[0];
   const latestDocument = [...(client.documents || [])].sort((a, b) => isoTimeValue(b.updatedAt || b.createdAt) - isoTimeValue(a.updatedAt || a.createdAt))[0];
   const candidates = [
-    { date: client.updatedAt, type: "client", content: client.createdAt === client.updatedAt ? "Lead added." : "Client card updated." },
     { date: client.createdAt, type: "client", content: "Lead added." },
     latestTimeline && { date: latestTimeline.date, type: latestTimeline.type, content: latestTimeline.content },
     latestReceipt && { date: latestReceipt.updatedAt || latestReceipt.createdAt, type: "receipt", content: `Receipt changed: ${latestReceipt.vendor || latestReceipt.fileName || latestReceipt.category}.` },
@@ -1173,11 +1172,49 @@ function lastContactDate(client) {
 }
 
 function latestTimelineContent(client = {}, direction = "") {
-  const entry = (client.communicationLog || []).find((item) => {
+  const entry = [...(client.communicationLog || [])].sort((a, b) => isoTimeValue(b.date) - isoTimeValue(a.date)).find((item) => {
     if (!String(item.content || "").trim()) return false;
     return direction ? item.direction === direction : true;
   });
   return String(entry?.content || "").trim();
+}
+
+function timelineLabel(entry = {}) {
+  const type = String(entry.type || "note").replace("_", " ");
+  const direction =
+    entry.direction === "inbound"
+      ? "Client"
+      : entry.direction === "outbound"
+        ? "You"
+        : entry.createdBy || "CRM";
+  const date = shortDate(String(entry.date || "").slice(0, 10));
+  return [direction, type, date].filter(Boolean).join(" - ");
+}
+
+function latestTimelineEntry(client = {}, predicate = () => true) {
+  return [...(client.communicationLog || [])]
+    .filter((entry) => String(entry.content || "").trim() && predicate(entry))
+    .sort((a, b) => isoTimeValue(b.date) - isoTimeValue(a.date))[0] || null;
+}
+
+function clientCardContext(client = {}) {
+  const latestAction = latestTimelineEntry(client);
+  const clientMessage = latestTimelineEntry(client, (entry) => entry.direction === "inbound");
+  const yourReply = latestTimelineEntry(client, (entry) => entry.direction === "outbound");
+  const directNote = String(client.notes || "").trim();
+
+  return {
+    latestAction: latestAction
+      ? `${timelineLabel(latestAction)}: ${String(latestAction.content || "").trim()}`
+      : "No activity logged yet",
+    clientMessage: clientMessage
+      ? String(clientMessage.content || "").trim()
+      : "No client message logged",
+    yourReply: yourReply
+      ? String(yourReply.content || "").trim()
+      : "No reply sent yet",
+    note: directNote || clientCardNote(client) || "",
+  };
 }
 
 function clientCardNote(client = {}) {
@@ -1447,6 +1484,15 @@ export default function CrmPage() {
     [cloudSyncAvailable, saveLocalClients]
   );
 
+  const markClientIdsSeen = useCallback(
+    (clientIds = []) => {
+      const idSet = new Set(clientIds.filter(Boolean));
+      if (!idSet.size) return;
+      markClientsSeen(clientsRef.current.filter((client) => idSet.has(client.id)));
+    },
+    [markClientsSeen]
+  );
+
   useEffect(() => {
     try {
       const unlocked = window.localStorage.getItem(CRM_AUTH_KEY) === "yes";
@@ -1533,7 +1579,8 @@ export default function CrmPage() {
         if (!res.ok) return;
         if (data.matched > 0) {
           setSyncStatus(`Gmail synced ${data.matched} email(s) ${new Date().toLocaleTimeString("en-CA")}`);
-          refreshCloudClients();
+          await refreshCloudClients();
+          if (!data.updatedClients) markClientIdsSeen(data.matchedClientIds || []);
         }
       } catch {}
     }
@@ -1561,7 +1608,7 @@ export default function CrmPage() {
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [isUnlocked, refreshCloudClients]);
+  }, [isUnlocked, markClientIdsSeen, refreshCloudClients]);
 
   const isSalesTeamView = accessMode === "limited" || masterPreviewLimited;
   const effectiveAccessMode = isSalesTeamView ? "limited" : accessMode;
@@ -2669,6 +2716,7 @@ export default function CrmPage() {
             close={() => setShowSettings(false)}
             saveSettings={saveSettings}
             refreshCloudClients={refreshCloudClients}
+            markClientIdsSeen={markClientIdsSeen}
           />
         )}
       </div>
@@ -2861,7 +2909,7 @@ function FollowUpChooser({ client, settings, close, scheduleFollowUp }) {
   );
 }
 
-function SettingsPanel({ settings, close, saveSettings, refreshCloudClients }) {
+function SettingsPanel({ settings, close, saveSettings, refreshCloudClients, markClientIdsSeen }) {
   const [draft, setDraft] = useState(normalizeSettings(settings));
   const [gmailStatus, setGmailStatus] = useState({ connected: false });
   const [gmailBusy, setGmailBusy] = useState("");
@@ -2896,7 +2944,10 @@ function SettingsPanel({ settings, close, saveSettings, refreshCloudClients }) {
           ? `${data.matched} matched / ${data.scanned} scanned`
           : `0 matched / ${data.scanned} scanned. Add the client's email to their CRM card, then sync again.`,
       }));
-      if (data.matched > 0) await refreshCloudClients?.();
+      if (data.matched > 0) {
+        await refreshCloudClients?.();
+        if (!data.updatedClients) markClientIdsSeen?.(data.matchedClientIds || []);
+      }
     } catch (err) {
       setGmailStatus((current) => ({ ...current, error: err.message || "Gmail sync failed." }));
     } finally {
@@ -3628,9 +3679,7 @@ function ClientCard({ client, estimates = [], openClient, editClient, deleteClie
   const action = clientActionState(client);
   const followUp = followUpState(client);
   const lastContact = lastContactDate(client);
-  const note = clientCardNote(client);
-  const lastMessage = latestTimelineContent(client, "inbound") || latestTimelineContent(client);
-  const yourReply = latestTimelineContent(client, "outbound");
+  const context = clientCardContext(client);
   const mainButtonAction = action.primaryAction;
   const materialsTotal = clientMaterialsTotal(client);
 
@@ -3688,13 +3737,16 @@ function ClientCard({ client, estimates = [], openClient, editClient, deleteClie
           Message Context
         </p>
         <p className="mt-1 line-clamp-2 break-words text-sm font-semibold text-slate-700">
-          Last message: {lastMessage || "No message logged"}
+          Latest action: {context.latestAction}
         </p>
         <p className="mt-1 line-clamp-2 break-words text-sm font-semibold text-slate-600">
-          Your reply: {yourReply || "Not sent yet"}
+          Client: {context.clientMessage}
+        </p>
+        <p className="mt-1 line-clamp-2 break-words text-sm font-semibold text-slate-600">
+          You: {context.yourReply}
         </p>
         <p className="mt-1 line-clamp-3 break-words text-sm font-bold text-slate-800">
-          {note || "No note yet"}
+          {context.note || "No note yet"}
         </p>
       </button>
 

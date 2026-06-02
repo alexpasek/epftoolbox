@@ -79,6 +79,11 @@ export async function POST(req) {
     }));
 
     const matchedEntries = messages.filter((entry) => findClientForMessage(clients, entry, entry.direction));
+    const matchedClientIds = [...new Set(
+      matchedEntries
+        .map((entry) => findClientForMessage(clients, entry, entry.direction)?.id)
+        .filter(Boolean)
+    )];
     const { clients: nextClients, changed } = applyGmailEntriesToClients(clients, matchedEntries);
 
     if (changed) {
@@ -105,6 +110,7 @@ export async function POST(req) {
       email: profileEmail,
       scanned: messages.length,
       matched: matchedEntries.length,
+      matchedClientIds,
       force,
       updatedClients: changed,
       lastSyncAt: nextConnection.lastSyncAt,
