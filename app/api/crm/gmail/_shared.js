@@ -257,24 +257,29 @@ function nextLeadStatus(client = {}, direction) {
 
 export function applyGmailEntriesToClients(clients, entries) {
   let changed = false;
+  const syncAt = nowISO();
   const nextClients = clients.map((client) => {
-    const clientEntries = entries.filter((entry) => {
+    const matchedEntries = entries.filter((entry) => {
       const matchedClient = findClientForMessage([client], entry, entry.direction);
-      return matchedClient?.id === client.id && !hasMessageLogged(client, entry.sourceMessageId);
+      return matchedClient?.id === client.id;
     });
-    if (!clientEntries.length) return client;
+    const clientEntries = matchedEntries.filter((entry) => !hasMessageLogged(client, entry.sourceMessageId));
+    if (!matchedEntries.length) return client;
+    if (!clientEntries.length) {
+      changed = true;
+      return {
+        ...client,
+        updatedAt: syncAt,
+      };
+    }
     changed = true;
     const newestInbound = clientEntries.some((entry) => entry.direction === "inbound");
-    const newestDate = clientEntries
-      .map((entry) => new Date(entry.date).getTime())
-      .filter(Number.isFinite)
-      .sort((a, b) => b - a)[0];
 
     return {
       ...client,
       leadStatus: newestInbound ? "Contacted" : nextLeadStatus(client, "outbound"),
       followUpDate: newestInbound && client.followUpDate ? "" : client.followUpDate || "",
-      updatedAt: newestDate ? new Date(newestDate).toISOString() : nowISO(),
+      updatedAt: syncAt,
       communicationLog: [...clientEntries, ...(Array.isArray(client.communicationLog) ? client.communicationLog : [])],
     };
   });

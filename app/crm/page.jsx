@@ -2668,6 +2668,7 @@ export default function CrmPage() {
             settings={appSettings}
             close={() => setShowSettings(false)}
             saveSettings={saveSettings}
+            refreshCloudClients={refreshCloudClients}
           />
         )}
       </div>
@@ -2860,7 +2861,7 @@ function FollowUpChooser({ client, settings, close, scheduleFollowUp }) {
   );
 }
 
-function SettingsPanel({ settings, close, saveSettings }) {
+function SettingsPanel({ settings, close, saveSettings, refreshCloudClients }) {
   const [draft, setDraft] = useState(normalizeSettings(settings));
   const [gmailStatus, setGmailStatus] = useState({ connected: false });
   const [gmailBusy, setGmailBusy] = useState("");
@@ -2895,6 +2896,7 @@ function SettingsPanel({ settings, close, saveSettings }) {
           ? `${data.matched} matched / ${data.scanned} scanned`
           : `0 matched / ${data.scanned} scanned. Add the client's email to their CRM card, then sync again.`,
       }));
+      if (data.matched > 0) await refreshCloudClients?.();
     } catch (err) {
       setGmailStatus((current) => ({ ...current, error: err.message || "Gmail sync failed." }));
     } finally {
