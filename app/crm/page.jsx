@@ -2883,7 +2883,7 @@ function SettingsPanel({ settings, close, saveSettings }) {
   async function syncGmailNow() {
     setGmailBusy("Syncing Gmail...");
     try {
-      const res = await fetch("/api/crm/gmail", { method: "POST" });
+      const res = await fetch("/api/crm/gmail?force=1", { method: "POST" });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Gmail sync failed");
       setGmailStatus((current) => ({
@@ -2891,7 +2891,9 @@ function SettingsPanel({ settings, close, saveSettings }) {
         connected: true,
         email: data.email || current.email,
         lastSyncAt: data.lastSyncAt,
-        lastResult: `${data.matched} matched / ${data.scanned} scanned`,
+        lastResult: data.matched
+          ? `${data.matched} matched / ${data.scanned} scanned`
+          : `0 matched / ${data.scanned} scanned. Add the client's email to their CRM card, then sync again.`,
       }));
     } catch (err) {
       setGmailStatus((current) => ({ ...current, error: err.message || "Gmail sync failed." }));

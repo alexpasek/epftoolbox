@@ -46,7 +46,7 @@ async function loadMessage(connection, id) {
   return gmailFetch(connection, `/messages/${encodeURIComponent(id)}?${params.toString()}`);
 }
 
-export async function POST() {
+export async function POST(req) {
   const bucket = await getStorageBinding();
   if (!bucket) {
     return NextResponse.json({ error: "CRM_BUCKET is not configured." }, { status: 500 });
@@ -61,7 +61,9 @@ export async function POST() {
     const connection = await validAccessConnection(bucket, storedConnection);
     const profile = await gmailFetch(connection, "/profile");
     const profileEmail = profile.emailAddress || connection.email || "";
-    const seenMessageIds = new Set(connection.seenMessageIds || []);
+    const url = new URL(req.url);
+    const force = url.searchParams.get("force") === "1";
+    const seenMessageIds = new Set(force ? [] : connection.seenMessageIds || []);
     const clients = await readClients(bucket);
 
     const inboxRefs = await listMessageRefs(connection, ["INBOX"]);
@@ -84,7 +86,7 @@ export async function POST() {
     }
 
     const nextSeenIds = [
-      ...messages.map((message) => message.sourceMessageId).filter(Boolean),
+      ...matchedEntries.map((message) => message.sourceMessageId).filter(Boolean),
       ...(connection.seenMessageIds || []),
     ].filter((id, index, list) => id && list.indexOf(id) === index).slice(0, MAX_SEEN_MESSAGES);
 
@@ -103,6 +105,7 @@ export async function POST() {
       email: profileEmail,
       scanned: messages.length,
       matched: matchedEntries.length,
+      force,
       updatedClients: changed,
       lastSyncAt: nextConnection.lastSyncAt,
     });
