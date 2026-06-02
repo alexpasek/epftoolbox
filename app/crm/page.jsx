@@ -9,6 +9,7 @@ const CRM_STORAGE_KEY = "epf.crm.clients";
 const CRM_AUTH_KEY = "epf.crm.unlocked";
 const CRM_ACCESS_MODE_KEY = "epf.crm.accessMode";
 const CRM_SETTINGS_KEY = "epf.crm.settings";
+const CRM_SEEN_CHANGES_KEY = "epf.crm.seenChanges";
 const CRM_ACCESS_PIN = "1234";
 const CRM_LIMITED_PIN = "0000";
 const DELETE_PASSWORD = "1234";
@@ -991,6 +992,65 @@ function clientSyncTime(client = {}) {
   return Number.isFinite(time) ? time : 0;
 }
 
+function isoTimeValue(value = "") {
+  const time = new Date(value || "").getTime();
+  return Number.isFinite(time) ? time : 0;
+}
+
+function latestClientChange(client = {}) {
+  const timelineEntries = (client.communicationLog || []).filter((entry) => entry?.date);
+  const latestTimeline = timelineEntries.sort((a, b) => isoTimeValue(b.date) - isoTimeValue(a.date))[0];
+  const latestReceipt = [...(client.receipts || [])].sort((a, b) => isoTimeValue(b.updatedAt || b.createdAt) - isoTimeValue(a.updatedAt || a.createdAt))[0];
+  const latestDocument = [...(client.documents || [])].sort((a, b) => isoTimeValue(b.updatedAt || b.createdAt) - isoTimeValue(a.updatedAt || a.createdAt))[0];
+  const candidates = [
+    { date: client.updatedAt, type: "client", content: client.createdAt === client.updatedAt ? "Lead added." : "Client card updated." },
+    { date: client.createdAt, type: "client", content: "Lead added." },
+    latestTimeline && { date: latestTimeline.date, type: latestTimeline.type, content: latestTimeline.content },
+    latestReceipt && { date: latestReceipt.updatedAt || latestReceipt.createdAt, type: "receipt", content: `Receipt changed: ${latestReceipt.vendor || latestReceipt.fileName || latestReceipt.category}.` },
+    latestDocument && { date: latestDocument.updatedAt || latestDocument.createdAt, type: "document", content: `Document changed: ${latestDocument.title || latestDocument.fileName}.` },
+  ].filter(Boolean);
+
+  const latest = candidates.sort((a, b) => isoTimeValue(b.date) - isoTimeValue(a.date))[0] || {};
+  const type = latest.type || "client";
+  const place =
+    type === "receipt"
+      ? "Receipts / Materials"
+      : type === "document"
+        ? "Client Folder"
+        : ["estimate", "invoice"].includes(type)
+          ? "Estimate / invoices"
+          : "Timeline / Notes";
+
+  return {
+    date: latest.date || client.updatedAt || client.createdAt || "",
+    place,
+    description: String(latest.content || "Client card updated.").replace(/\s+/g, " ").trim(),
+  };
+}
+
+function normalizeSeenChanges(value = {}) {
+  return {
+    baselineSeenAt: value.baselineSeenAt || nowISO(),
+    clients: value.clients && typeof value.clients === "object" ? value.clients : {},
+  };
+}
+
+function parseSeenChanges(raw = "") {
+  if (!raw) return normalizeSeenChanges();
+  try {
+    return normalizeSeenChanges(JSON.parse(raw));
+  } catch {
+    return normalizeSeenChanges();
+  }
+}
+
+function clientChangeAlert(client = {}, seenChanges = {}) {
+  const change = latestClientChange(client);
+  const seenAt = seenChanges.clients?.[client.id] || seenChanges.baselineSeenAt || nowISO();
+  if (!change.date || isoTimeValue(change.date) <= isoTimeValue(seenAt)) return null;
+  return change;
+}
+
 function mergeClientLists(...lists) {
   const byId = new Map();
 
@@ -1093,7 +1153,7 @@ function hasClientActionAfter(client = {}, isoDate = "") {
     if (!Number.isFinite(time) || time <= since) return false;
     const content = String(entry.content || "").toLowerCase();
     if (content.includes("moved to follow-up")) return false;
-    return ["call", "text", "email", "note"].includes(entry.type);
+    return ["call", "text", "email", "note", "estimate", "follow_up"].includes(entry.type);
   });
 }
 
@@ -1106,9 +1166,9 @@ function shouldMoveEstimateToFollowUp(client = {}) {
 }
 
 function lastContactDate(client) {
-  const event = (client.communicationLog || []).find((item) =>
-    ["call", "text", "email", "note"].includes(item.type)
-  );
+  const event = [...(client.communicationLog || [])]
+    .filter((item) => ["call", "text", "email", "note", "estimate", "follow_up"].includes(item.type))
+    .sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime())[0];
   return event?.date?.slice(0, 10) || "";
 }
 
@@ -1281,6 +1341,7 @@ export default function CrmPage() {
   const [followUpClientId, setFollowUpClientId] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
   const [appSettings, setAppSettings] = useState(defaultBusinessContact);
+  const [seenClientChanges, setSeenClientChanges] = useState(() => normalizeSeenChanges());
   const clientsRef = useRef(sampleClients);
 
   useEffect(() => {
@@ -1292,6 +1353,40 @@ export default function CrmPage() {
       window.localStorage.setItem(CRM_STORAGE_KEY, JSON.stringify(nextClients));
     } catch {}
   }, []);
+
+  const saveSeenClientChanges = useCallback((nextSeen) => {
+    try {
+      window.localStorage.setItem(CRM_SEEN_CHANGES_KEY, JSON.stringify(nextSeen));
+    } catch {}
+  }, []);
+
+  const markClientsSeen = useCallback(
+    (clientsToMark = []) => {
+      const list = Array.isArray(clientsToMark) ? clientsToMark : [clientsToMark];
+      const validClients = list.filter((client) => client?.id);
+      if (!validClients.length) return;
+
+      setSeenClientChanges((current) => {
+        const next = normalizeSeenChanges(current);
+        let changed = false;
+        const clientsSeen = { ...next.clients };
+
+        validClients.forEach((client) => {
+          const changeDate = latestClientChange(client).date || nowISO();
+          if (isoTimeValue(changeDate) > isoTimeValue(clientsSeen[client.id] || "")) {
+            clientsSeen[client.id] = changeDate;
+            changed = true;
+          }
+        });
+
+        if (!changed) return current;
+        const saved = { ...next, clients: clientsSeen };
+        saveSeenClientChanges(saved);
+        return saved;
+      });
+    },
+    [saveSeenClientChanges]
+  );
 
   const fetchCloudClients = useCallback(async () => {
     const res = await fetch("/api/crm", { cache: "no-store" });
@@ -1360,8 +1455,12 @@ export default function CrmPage() {
       setAccessMode(storedMode === "limited" ? "limited" : "master");
       const storedSettings = JSON.parse(window.localStorage.getItem(CRM_SETTINGS_KEY) || "{}");
       setAppSettings(normalizeSettings(storedSettings));
+      const storedSeen = window.localStorage.getItem(CRM_SEEN_CHANGES_KEY);
+      const nextSeen = parseSeenChanges(storedSeen);
+      setSeenClientChanges(nextSeen);
+      if (!storedSeen) saveSeenClientChanges(nextSeen);
     } catch {}
-  }, []);
+  }, [saveSeenClientChanges]);
 
   const refreshSavedInvoices = useCallback(() => {
     try {
@@ -1426,17 +1525,39 @@ export default function CrmPage() {
   useEffect(() => {
     if (!isUnlocked) return;
 
+    async function syncGmailMessages() {
+      try {
+        const res = await fetch("/api/crm/gmail", { method: "POST" });
+        if (res.status === 409 || res.status === 501) return;
+        const data = await res.json();
+        if (!res.ok) return;
+        if (data.matched > 0) {
+          setSyncStatus(`Gmail synced ${data.matched} email(s) ${new Date().toLocaleTimeString("en-CA")}`);
+          refreshCloudClients();
+        }
+      } catch {}
+    }
+
     const interval = window.setInterval(refreshCloudClients, 30000);
-    const onFocus = () => refreshCloudClients();
+    const gmailInterval = window.setInterval(syncGmailMessages, 60000);
+    const onFocus = () => {
+      refreshCloudClients();
+      syncGmailMessages();
+    };
     const onVisibility = () => {
-      if (document.visibilityState === "visible") refreshCloudClients();
+      if (document.visibilityState === "visible") {
+        refreshCloudClients();
+        syncGmailMessages();
+      }
     };
 
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onVisibility);
+    syncGmailMessages();
 
     return () => {
       window.clearInterval(interval);
+      window.clearInterval(gmailInterval);
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVisibility);
     };
@@ -1492,12 +1613,26 @@ export default function CrmPage() {
     [effectiveAccessMode, savedInvoices, visibleClientIds]
   );
 
+  const changeAlertForClient = useCallback(
+    (client) => clientChangeAlert(client, seenClientChanges),
+    [seenClientChanges]
+  );
+
+  const openClient = useCallback(
+    (client) => {
+      if (!client?.id) return;
+      markClientsSeen(client);
+      setSelectedClientId(client.id);
+    },
+    [markClientsSeen]
+  );
+
   useEffect(() => {
     if (typeof window === "undefined") return;
     const clientId = new URLSearchParams(window.location.search || "").get("client");
     const urlClient = activeClients.find((client) => client.id === clientId);
     if (urlClient) {
-      setSelectedClientId(clientId);
+      openClient(urlClient);
       setActiveView(urlClient.leadStatus === "Lost" ? "Archive" : "Clients");
       try {
         const url = new URL(window.location.href);
@@ -1505,7 +1640,11 @@ export default function CrmPage() {
         window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
       } catch {}
     }
-  }, [activeClients]);
+  }, [activeClients, openClient]);
+
+  useEffect(() => {
+    if (selectedClient) markClientsSeen(selectedClient);
+  }, [markClientsSeen, selectedClient]);
 
   const filterOptions = useMemo(() => {
     const unique = (field) => [...new Set(dailyClients.map((client) => client[field]).filter(Boolean))].sort();
@@ -1601,10 +1740,16 @@ export default function CrmPage() {
   const updateClientList = useCallback((mutator) => {
     setClients((current) => {
       const nextClients = mutator(current).map(normalizeClient);
+      const currentById = new Map(current.map((client) => [client.id, client]));
+      const locallyChanged = nextClients.filter((client) => {
+        const previous = currentById.get(client.id);
+        return !previous || clientSyncTime(client) > clientSyncTime(previous);
+      });
+      if (locallyChanged.length) window.setTimeout(() => markClientsSeen(locallyChanged), 0);
       syncClients(nextClients);
       return nextClients;
     });
-  }, [syncClients]);
+  }, [markClientsSeen, syncClients]);
 
   useEffect(() => {
     if (!isUnlocked || !savedInvoices.length) return;
@@ -2413,17 +2558,19 @@ export default function CrmPage() {
             clients={dailyClients}
             savedInvoices={visibleSavedInvoices}
             setActiveView={setActiveView}
-            openClient={(client) => setSelectedClientId(client.id)}
+            openClient={openClient}
             quickAction={quickAction}
             clearFollowUp={clearFollowUp}
+            changeAlertForClient={changeAlertForClient}
           />
         )}
 
         {activeView === "Pipeline" && (
           <Pipeline
             clients={filteredClients}
-            openClient={(client) => setSelectedClientId(client.id)}
+            openClient={openClient}
             changeStatus={changeStatus}
+            changeAlertForClient={changeAlertForClient}
           />
         )}
 
@@ -2438,33 +2585,35 @@ export default function CrmPage() {
             filterOptions={filterOptions}
             search={search}
             setSearch={setSearch}
-            openClient={(client) => setSelectedClientId(client.id)}
+            openClient={openClient}
             editClient={editClient}
             deleteClient={deleteClient}
             quickAction={quickAction}
             addClientNote={addClientNote}
             addAiClientNote={addAiClientNote}
             clearFollowUp={clearFollowUp}
+            changeAlertForClient={changeAlertForClient}
           />
         )}
 
         {activeView === "Calendar" && (
-          <CalendarView clients={dailyClients} openClient={(client) => setSelectedClientId(client.id)} />
+          <CalendarView clients={dailyClients} openClient={openClient} changeAlertForClient={changeAlertForClient} />
         )}
 
         {activeView === "Invoices" && (
-          <InvoicesView clients={dailyClients} savedInvoices={visibleSavedInvoices} openClient={(client) => setSelectedClientId(client.id)} quickAction={quickAction} />
+          <InvoicesView clients={dailyClients} savedInvoices={visibleSavedInvoices} openClient={openClient} quickAction={quickAction} changeAlertForClient={changeAlertForClient} />
         )}
 
         {activeView === "Receipts" && (
-          <ReceiptsView clients={dailyClients} openClient={(client) => setSelectedClientId(client.id)} />
+          <ReceiptsView clients={dailyClients} openClient={openClient} changeAlertForClient={changeAlertForClient} />
         )}
 
         {activeView === "Archive" && (
           <ArchiveView
             clients={archivedClients}
-            openClient={(client) => setSelectedClientId(client.id)}
+            openClient={openClient}
             quickAction={quickAction}
+            changeAlertForClient={changeAlertForClient}
           />
         )}
 
@@ -2713,7 +2862,51 @@ function FollowUpChooser({ client, settings, close, scheduleFollowUp }) {
 
 function SettingsPanel({ settings, close, saveSettings }) {
   const [draft, setDraft] = useState(normalizeSettings(settings));
+  const [gmailStatus, setGmailStatus] = useState({ connected: false });
+  const [gmailBusy, setGmailBusy] = useState("");
   const updateDraft = (field, value) => setDraft((current) => ({ ...current, [field]: value }));
+
+  const refreshGmailStatus = useCallback(async () => {
+    try {
+      const res = await fetch("/api/crm/gmail", { cache: "no-store" });
+      const data = await res.json();
+      setGmailStatus(data);
+    } catch {
+      setGmailStatus({ connected: false, error: "Gmail status unavailable." });
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshGmailStatus();
+  }, [refreshGmailStatus]);
+
+  async function syncGmailNow() {
+    setGmailBusy("Syncing Gmail...");
+    try {
+      const res = await fetch("/api/crm/gmail", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Gmail sync failed");
+      setGmailStatus((current) => ({
+        ...current,
+        connected: true,
+        email: data.email || current.email,
+        lastSyncAt: data.lastSyncAt,
+        lastResult: `${data.matched} matched / ${data.scanned} scanned`,
+      }));
+    } catch (err) {
+      setGmailStatus((current) => ({ ...current, error: err.message || "Gmail sync failed." }));
+    } finally {
+      setGmailBusy("");
+    }
+  }
+
+  function connectGmail() {
+    const setupKey = window.prompt("Enter Gmail setup key if you configured one. Leave blank if not.");
+    if (setupKey === null) return;
+    const params = new URLSearchParams();
+    if (setupKey.trim()) params.set("setupKey", setupKey.trim());
+    window.location.href = `/api/crm/gmail/auth${params.toString() ? `?${params.toString()}` : ""}`;
+  }
 
   return (
     <aside className="fixed inset-0 z-50 h-dvh overflow-hidden bg-slate-950/50 p-2 md:p-5">
@@ -2739,6 +2932,42 @@ function SettingsPanel({ settings, close, saveSettings }) {
           <Input label="Phone" value={draft.phone} onChange={(v) => updateDraft("phone", v)} />
           <Input label="Email" value={draft.email} onChange={(v) => updateDraft("email", v)} />
           <Input label="Website" value={draft.website} onChange={(v) => updateDraft("website", v)} />
+          <section className="rounded-lg border border-slate-300 bg-slate-50 p-3 md:col-span-2">
+            <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-start">
+              <div className="min-w-0">
+                <p className="text-xs font-black uppercase text-slate-500">Direct Gmail Sync</p>
+                <p className="mt-1 text-sm font-bold text-slate-800">
+                  {gmailStatus.connected
+                    ? `Connected: ${gmailStatus.email || "Gmail account"}`
+                    : "Gmail is not connected yet."}
+                </p>
+                <p className="mt-1 text-xs font-bold text-slate-500">
+                  {gmailStatus.lastSyncAt
+                    ? `Last sync: ${String(gmailStatus.lastSyncAt).slice(0, 16).replace("T", " ")}`
+                    : "After connecting, CRM checks Inbox and Sent Mail while the app is open."}
+                  {gmailStatus.lastResult ? ` - ${gmailStatus.lastResult}` : ""}
+                </p>
+                {gmailStatus.error && <p className="mt-1 text-xs font-black text-red-700">{gmailStatus.error}</p>}
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2 md:min-w-64">
+                <button
+                  type="button"
+                  onClick={connectGmail}
+                  className="min-h-11 rounded-md bg-blue-700 px-3 py-2 text-sm font-black text-white hover:bg-blue-800"
+                >
+                  {gmailStatus.connected ? "Reconnect Gmail" : "Connect Gmail"}
+                </button>
+                <button
+                  type="button"
+                  disabled={!gmailStatus.connected || Boolean(gmailBusy)}
+                  onClick={syncGmailNow}
+                  className="min-h-11 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-black disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  {gmailBusy || "Sync Now"}
+                </button>
+              </div>
+            </div>
+          </section>
           <div className="md:col-span-2">
             <p className="text-xs font-black uppercase text-slate-500">Follow-up message templates</p>
             <p className="mt-1 text-xs font-bold text-slate-500">
@@ -2820,7 +3049,23 @@ function dailyQueueReason(client = {}) {
   return nextClientStep(client);
 }
 
-function DashboardQueue({ title, subtitle, clients, emptyText, openClient, quickAction, primaryAction = "open", tone = "slate" }) {
+function ChangedClientNotice({ alert }) {
+  if (!alert) return null;
+  return (
+    <div className="mb-2 rounded-md border border-red-700 bg-red-700 px-3 py-2 text-white shadow-sm">
+      <p className="text-xs font-black uppercase">Changed</p>
+      <p className="mt-0.5 line-clamp-2 text-sm font-bold">
+        Look in {alert.place}: {alert.description}
+      </p>
+    </div>
+  );
+}
+
+function changedCardClass(alert) {
+  return alert ? "crm-unseen-change border-red-700 ring-2 ring-red-600 ring-offset-1" : "";
+}
+
+function DashboardQueue({ title, subtitle, clients, emptyText, openClient, quickAction, primaryAction = "open", tone = "slate", changeAlertForClient }) {
   const toneClass =
     tone === "red"
       ? "border-red-200 bg-red-50 text-red-800"
@@ -2838,8 +3083,11 @@ function DashboardQueue({ title, subtitle, clients, emptyText, openClient, quick
         <span className={`rounded-full border px-2.5 py-1 text-xs font-black ${toneClass}`}>{clients.length}</span>
       </div>
       <div className="mt-3 space-y-2">
-        {clients.slice(0, 5).map((client) => (
-          <article key={`${title}-${client.id}`} className="rounded-md border border-slate-200 bg-white p-3 shadow-sm">
+        {clients.slice(0, 5).map((client) => {
+          const changeAlert = changeAlertForClient?.(client);
+          return (
+          <article key={`${title}-${client.id}`} className={`rounded-md border border-slate-200 bg-white p-3 shadow-sm ${changedCardClass(changeAlert)}`}>
+            <ChangedClientNotice alert={changeAlert} />
             <button onClick={() => openClient(client)} className="w-full min-w-0 text-left">
               <div className="flex items-start justify-between gap-3">
                 <span className="min-w-0">
@@ -2864,14 +3112,15 @@ function DashboardQueue({ title, subtitle, clients, emptyText, openClient, quick
               </button>
             </div>
           </article>
-        ))}
+          );
+        })}
         {!clients.length && <p className="rounded-md border border-dashed border-slate-200 p-3 text-sm font-bold text-slate-500">{emptyText}</p>}
       </div>
     </section>
   );
 }
 
-function ImmediateActionPanel({ clients, openClient, quickAction, setActiveView }) {
+function ImmediateActionPanel({ clients, openClient, quickAction, setActiveView, changeAlertForClient }) {
   const urgentClients = clients
     .map((client) => ({ client, reason: immediateActionReason(client) }))
     .filter((item) => item.reason)
@@ -2892,8 +3141,11 @@ function ImmediateActionPanel({ clients, openClient, quickAction, setActiveView 
         </button>
       </div>
       <div className="mt-3 space-y-2">
-        {urgentClients.map(({ client, reason }) => (
-          <article key={client.id} className="rounded-md border border-red-200 bg-white p-3 shadow-sm">
+        {urgentClients.map(({ client, reason }) => {
+          const changeAlert = changeAlertForClient?.(client);
+          return (
+          <article key={client.id} className={`rounded-md border border-red-200 bg-white p-3 shadow-sm ${changedCardClass(changeAlert)}`}>
+            <ChangedClientNotice alert={changeAlert} />
             <button onClick={() => openClient(client)} className="block w-full min-w-0 text-left">
               <p className="truncate font-black text-slate-950">{client.name || client.phone || "Unnamed lead"}</p>
               <p className="mt-0.5 text-sm font-bold text-red-700">{reason}</p>
@@ -2916,13 +3168,14 @@ function ImmediateActionPanel({ clients, openClient, quickAction, setActiveView 
               </button>
             </div>
           </article>
-        ))}
+          );
+        })}
       </div>
     </section>
   );
 }
 
-function Dashboard({ stats, clients, savedInvoices = [], setActiveView, openClient, quickAction }) {
+function Dashboard({ stats, clients, savedInvoices = [], setActiveView, openClient, quickAction, changeAlertForClient }) {
   const openLeads = clients.filter((client) => !["Won", "Lost"].includes(client.leadStatus));
   const wonClients = clients.filter((client) => client.leadStatus === "Won");
   const sentEstimates = clients.filter((client) => client.leadStatus === "Estimate Sent" || client.estimateIds?.length);
@@ -2987,7 +3240,7 @@ function Dashboard({ stats, clients, savedInvoices = [], setActiveView, openClie
         </div>
       </section>
 
-      <ImmediateActionPanel clients={clients} openClient={openClient} quickAction={quickAction} setActiveView={setActiveView} />
+      <ImmediateActionPanel clients={clients} openClient={openClient} quickAction={quickAction} setActiveView={setActiveView} changeAlertForClient={changeAlertForClient} />
 
       <div className="grid gap-4 xl:grid-cols-4">
         <DashboardQueue
@@ -2998,6 +3251,7 @@ function Dashboard({ stats, clients, savedInvoices = [], setActiveView, openClie
           openClient={openClient}
           quickAction={quickAction}
           primaryAction="call"
+          changeAlertForClient={changeAlertForClient}
         />
         <DashboardQueue
           title="2. Follow-Ups"
@@ -3008,6 +3262,7 @@ function Dashboard({ stats, clients, savedInvoices = [], setActiveView, openClie
           quickAction={quickAction}
           primaryAction="followUp"
           tone="red"
+          changeAlertForClient={changeAlertForClient}
         />
         <DashboardQueue
           title="3. Estimates"
@@ -3018,6 +3273,7 @@ function Dashboard({ stats, clients, savedInvoices = [], setActiveView, openClie
           quickAction={quickAction}
           primaryAction="followUp"
           tone="amber"
+          changeAlertForClient={changeAlertForClient}
         />
         <DashboardQueue
           title="4. Money"
@@ -3027,6 +3283,7 @@ function Dashboard({ stats, clients, savedInvoices = [], setActiveView, openClie
           openClient={openClient}
           quickAction={quickAction}
           primaryAction="invoice"
+          changeAlertForClient={changeAlertForClient}
         />
       </div>
 
@@ -3114,7 +3371,7 @@ function Dashboard({ stats, clients, savedInvoices = [], setActiveView, openClie
   );
 }
 
-function Pipeline({ clients, openClient, changeStatus }) {
+function Pipeline({ clients, openClient, changeStatus, changeAlertForClient }) {
   const pipelineStatuses = leadStatuses.filter((status) => status !== "Lost");
 
   return (
@@ -3146,6 +3403,7 @@ function Pipeline({ clients, openClient, changeStatus }) {
                     client={client}
                     openClient={openClient}
                     changeStatus={changeStatus}
+                    changeAlert={changeAlertForClient?.(client)}
                   />
                 ))}
                 {stageClients.length === 0 && (
@@ -3162,9 +3420,10 @@ function Pipeline({ clients, openClient, changeStatus }) {
   );
 }
 
-function PipelineCard({ client, openClient, changeStatus, compact = false }) {
+function PipelineCard({ client, openClient, changeStatus, compact = false, changeAlert }) {
   return (
-    <article className={`rounded-md border bg-white shadow-sm ${compact ? "p-2" : "p-3"} ${needsReminder(client) ? "border-amber-400 shadow-amber-200" : "border-slate-300 shadow-slate-200"}`}>
+    <article className={`rounded-md border bg-white shadow-sm ${compact ? "p-2" : "p-3"} ${needsReminder(client) ? "border-amber-400 shadow-amber-200" : "border-slate-300 shadow-slate-200"} ${changedCardClass(changeAlert)}`}>
+      <ChangedClientNotice alert={changeAlert} />
       <button onClick={() => openClient(client)} className="w-full text-left">
         <p className="font-black text-slate-950">{client.name || "Unnamed Lead"}</p>
         {!compact && <p className="mt-1 text-sm font-semibold text-slate-600">{client.service || "No service"}</p>}
@@ -3210,7 +3469,7 @@ function SummaryButton({ label, value, tone = "slate", onClick }) {
   );
 }
 
-function ClientsView({ clients, summaryClients = clients, monthlyStats, savedInvoices, filters, setFilters, filterOptions, search, setSearch, openClient, editClient, deleteClient, quickAction, addClientNote, addAiClientNote, clearFollowUp }) {
+function ClientsView({ clients, summaryClients = clients, monthlyStats, savedInvoices, filters, setFilters, filterOptions, search, setSearch, openClient, editClient, deleteClient, quickAction, addClientNote, addAiClientNote, clearFollowUp, changeAlertForClient }) {
   const [controlsOpen, setControlsOpen] = useState(false);
   const activeFilterCount =
     (search.trim() ? 1 : 0) +
@@ -3345,6 +3604,7 @@ function ClientsView({ clients, summaryClients = clients, monthlyStats, savedInv
             addClientNote={addClientNote}
             addAiClientNote={addAiClientNote}
             clearFollowUp={clearFollowUp}
+            changeAlert={changeAlertForClient?.(client)}
           />
         ))}
       </div>
@@ -3357,7 +3617,7 @@ function ClientsView({ clients, summaryClients = clients, monthlyStats, savedInv
   );
 }
 
-function ClientCard({ client, estimates = [], openClient, editClient, deleteClient, quickAction, addClientNote, addAiClientNote, clearFollowUp }) {
+function ClientCard({ client, estimates = [], openClient, editClient, deleteClient, quickAction, addClientNote, addAiClientNote, clearFollowUp, changeAlert }) {
   const [noteOpen, setNoteOpen] = useState(false);
   const [noteDraft, setNoteDraft] = useState("");
   const [noteSaving, setNoteSaving] = useState(false);
@@ -3388,7 +3648,8 @@ function ClientCard({ client, estimates = [], openClient, editClient, deleteClie
   }
 
   return (
-    <article className={`rounded-lg p-3 transition hover:border-blue-300 hover:shadow-lg ${crmCardClass} ${needsReminder(client) ? "ring-2 ring-amber-300" : ""}`}>
+    <article className={`rounded-lg p-3 transition hover:border-blue-300 hover:shadow-lg ${crmCardClass} ${needsReminder(client) ? "ring-2 ring-amber-300" : ""} ${changedCardClass(changeAlert)}`}>
+      <ChangedClientNotice alert={changeAlert} />
       <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
         <button onClick={() => openClient(client)} className="min-w-0 text-left">
           <h3 className="truncate text-lg font-black">{client.name || "Unnamed Lead"}</h3>
@@ -3525,7 +3786,7 @@ function ClientCard({ client, estimates = [], openClient, editClient, deleteClie
   );
 }
 
-function CalendarView({ clients, openClient }) {
+function CalendarView({ clients, openClient, changeAlertForClient }) {
   const dated = clients
     .flatMap((client) => [
       client.followUpDate && { date: client.followUpDate, label: "Follow-up", client },
@@ -3540,21 +3801,27 @@ function CalendarView({ clients, openClient }) {
     <section className={`rounded-lg p-3 ${crmPanelClass}`}>
       <h2 className="text-xl font-black">Calendar</h2>
       <div className="mt-3 space-y-2">
-        {dated.map((item) => (
-          <button key={`${item.client.id}-${item.label}-${item.date}`} onClick={() => openClient(item.client)} className="grid w-full gap-1 rounded-md border border-slate-300 bg-white p-3 text-left shadow-sm hover:border-blue-300 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
-            <span className="min-w-0 break-words">
-              <b>{item.date}</b> {item.label}
-            </span>
-            <span className="min-w-0 break-words text-sm font-bold text-slate-600 sm:text-right">{item.client.name}</span>
-          </button>
-        ))}
+        {dated.map((item) => {
+          const changeAlert = changeAlertForClient?.(item.client);
+          return (
+          <article key={`${item.client.id}-${item.label}-${item.date}`} className={`rounded-md border border-slate-300 bg-white p-3 shadow-sm hover:border-blue-300 ${changedCardClass(changeAlert)}`}>
+            <ChangedClientNotice alert={changeAlert} />
+            <button onClick={() => openClient(item.client)} className="grid w-full gap-1 text-left sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+              <span className="min-w-0 break-words">
+                <b>{item.date}</b> {item.label}
+              </span>
+              <span className="min-w-0 break-words text-sm font-bold text-slate-600 sm:text-right">{item.client.name}</span>
+            </button>
+          </article>
+          );
+        })}
         {!dated.length && <p className="text-sm font-bold text-slate-500">No dated work yet.</p>}
       </div>
     </section>
   );
 }
 
-function InvoicesView({ clients, savedInvoices = [], openClient, quickAction }) {
+function InvoicesView({ clients, savedInvoices = [], openClient, quickAction, changeAlertForClient }) {
   const invoiceClients = clients.filter(
     (client) => client.paymentStatus !== "No Invoice" || client.projectStatus === "Completed" || summarizeClientInvoices(client, savedInvoices).attached.length
   );
@@ -3564,8 +3831,10 @@ function InvoicesView({ clients, savedInvoices = [], openClient, quickAction }) 
       <h2 className="text-xl font-black">Invoices & Payments</h2>
       {invoiceClients.map((client) => {
         const invoiceSummary = summarizeClientInvoices(client, savedInvoices);
+        const changeAlert = changeAlertForClient?.(client);
         return (
-        <article key={client.id} className={`rounded-lg p-3 ${crmCardClass}`}>
+        <article key={client.id} className={`rounded-lg p-3 ${crmCardClass} ${changedCardClass(changeAlert)}`}>
+          <ChangedClientNotice alert={changeAlert} />
           <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
             <button onClick={() => openClient(client)} className="min-w-0 text-left">
               <h3 className="break-words font-black">{client.name || "Unnamed Client"}</h3>
@@ -3610,7 +3879,7 @@ function InvoicesView({ clients, savedInvoices = [], openClient, quickAction }) 
   );
 }
 
-function ReceiptsView({ clients, openClient }) {
+function ReceiptsView({ clients, openClient, changeAlertForClient }) {
   const [reportMonth, setReportMonth] = useState(monthISO());
   const clientsWithReceipts = clients
     .map((client) => {
@@ -3715,8 +3984,11 @@ function ReceiptsView({ clients, openClient }) {
       </section>
 
       <div className="grid gap-3 lg:grid-cols-2">
-        {clientsWithReceipts.map(({ client, receipts, total, taxReady }) => (
-          <article key={client.id} className={`rounded-lg p-3 ${crmCardClass}`}>
+        {clientsWithReceipts.map(({ client, receipts, total, taxReady }) => {
+          const changeAlert = changeAlertForClient?.(client);
+          return (
+          <article key={client.id} className={`rounded-lg p-3 ${crmCardClass} ${changedCardClass(changeAlert)}`}>
+            <ChangedClientNotice alert={changeAlert} />
             <button type="button" onClick={() => openClient(client)} className="block w-full min-w-0 text-left">
               <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
                 <span className="min-w-0">
@@ -3747,7 +4019,8 @@ function ReceiptsView({ clients, openClient }) {
               ))}
             </div>
           </article>
-        ))}
+          );
+        })}
       </div>
 
       {!clientsWithReceipts.length && (
@@ -3759,7 +4032,7 @@ function ReceiptsView({ clients, openClient }) {
   );
 }
 
-function ArchiveView({ clients, openClient, quickAction }) {
+function ArchiveView({ clients, openClient, quickAction, changeAlertForClient }) {
   const archivedValue = clients.reduce((sum, client) => sum + numberValue(client.estimateAmount), 0);
 
   return (
@@ -3780,8 +4053,11 @@ function ArchiveView({ clients, openClient, quickAction }) {
       </section>
 
       <div className="grid gap-3 lg:grid-cols-2">
-        {clients.map((client) => (
-          <article key={client.id} className={`rounded-lg p-3 ${crmCardClass}`}>
+        {clients.map((client) => {
+          const changeAlert = changeAlertForClient?.(client);
+          return (
+          <article key={client.id} className={`rounded-lg p-3 ${crmCardClass} ${changedCardClass(changeAlert)}`}>
+            <ChangedClientNotice alert={changeAlert} />
             <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
               <button onClick={() => openClient(client)} className="min-w-0 text-left">
                 <h3 className="truncate text-lg font-black">{client.name || "Unnamed Lead"}</h3>
@@ -3811,7 +4087,8 @@ function ArchiveView({ clients, openClient, quickAction }) {
               </button>
             </div>
           </article>
-        ))}
+          );
+        })}
       </div>
 
       {!clients.length && (
@@ -4227,12 +4504,12 @@ function ReceiptManager({ client, clients = [], receipts = [], addReceipt, updat
   function handleFile(file) {
     if (!file) return;
     const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
-    const maxBytes = isPdf ? 4 * 1024 * 1024 : 1600 * 1024;
+    const maxBytes = 8 * 1024 * 1024;
     if (file.size > maxBytes) {
       setFileStatus(
         isPdf
-          ? "PDF is too large. In Notes, share a smaller scan or split a big receipt package before uploading."
-          : "Photo is too large. Take a lower-resolution photo or crop the receipt before uploading."
+          ? "PDF is too large. In Notes, share a smaller scan or split a big receipt package before uploading. Limit is 8 MB."
+          : "Photo is too large. Crop the receipt or choose a smaller image before uploading. Limit is 8 MB."
       );
       return;
     }

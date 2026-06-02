@@ -1,5 +1,18 @@
 @import "tailwindcss";
 
+@keyframes crm-solid-red-blink {
+    0%, 49% {
+        background-color: #ffffff;
+    }
+    50%, 100% {
+        background-color: #fee2e2;
+    }
+}
+
+.crm-unseen-change {
+    animation: crm-solid-red-blink 0.9s steps(2, end) infinite;
+}
+
 /* ===== EPF Estimate Builder (scoped) ===== */
 
 .epf {
