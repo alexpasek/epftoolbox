@@ -241,6 +241,15 @@ function createFollowUpMessages(client = {}, settings = defaultBusinessContact) 
   };
 }
 
+function createEmailDraft(client = {}, settings = defaultBusinessContact, overrides = {}) {
+  const messages = createFollowUpMessages(client, settings);
+  return {
+    to: client.email || "",
+    subject: overrides.subject ?? messages.emailSubject ?? `${normalizeSettings(settings).company} follow-up`,
+    body: overrides.body ?? messages.emailCheckIn ?? "",
+  };
+}
+
 function googleCalendarHref(client = {}, dateISO = addDaysISO(2), description = "") {
   const params = new URLSearchParams({
     action: "TEMPLATE",
@@ -599,6 +608,20 @@ function clientShareText(client = {}) {
     clientCardNote(client) ? `Note: ${clientCardNote(client).slice(0, 220)}` : "",
   ];
   return parts.filter(Boolean).join("\n");
+}
+
+function reviewRequestMessage(client = {}, settings = defaultBusinessContact) {
+  const contact = normalizeSettings(settings);
+  const firstName = String(client.name || "").trim().split(/\s+/)[0] || "there";
+  return [
+    `Hi ${firstName}, thank you again for choosing ${contact.company}.`,
+    "If you are happy with the work, could you leave us a quick review?",
+    contact.website ? `You can use our website/contact page here: ${contact.website}` : "",
+    "",
+    businessSignature(contact),
+  ]
+    .filter((line) => line !== "")
+    .join("\n");
 }
 
 function cleanName(value = "") {
@@ -1226,8 +1249,16 @@ function clientCardNote(client = {}) {
   return String(timelineNote?.content || "").trim();
 }
 
+function isBookedClient(client = {}) {
+  return client.leadStatus === "Won" || ["Scheduled", "In Progress", "Completed"].includes(client.projectStatus);
+}
+
+function isCompletedPaidClient(client = {}) {
+  return client.projectStatus === "Completed" && client.paymentStatus === "Paid";
+}
+
 function followUpState(client = {}) {
-  if (client.leadStatus === "Won" || ["Scheduled", "In Progress", "Completed"].includes(client.projectStatus)) {
+  if (isBookedClient(client)) {
     return {
       label: client.startDate ? `Job starts ${shortDate(client.startDate)}` : client.projectStatus || "Job booked",
       className: "border-emerald-200 bg-emerald-50 text-emerald-800",
@@ -1273,10 +1304,29 @@ function clientActionState(client = {}) {
     };
   }
 
-  if (client.leadStatus === "Won" || ["Scheduled", "In Progress", "Completed"].includes(client.projectStatus)) {
+  if (isBookedClient(client)) {
+    if (isCompletedPaidClient(client)) {
+      return {
+        key: "review-request",
+        label: "Completed / Paid",
+        nextAction: "Request client review",
+        primaryAction: "requestReview",
+        primaryLabel: "Request Review",
+        priority: 18,
+        className: "border-cyan-200 bg-cyan-50 text-cyan-800",
+      };
+    }
+
+    const label =
+      client.projectStatus === "In Progress"
+        ? "In Progress"
+        : client.projectStatus === "Completed"
+          ? "Completed"
+          : "Won / Booked";
+
     return {
       key: "booked",
-      label: "Won / Booked",
+      label,
       nextAction: client.paymentStatus === "Balance Due" ? "Collect balance" : "Open job details",
       primaryAction: client.paymentStatus === "Balance Due" ? "invoice" : "open",
       primaryLabel: client.paymentStatus === "Balance Due" ? "Invoice" : "Open Job",
@@ -1376,6 +1426,7 @@ export default function CrmPage() {
   const [accessError, setAccessError] = useState("");
   const [savedInvoices, setSavedInvoices] = useState([]);
   const [followUpClientId, setFollowUpClientId] = useState(null);
+  const [emailComposer, setEmailComposer] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
   const [appSettings, setAppSettings] = useState(defaultBusinessContact);
   const [seenClientChanges, setSeenClientChanges] = useState(() => normalizeSeenChanges());
@@ -1635,6 +1686,17 @@ export default function CrmPage() {
     [clients, effectiveAccessMode, followUpClientId]
   );
 
+  const emailComposerClient = useMemo(
+    () =>
+      clients.find(
+        (client) =>
+          client.id === emailComposer?.clientId &&
+          !client.deletedAt &&
+          canAccessClient(client, effectiveAccessMode)
+      ) || null,
+    [clients, effectiveAccessMode, emailComposer?.clientId]
+  );
+
   const activeClients = useMemo(
     () => clients.filter((client) => !client.deletedAt && canAccessClient(client, effectiveAccessMode)),
     [clients, effectiveAccessMode]
@@ -1720,7 +1782,8 @@ export default function CrmPage() {
           (filters.special === "Follow-Up Today" && client.followUpDate === todayISO()) ||
           (filters.special === "Estimate Sent" && client.leadStatus === "Estimate Sent") ||
           (filters.special === "Waiting for Reply" && clientActionState(client).key === "waiting-for-client") ||
-          (filters.special === "Booked" && (client.leadStatus === "Won" || ["Scheduled", "In Progress", "Completed"].includes(client.projectStatus))) ||
+          filters.special === "Latest Leads" ||
+          (filters.special === "Booked" && isBookedClient(client)) ||
           (filters.special === "No Invoice" && client.paymentStatus === "No Invoice") ||
           (filters.special === "Calgary" && isLimitedClient(client)) ||
           (filters.special === "GTA" && !isLimitedClient(client)) ||
@@ -1741,6 +1804,12 @@ export default function CrmPage() {
         );
       })
       .sort((a, b) => {
+        if (filters.special === "Latest Leads") {
+          return (
+            new Date(b.createdAt || b.updatedAt || 0).getTime() -
+            new Date(a.createdAt || a.updatedAt || 0).getTime()
+          );
+        }
         const actionDiff = clientActionState(a).priority - clientActionState(b).priority;
         if (actionDiff) return actionDiff;
         const followUpDiff = String(a.followUpDate || "9999-99-99").localeCompare(String(b.followUpDate || "9999-99-99"));
@@ -2076,6 +2145,18 @@ export default function CrmPage() {
       if (editingId) return current.map((client) => (client.id === editingId ? saved : client));
       return [saved, ...current];
     });
+    if (!editingId) {
+      setSearch("");
+      setFilters({
+        status: "All",
+        salesperson: "All",
+        city: "All",
+        service: "All",
+        paymentStatus: "All",
+        special: "Latest Leads",
+      });
+      setActiveView("Clients");
+    }
     setShowForm(false);
     setEditingId(null);
     setSmartLeadText("");
@@ -2131,6 +2212,14 @@ export default function CrmPage() {
     }
     if (field === "projectStatus" && value === "Completed") {
       updates.completedDate = client.completedDate || todayISO();
+    }
+    if (field === "projectStatus" && ["Scheduled", "In Progress", "Completed"].includes(value)) {
+      updates.leadStatus = "Won";
+      updates.estimateAcceptedAt = client.estimateAcceptedAt || nowISO();
+    }
+    if (field === "projectStatus" && value === "Completed" && client.paymentStatus === "No Invoice") {
+      updates.paymentStatus = "Balance Due";
+      updates.balanceDue = client.balanceDue || client.estimateAmount || "";
     }
     if (field === "paymentStatus" && value === "Paid") {
       updates.balanceDue = "";
@@ -2189,6 +2278,62 @@ export default function CrmPage() {
     updateClient(id, updates, makeTimelineEntry({ type, direction, content: result, createdBy: "Sales" }));
   }
 
+  function openEmailComposer(client, draftOverrides = {}) {
+    if (!client.email) {
+      alert("This client has no email address.");
+      return;
+    }
+    setEmailComposer({
+      clientId: client.id,
+      ...createEmailDraft(client, appSettings, draftOverrides),
+    });
+  }
+
+  function updateEmailComposer(field, value) {
+    setEmailComposer((current) => (current ? { ...current, [field]: value } : current));
+  }
+
+  function logComposedEmail(client, draft, contentPrefix = "Email sent/opened from CRM composer.") {
+    updateClient(
+      client.id,
+      {
+        leadStatus: client.leadStatus === "New Lead" ? "Contacted" : client.leadStatus,
+      },
+      makeTimelineEntry({
+        type: "email",
+        direction: "outbound",
+        content: `${contentPrefix}\n\nSubject: ${draft.subject || "(no subject)"}\n\n${draft.body || ""}`,
+        createdBy: "Sales",
+      })
+    );
+  }
+
+  function sendComposedEmail(client, draft) {
+    const cleanDraft = {
+      to: draft.to || client.email || "",
+      subject: draft.subject || "",
+      body: draft.body || "",
+    };
+    if (!cleanDraft.to) {
+      alert("Add a recipient email address first.");
+      return;
+    }
+    logComposedEmail(client, cleanDraft);
+    setEmailComposer(null);
+    window.setTimeout(() => {
+      window.location.href = `mailto:${encodeURIComponent(cleanDraft.to)}?subject=${encodeURIComponent(cleanDraft.subject)}&body=${encodeURIComponent(cleanDraft.body)}`;
+    }, 50);
+  }
+
+  async function copyComposedEmail(draft) {
+    const text = [`Subject: ${draft.subject || ""}`, "", draft.body || ""].join("\n");
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      window.prompt("Copy this email", text);
+    }
+  }
+
   function addClientNote(client, note, createdBy = "Sales") {
     const cleanNote = String(note || "").trim();
     if (!cleanNote) return;
@@ -2243,10 +2388,12 @@ export default function CrmPage() {
     const followUpDate = addDaysISO(2);
     const description = createFollowUpCalendarDescription(client, message, messages, appSettings);
     const shouldCreateCalendar = ["calendar", "ics", "google"].includes(action);
-    const shouldLogCommunication = ["textLog", "emailLog", "text", "email"].includes(action);
+    const shouldLogCommunication = ["textLog", "emailLog", "composeEmail", "text", "email"].includes(action);
     const actionLabel =
       action === "copy"
         ? "Follow-up message copied"
+        : action === "composeEmail"
+          ? "Email composer opened with template"
         : shouldLogCommunication
           ? `${channel.toUpperCase()} handoff opened with template`
           : "Follow-up scheduled";
@@ -2284,6 +2431,12 @@ export default function CrmPage() {
       window.setTimeout(() => {
         window.location.href = `mailto:${client.email}?subject=${subject}&body=${encodeURIComponent(message)}`;
       }, 50);
+    }
+    if (action === "composeEmail" && client.email) {
+      openEmailComposer(client, {
+        subject: messages.emailSubject || `${appSettings.company} follow-up`,
+        body: message,
+      });
     }
   }
 
@@ -2352,8 +2505,7 @@ export default function CrmPage() {
         alert("This client has no email address.");
         return;
       }
-      addCommunication(client.id, "Email Sent");
-      window.location.href = `mailto:${client.email}`;
+      openEmailComposer(client);
     }
     if (action === "estimate") {
       updateClient(
@@ -2408,6 +2560,33 @@ export default function CrmPage() {
         { paymentStatus: "Paid", balanceDue: "" },
         makeTimelineEntry({ type: "invoice", content: "Payment marked paid. Request review.", createdBy: "Sales" })
       );
+    }
+    if (action === "requestReview") {
+      if (!client.phone && !client.email) {
+        alert("Add a phone number or email before requesting a review.");
+        return;
+      }
+      const message = reviewRequestMessage(client, appSettings);
+      updateClient(
+        client.id,
+        {},
+        makeTimelineEntry({
+          type: "review",
+          direction: "outbound",
+          content: `Review request sent/opened.\n\n${message}`,
+          createdBy: "Sales",
+        })
+      );
+      if (client.phone) {
+        window.setTimeout(() => {
+          window.location.href = `sms:${client.phone}&body=${encodeURIComponent(message)}`;
+        }, 50);
+        return;
+      }
+      const subject = encodeURIComponent(`${appSettings.company} review request`);
+      window.setTimeout(() => {
+        window.location.href = `mailto:${client.email}?subject=${subject}&body=${encodeURIComponent(message)}`;
+      }, 50);
     }
     if (action === "remarket") {
       updateClient(
@@ -2605,6 +2784,7 @@ export default function CrmPage() {
             clients={dailyClients}
             savedInvoices={visibleSavedInvoices}
             setActiveView={setActiveView}
+            setFilters={setFilters}
             openClient={openClient}
             quickAction={quickAction}
             clearFollowUp={clearFollowUp}
@@ -2707,6 +2887,18 @@ export default function CrmPage() {
             settings={appSettings}
             close={() => setFollowUpClientId(null)}
             scheduleFollowUp={scheduleFollowUp}
+          />
+        )}
+
+        {emailComposer && emailComposerClient && (
+          <EmailComposer
+            client={emailComposerClient}
+            draft={emailComposer}
+            updateDraft={updateEmailComposer}
+            close={() => setEmailComposer(null)}
+            sendEmail={sendComposedEmail}
+            copyEmail={copyComposedEmail}
+            logEmail={logComposedEmail}
           />
         )}
 
@@ -2833,6 +3025,96 @@ function FollowUpActionButton({ primary = false, disabled = false, onClick, chil
   );
 }
 
+function EmailComposer({ client, draft, updateDraft, close, sendEmail, copyEmail, logEmail }) {
+  const canSend = Boolean((draft.to || client.email || "").trim());
+
+  return (
+    <aside className="fixed inset-0 z-[60] h-dvh overflow-hidden bg-slate-950/50 p-2 md:p-5">
+      <section
+        className="mx-auto flex h-full max-w-3xl flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-2xl"
+        style={{ maxHeight: "calc(100dvh - 2.5rem)" }}
+      >
+        <header className="shrink-0 border-b border-slate-200 p-3 md:p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-xs font-black uppercase text-blue-700">Write Email</p>
+              <h2 className="truncate text-xl font-black">{client.name || client.email || "CRM lead"}</h2>
+              <p className="mt-1 truncate text-sm font-bold text-slate-500">{client.service || "No service"}{client.city ? ` - ${client.city}` : ""}</p>
+            </div>
+            <button onClick={close} className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-black">
+              Close
+            </button>
+          </div>
+        </header>
+
+        <div className="grid flex-1 gap-3 overflow-auto p-3 md:p-4">
+          <label className="block text-sm font-black">
+            To
+            <input
+              type="email"
+              value={draft.to || ""}
+              onChange={(event) => updateDraft("to", event.target.value)}
+              className="mt-1 w-full rounded-md border border-slate-300 p-3 text-sm font-semibold outline-none focus:border-blue-700"
+              placeholder="client@example.com"
+            />
+          </label>
+          <label className="block text-sm font-black">
+            Subject
+            <input
+              value={draft.subject || ""}
+              onChange={(event) => updateDraft("subject", event.target.value)}
+              className="mt-1 w-full rounded-md border border-slate-300 p-3 text-sm font-semibold outline-none focus:border-blue-700"
+              placeholder="Email subject"
+            />
+          </label>
+          <label className="block min-h-0 text-sm font-black">
+            Message
+            <textarea
+              value={draft.body || ""}
+              onChange={(event) => updateDraft("body", event.target.value)}
+              className="mt-1 min-h-[320px] w-full rounded-md border border-slate-300 p-3 text-sm font-semibold leading-6 outline-none focus:border-blue-700"
+              placeholder="Write the email here..."
+              autoFocus
+            />
+          </label>
+        </div>
+
+        <footer
+          className="grid shrink-0 gap-2 border-t border-slate-200 bg-white p-3 min-[520px]:grid-cols-4"
+          style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}
+        >
+          <button
+            type="button"
+            onClick={() => copyEmail(draft)}
+            className="min-h-11 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-black"
+          >
+            Copy
+          </button>
+          <button
+            type="button"
+            disabled={!canSend}
+            onClick={() => {
+              logEmail(client, { ...draft, to: draft.to || client.email }, "Email marked sent from CRM composer.");
+              close();
+            }}
+            className="min-h-11 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-black disabled:cursor-not-allowed disabled:opacity-45"
+          >
+            Log Sent
+          </button>
+          <button
+            type="button"
+            disabled={!canSend}
+            onClick={() => sendEmail(client, draft)}
+            className="min-h-11 rounded-md bg-blue-700 px-3 py-2 text-sm font-black text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-45 min-[520px]:col-span-2"
+          >
+            Send Email
+          </button>
+        </footer>
+      </section>
+    </aside>
+  );
+}
+
 function FollowUpChooser({ client, settings, close, scheduleFollowUp }) {
   const messages = createFollowUpMessages(client, settings);
   const androidDevice = isAndroidDevice();
@@ -2890,9 +3172,9 @@ function FollowUpChooser({ client, settings, close, scheduleFollowUp }) {
                 </FollowUpActionButton>
                 <FollowUpActionButton
                   disabled={!client.email}
-                  onClick={() => scheduleFollowUp(client, emailMessage, messages, "emailLog", "email")}
+                  onClick={() => scheduleFollowUp(client, emailMessage, messages, "composeEmail", "email")}
                 >
-                  Email + Log
+                  Write Email
                 </FollowUpActionButton>
                 <FollowUpActionButton onClick={() => scheduleFollowUp(client, textMessage, messages, "copy", "text")}>
                   Copy Message
@@ -3109,7 +3391,7 @@ function ChangedClientNotice({ alert }) {
   return (
     <div className="mb-2 rounded-md border border-red-700 bg-red-700 px-3 py-2 text-white shadow-sm">
       <p className="text-xs font-black uppercase">Changed</p>
-      <p className="mt-0.5 line-clamp-2 text-sm font-bold">
+      <p className="mt-0.5 line-clamp-3 break-words text-sm font-bold [overflow-wrap:anywhere]">
         Look in {alert.place}: {alert.description}
       </p>
     </div>
@@ -3141,7 +3423,7 @@ function DashboardQueue({ title, subtitle, clients, emptyText, openClient, quick
         {clients.slice(0, 5).map((client) => {
           const changeAlert = changeAlertForClient?.(client);
           return (
-          <article key={`${title}-${client.id}`} className={`rounded-md border border-slate-200 bg-white p-3 shadow-sm ${changedCardClass(changeAlert)}`}>
+          <article key={`${title}-${client.id}`} className={`overflow-hidden rounded-md border border-slate-200 bg-white p-3 shadow-sm ${changedCardClass(changeAlert)}`}>
             <ChangedClientNotice alert={changeAlert} />
             <button onClick={() => openClient(client)} className="w-full min-w-0 text-left">
               <div className="flex items-start justify-between gap-3">
@@ -3155,7 +3437,7 @@ function DashboardQueue({ title, subtitle, clients, emptyText, openClient, quick
               </div>
               <p className="mt-1 text-sm font-bold text-slate-700">{dailyQueueReason(client)}</p>
             </button>
-            <div className="mt-3 grid grid-cols-2 gap-2">
+            <div className="mt-3 grid gap-2 min-[420px]:grid-cols-2">
               <button
                 onClick={() => quickAction(client, primaryAction === "followUp" ? "followUp" : primaryAction === "invoice" ? "invoice" : "call")}
                 className="min-h-11 rounded-md bg-blue-700 px-3 py-2 text-sm font-black text-white"
@@ -3208,7 +3490,7 @@ function ImmediateActionPanel({ clients, openClient, quickAction, setActiveView,
                 {[client.service, client.city, client.assignedTo || "Unassigned"].filter(Boolean).join(" - ")}
               </p>
             </button>
-            <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <div className="mt-3 grid gap-2 min-[420px]:grid-cols-2 sm:grid-cols-4">
               <button onClick={() => quickAction(client, "call")} className="min-h-11 rounded-md bg-blue-700 px-3 py-2 text-sm font-black text-white">
                 Call
               </button>
@@ -3230,7 +3512,7 @@ function ImmediateActionPanel({ clients, openClient, quickAction, setActiveView,
   );
 }
 
-function Dashboard({ stats, clients, savedInvoices = [], setActiveView, openClient, quickAction, changeAlertForClient }) {
+function Dashboard({ stats, clients, savedInvoices = [], setActiveView, setFilters, openClient, quickAction, changeAlertForClient }) {
   const openLeads = clients.filter((client) => !["Won", "Lost"].includes(client.leadStatus));
   const wonClients = clients.filter((client) => client.leadStatus === "Won");
   const sentEstimates = clients.filter((client) => client.leadStatus === "Estimate Sent" || client.estimateIds?.length);
@@ -3252,6 +3534,17 @@ function Dashboard({ stats, clients, savedInvoices = [], setActiveView, openClie
   const invoiceValue = savedInvoices.reduce((sum, invoice) => sum + invoiceTotal(invoice), 0);
   const invoiceTotalDue = clients.reduce((sum, client) => sum + numberValue(client.balanceDue), 0);
   const actionCount = newLeadQueue.length + followUpQueue.length + estimateQueue.length + moneyQueue.length;
+  const showLatestClients = () => {
+    setFilters?.({
+      status: "All",
+      salesperson: "All",
+      city: "All",
+      service: "All",
+      paymentStatus: "All",
+      special: "Latest Leads",
+    });
+    setActiveView("Clients");
+  };
   const ownerRows = [...new Set(clients.map((client) => client.assignedTo || "Unassigned"))]
     .map((owner) => ({
       owner,
@@ -3274,7 +3567,11 @@ function Dashboard({ stats, clients, savedInvoices = [], setActiveView, openClie
               Work top to bottom: new leads, follow-ups, estimates, then money.
             </p>
           </div>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:min-w-[520px]">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-5 lg:min-w-[620px]">
+            <button onClick={showLatestClients} className="rounded-md border border-blue-200 bg-blue-50 p-3 text-left shadow-sm">
+              <p className="text-xl font-black text-blue-800">{clients.length}</p>
+              <p className="text-xs font-bold text-blue-700">Latest</p>
+            </button>
             <button onClick={() => setActiveView("Clients")} className="rounded-md border border-slate-200 bg-slate-50 p-3 text-left shadow-sm">
               <p className="text-xl font-black">{newLeadQueue.length}</p>
               <p className="text-xs font-bold text-slate-500">New leads</p>
@@ -3434,7 +3731,7 @@ function Pipeline({ clients, openClient, changeStatus, changeAlertForClient }) {
       <div className="flex items-end justify-between">
         <div>
           <h2 className="text-xl font-black">Pipeline</h2>
-          <p className="text-sm font-semibold text-slate-500">Move leads with the stage menu on each card.</p>
+          <p className="text-sm font-semibold text-slate-500">Move leads and job status with the menus on each card.</p>
         </div>
       </div>
       <div className="flex flex-col gap-3 pb-2 md:flex-row md:overflow-x-auto">
@@ -3489,15 +3786,28 @@ function PipelineCard({ client, openClient, changeStatus, compact = false, chang
         {!compact && <p>Next: {client.followUpDate || "-"}</p>}
         <p className={compact ? "" : "col-span-2"}>Last: {lastContactDate(client) || "-"}</p>
       </div>
-      <select
-        value={client.leadStatus}
-        onChange={(e) => changeStatus(client.id, "leadStatus", e.target.value)}
-        className="mt-3 w-full rounded-md border border-slate-300 bg-white p-2 text-xs font-bold"
-      >
-        {leadStatuses.map((status) => (
-          <option key={status}>{status}</option>
-        ))}
-      </select>
+      <div className="mt-3 grid gap-2">
+        <select
+          aria-label="Lead status"
+          value={client.leadStatus}
+          onChange={(e) => changeStatus(client.id, "leadStatus", e.target.value)}
+          className="w-full rounded-md border border-slate-300 bg-white p-2 text-xs font-bold"
+        >
+          {leadStatuses.map((status) => (
+            <option key={status}>{status}</option>
+          ))}
+        </select>
+        <select
+          aria-label="Project status"
+          value={client.projectStatus}
+          onChange={(e) => changeStatus(client.id, "projectStatus", e.target.value)}
+          className="w-full rounded-md border border-slate-300 bg-white p-2 text-xs font-bold"
+        >
+          {projectStatuses.map((status) => (
+            <option key={status}>{status}</option>
+          ))}
+        </select>
+      </div>
     </article>
   );
 }
@@ -3535,16 +3845,17 @@ function ClientsView({ clients, summaryClients = clients, monthlyStats, savedInv
     followUpToday: summaryClients.filter((client) => client.followUpDate === todayISO()).length,
     waitingReply: summaryClients.filter((client) => clientActionState(client).key === "waiting-for-client").length,
     estimateSent: summaryClients.filter((client) => client.leadStatus === "Estimate Sent").length,
-    booked: summaryClients.filter((client) => client.leadStatus === "Won" || ["Scheduled", "In Progress", "Completed"].includes(client.projectStatus)).length,
+    booked: summaryClients.filter(isBookedClient).length,
     noInvoice: summaryClients.filter((client) => client.paymentStatus === "No Invoice").length,
   };
   const estimateSentValue = summaryClients
     .filter((client) => client.leadStatus === "Estimate Sent")
     .reduce((sum, client) => sum + estimateStatValue(client.estimateAmount), 0);
   const bookedValue = summaryClients
-    .filter((client) => client.leadStatus === "Won" || ["Scheduled", "In Progress", "Completed"].includes(client.projectStatus))
+    .filter(isBookedClient)
     .reduce((sum, client) => sum + estimateStatValue(client.estimateAmount), 0);
   const quickFilters = [
+    ["Latest Leads", summaryClients.length],
     ["Needs Action", clientCounts.needsAction],
     ["Not Contacted", clientCounts.notContacted],
     ["Follow-Up Today", clientCounts.followUpToday],
@@ -3614,7 +3925,7 @@ function ClientsView({ clients, summaryClients = clients, monthlyStats, savedInv
               <Filter label="City" value={filters.city} options={["All", ...filterOptions.city]} onChange={(v) => setFilters({ ...filters, city: v })} />
               <Filter label="Service" value={filters.service} options={["All", ...filterOptions.service]} onChange={(v) => setFilters({ ...filters, service: v })} />
               <Filter label="Payment" value={filters.paymentStatus} options={["All", ...paymentStatuses]} onChange={(v) => setFilters({ ...filters, paymentStatus: v })} />
-              <Filter label="Special" value={filters.special} options={["All", "Needs Action", "Not Contacted", "Follow-Up Today", "Waiting for Reply", "Estimate Sent", "Booked", "No Invoice", "Calgary", "GTA", "Follow-up overdue", "Balance due", "Completed unpaid"]} onChange={(v) => setFilters({ ...filters, special: v })} />
+              <Filter label="Special" value={filters.special} options={["All", "Latest Leads", "Needs Action", "Not Contacted", "Follow-Up Today", "Waiting for Reply", "Estimate Sent", "Booked", "No Invoice", "Calgary", "GTA", "Follow-up overdue", "Balance due", "Completed unpaid"]} onChange={(v) => setFilters({ ...filters, special: v })} />
             </div>
           </div>
         )}
@@ -3827,9 +4138,9 @@ function ClientCard({ client, estimates = [], openClient, editClient, deleteClie
             More
           </summary>
           <div className="absolute right-0 z-20 mt-2 w-44 rounded-lg border border-slate-200 bg-white p-2 shadow-xl sm:left-0 sm:right-auto">
-            {["email", "invoice", "note", "share"].map((action) => (
+            {["email", "invoice", "paid", "requestReview", "note", "share"].map((action) => (
               <button key={action} onClick={() => quickAction(client, action)} className="block min-h-11 w-full rounded-md px-3 py-2 text-left text-sm font-bold capitalize hover:bg-slate-100">
-                {action === "estimate" ? "Build Estimate" : action}
+                {action === "requestReview" ? "Request Review" : action === "paid" ? "Mark Paid" : action === "estimate" ? "Build Estimate" : action}
               </button>
             ))}
             <button onClick={() => deleteClient(client.id)} className="block min-h-11 w-full rounded-md px-3 py-2 text-left text-sm font-bold text-red-700 hover:bg-red-50">
@@ -3925,6 +4236,9 @@ function InvoicesView({ clients, savedInvoices = [], openClient, quickAction, ch
             </button>
             <button onClick={() => quickAction(client, "paid")} className="min-h-11 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-bold">
               Mark Paid
+            </button>
+            <button onClick={() => quickAction(client, "requestReview")} className="min-h-11 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-bold">
+              Request Review
             </button>
           </div>
         </article>
@@ -4162,6 +4476,7 @@ function nextClientStep(client = {}) {
   if (client.leadStatus === "Estimate Booked") return "Estimate booked: confirm appointment and address.";
   if (client.leadStatus === "Estimate Sent") return "Estimate sent: follow up and ask if they want the next date.";
   if (client.leadStatus === "Won" && client.projectStatus === "Not Scheduled") return "Won job: schedule the start date.";
+  if (isCompletedPaidClient(client)) return "Completed and paid: request a client review.";
   if (client.projectStatus === "Completed" && client.paymentStatus !== "Paid") return "Completed job: collect balance or send invoice.";
   if (client.paymentStatus === "Balance Due") return "Balance due: follow up on payment.";
   return "Keep contact info updated and log the next client action.";
@@ -4420,7 +4735,7 @@ function ClientDetail({ client, clients = [], savedInvoices = [], close, editCli
               <EditableInfo label="Labor Cost" value={money(client.laborCost)} onEdit={() => editField("laborCost", "Labor Cost", client.laborCost, money(client.laborCost))} />
             </div>
             {client.paymentStatus === "Paid" && (
-              <button onClick={() => quickAction(client, "note")} className="mt-3 rounded-md bg-blue-700 px-3 py-2 text-sm font-black text-white hover:bg-blue-800">
+              <button onClick={() => quickAction(client, "requestReview")} className="mt-3 rounded-md bg-blue-700 px-3 py-2 text-sm font-black text-white hover:bg-blue-800">
                 Request Review
               </button>
             )}
@@ -5265,6 +5580,7 @@ function taskList(clients) {
       if (client.leadStatus === "Estimate Sent") tasks.push({ client, label: "Estimate waiting for response" });
       if (client.paymentStatus === "Balance Due") tasks.push({ client, label: "Balance due" });
       if (client.leadStatus === "Won" && client.projectStatus === "Not Scheduled") tasks.push({ client, label: "Won job not scheduled" });
+      if (isCompletedPaidClient(client) && !hasTimelineText(client, "Review request")) tasks.push({ client, label: "Request client review" });
       return tasks;
     })
     .sort((a, b) => (needsReminder(a.client) === needsReminder(b.client) ? 0 : needsReminder(a.client) ? -1 : 1));
@@ -5285,6 +5601,9 @@ function FollowUpTaskList({ tasks, openClient, quickAction }) {
             <button onClick={() => quickAction(task.client, "text")} className="rounded-md border border-slate-300 px-3 py-2 text-xs font-black">Text</button>
             <button onClick={() => quickAction(task.client, "estimate")} className="rounded-md border border-blue-700 bg-blue-700 px-3 py-2 text-xs font-black text-white hover:bg-blue-800">Estimate</button>
             <button onClick={() => quickAction(task.client, "followUp")} className="rounded-md border border-blue-700 bg-blue-700 px-3 py-2 text-xs font-black text-white hover:bg-blue-800">Follow Up</button>
+            {task.label === "Request client review" && (
+              <button onClick={() => quickAction(task.client, "requestReview")} className="rounded-md border border-blue-700 bg-blue-700 px-3 py-2 text-xs font-black text-white hover:bg-blue-800">Review</button>
+            )}
             <button onClick={() => quickAction(task.client, "note")} className="rounded-md border border-slate-300 px-3 py-2 text-xs font-black">Note</button>
           </div>
         </article>
@@ -5435,6 +5754,20 @@ function ClientActionGrid({ client, quickAction, clearFollowUp }) {
             className="rounded-md px-3 py-2 text-left text-sm font-bold hover:bg-slate-100"
           >
             Invoice
+          </button>
+          <button
+            type="button"
+            onClick={() => quickAction(client, "paid")}
+            className="rounded-md px-3 py-2 text-left text-sm font-bold hover:bg-slate-100"
+          >
+            Mark Paid
+          </button>
+          <button
+            type="button"
+            onClick={() => quickAction(client, "requestReview")}
+            className="rounded-md px-3 py-2 text-left text-sm font-bold hover:bg-slate-100"
+          >
+            Request Review
           </button>
           <button
             type="button"
