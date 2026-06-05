@@ -4798,14 +4798,36 @@ function ReceiptManager({ client, clients = [], receipts = [], addReceipt, updat
   });
   const [fileStatus, setFileStatus] = useState("");
   const [receiptBusy, setReceiptBusy] = useState("");
+  const [selectedReceiptId, setSelectedReceiptId] = useState("");
   const materialsTotal = receiptTotal(receipts);
   const taxReadyTotal = receiptTotal(receipts.filter((receipt) => receipt.taxReady));
   const profit = profitAfterMaterials(client);
   const estimate = estimateStatValue(client.estimateAmount);
   const labor = numberValue(client.laborCost);
+  const selectedReceipt = receipts.find((receipt) => receipt.id === selectedReceiptId) || receipts[0] || null;
+
+  useEffect(() => {
+    if (!receipts.length) {
+      setSelectedReceiptId("");
+      return;
+    }
+    if (!selectedReceiptId || !receipts.some((receipt) => receipt.id === selectedReceiptId)) {
+      setSelectedReceiptId(receipts[0].id);
+    }
+  }, [receipts, selectedReceiptId]);
 
   function updateDraft(field, value) {
     setDraft((current) => ({ ...current, [field]: value }));
+  }
+
+  function receiptFileHref(receipt = {}) {
+    return receipt.fileUrl || receipt.fileData || "";
+  }
+
+  function isImageReceipt(receipt = {}) {
+    const type = String(receipt.fileType || "").toLowerCase();
+    const name = String(receipt.fileName || "").toLowerCase();
+    return type.startsWith("image/") || /\.(jpe?g|png|webp|gif|heic|heif)$/i.test(name);
   }
 
   function toggleLinkedClient(clientId) {
@@ -5137,61 +5159,122 @@ function ReceiptManager({ client, clients = [], receipts = [], addReceipt, updat
       </div>
 
       <div className="grid gap-2">
-        {receipts.map((receipt) => (
-          <article key={receipt.id} className="rounded-md border border-slate-300 bg-white p-3 shadow-sm shadow-slate-200">
-            <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+        {receipts.length > 0 && (
+          <section className="overflow-hidden rounded-md border border-slate-300 bg-white shadow-sm shadow-slate-200">
+            <div className="grid gap-3 border-b border-slate-200 bg-slate-50 p-3 sm:grid-cols-[minmax(0,1fr)_auto]">
               <div className="min-w-0">
-                <p className="truncate text-sm font-black">{receipt.vendor || receipt.fileName || receipt.category}</p>
-                <p className="mt-0.5 text-xs font-bold text-slate-500">
-                  {receipt.date} - {receipt.category} - {receipt.taxReady ? "Tax ready" : "Not tax ready"}
+                <p className="truncate text-sm font-black">
+                  {selectedReceipt?.vendor || selectedReceipt?.fileName || selectedReceipt?.category || "Receipts"}
                 </p>
-                {(receipt.projectLinks || []).length > 1 && (
-                  <p className="mt-1 text-xs font-black text-blue-700">
-                    Shared: {(receipt.projectLinks || []).map((link) => link.clientName).filter(Boolean).join(", ")}
-                  </p>
-                )}
-                {receipt.notes && <p className="mt-2 whitespace-pre-wrap text-sm font-semibold text-slate-700">{receipt.notes}</p>}
+                <p className="mt-0.5 text-xs font-bold text-slate-500">
+                  {receipts.length} receipt{receipts.length === 1 ? "" : "s"} attached - {money(materialsTotal)} total
+                </p>
               </div>
-              <p className="text-right text-lg font-black">{money(receipt.amount)}</p>
-            </div>
-            <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-6">
-              {receipt.fileUrl || receipt.fileData ? (
-                <a
-                  href={receipt.fileUrl || receipt.fileData}
-                  target="_blank"
-                  rel="noreferrer"
-                  download={receipt.fileName || `receipt-${receipt.date}`}
-                  className="min-h-10 rounded-md bg-slate-900 px-3 py-2 text-center text-xs font-black text-white"
-                >
-                  Open File
-                </a>
-              ) : (
-                <span className="min-h-10 rounded-md border border-dashed border-slate-300 px-3 py-2 text-center text-xs font-black text-slate-400">
-                  No File
-                </span>
-              )}
-              <button type="button" onClick={() => editReceiptAmount(receipt)} className="min-h-10 rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-black">
-                Amount
-              </button>
-              <button type="button" onClick={() => editReceiptVendor(receipt)} className="min-h-10 rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-black">
-                Vendor
-              </button>
-              <button type="button" onClick={() => shareReceipt(receipt)} className="min-h-10 rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-black">
-                Share
-              </button>
-              <button
-                type="button"
-                onClick={() => updateReceipt(receipt.id, { taxReady: !receipt.taxReady })}
-                className="min-h-10 rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-black"
+              <select
+                value={selectedReceipt?.id || ""}
+                onChange={(event) => setSelectedReceiptId(event.target.value)}
+                className="min-h-10 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-black"
               >
-                {receipt.taxReady ? "Unmark Tax" : "Tax Ready"}
-              </button>
-              <button type="button" onClick={() => deleteReceipt(receipt.id)} className="min-h-10 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs font-black text-red-700">
-                Delete
-              </button>
+                {receipts.map((receipt, index) => (
+                  <option key={receipt.id} value={receipt.id}>
+                    {index + 1}. {receipt.vendor || receipt.fileName || receipt.category} - {money(receipt.amount)}
+                  </option>
+                ))}
+              </select>
             </div>
-          </article>
-        ))}
+
+            <div className="flex gap-2 overflow-x-auto border-b border-slate-200 bg-white p-3">
+              {receipts.map((receipt, index) => {
+                const fileHref = receiptFileHref(receipt);
+                const isSelected = selectedReceipt?.id === receipt.id;
+                return (
+                  <button
+                    key={receipt.id}
+                    type="button"
+                    onClick={() => setSelectedReceiptId(receipt.id)}
+                    className={`relative h-24 w-20 shrink-0 overflow-hidden rounded-md border bg-slate-100 text-left shadow-sm ${
+                      isSelected ? "border-blue-700 ring-2 ring-blue-100" : "border-slate-200"
+                    }`}
+                    aria-label={`Show receipt ${index + 1}`}
+                  >
+                    {fileHref && isImageReceipt(receipt) ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={fileHref} alt="" className="h-full w-full object-cover" />
+                    ) : (
+                      <span className="flex h-full w-full items-center justify-center px-2 text-center text-[11px] font-black text-slate-500">
+                        {fileHref ? "PDF" : "No file"}
+                      </span>
+                    )}
+                    <span className="absolute left-1 top-1 rounded bg-white/90 px-1.5 py-0.5 text-[10px] font-black text-slate-800 shadow-sm">
+                      {index + 1}
+                    </span>
+                    {!receipt.taxReady && (
+                      <span className="absolute bottom-1 left-1 right-1 rounded bg-amber-100 px-1 py-0.5 text-center text-[10px] font-black text-amber-800">
+                        Review
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            {selectedReceipt && (
+              <article className="p-3">
+                <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-black">{selectedReceipt.vendor || selectedReceipt.fileName || selectedReceipt.category}</p>
+                    <p className="mt-0.5 text-xs font-bold text-slate-500">
+                      {selectedReceipt.date} - {selectedReceipt.category} - {selectedReceipt.taxReady ? "Tax ready" : "Not tax ready"}
+                    </p>
+                    {(selectedReceipt.projectLinks || []).length > 1 && (
+                      <p className="mt-1 text-xs font-black text-blue-700">
+                        Shared: {(selectedReceipt.projectLinks || []).map((link) => link.clientName).filter(Boolean).join(", ")}
+                      </p>
+                    )}
+                    {selectedReceipt.notes && <p className="mt-2 max-h-28 overflow-auto whitespace-pre-wrap rounded-md bg-slate-50 p-2 text-sm font-semibold text-slate-700">{selectedReceipt.notes}</p>}
+                  </div>
+                  <p className="text-right text-lg font-black">{money(selectedReceipt.amount)}</p>
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-6">
+                  {receiptFileHref(selectedReceipt) ? (
+                    <a
+                      href={receiptFileHref(selectedReceipt)}
+                      target="_blank"
+                      rel="noreferrer"
+                      download={selectedReceipt.fileName || `receipt-${selectedReceipt.date}`}
+                      className="min-h-10 rounded-md bg-slate-900 px-3 py-2 text-center text-xs font-black text-white"
+                    >
+                      Open File
+                    </a>
+                  ) : (
+                    <span className="min-h-10 rounded-md border border-dashed border-slate-300 px-3 py-2 text-center text-xs font-black text-slate-400">
+                      No File
+                    </span>
+                  )}
+                  <button type="button" onClick={() => editReceiptAmount(selectedReceipt)} className="min-h-10 rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-black">
+                    Amount
+                  </button>
+                  <button type="button" onClick={() => editReceiptVendor(selectedReceipt)} className="min-h-10 rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-black">
+                    Vendor
+                  </button>
+                  <button type="button" onClick={() => shareReceipt(selectedReceipt)} className="min-h-10 rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-black">
+                    Share
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => updateReceipt(selectedReceipt.id, { taxReady: !selectedReceipt.taxReady })}
+                    className="min-h-10 rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-black"
+                  >
+                    {selectedReceipt.taxReady ? "Unmark Tax" : "Tax Ready"}
+                  </button>
+                  <button type="button" onClick={() => deleteReceipt(selectedReceipt.id)} className="min-h-10 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs font-black text-red-700">
+                    Delete
+                  </button>
+                </div>
+              </article>
+            )}
+          </section>
+        )}
         {!receipts.length && (
           <p className="rounded-md border border-dashed border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-500">
             No receipts yet. Use your phone camera or upload a receipt image/PDF.
