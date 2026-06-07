@@ -129,6 +129,7 @@ const defaultBusinessContact = {
   phone: "647-923-6784",
   email: "info@epfproservices.com",
   website: "epfproservices.com",
+  hstNumber: "",
   title: "Popcorn ceiling specialist",
   textCheckInTemplate:
     "Hi {firstName}, this is {name} from {company}, {title}. Just following up about the {service}{cityText}. You can see more at {website}. Let me know if you have any questions or would like to book the next step.\n\n{signature}",
@@ -3269,6 +3270,7 @@ function SettingsPanel({ settings, close, saveSettings, refreshCloudClients, mar
           <Input label="Phone" value={draft.phone} onChange={(v) => updateDraft("phone", v)} />
           <Input label="Email" value={draft.email} onChange={(v) => updateDraft("email", v)} />
           <Input label="Website" value={draft.website} onChange={(v) => updateDraft("website", v)} />
+          <Input label="HST Number" value={draft.hstNumber} onChange={(v) => updateDraft("hstNumber", v)} />
           <section className="rounded-lg border border-slate-300 bg-slate-50 p-3 md:col-span-2">
             <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-start">
               <div className="min-w-0">
@@ -4830,6 +4832,93 @@ function ReceiptManager({ client, clients = [], receipts = [], addReceipt, updat
     return type.startsWith("image/") || /\.(jpe?g|png|webp|gif|heic|heif)$/i.test(name);
   }
 
+  function isDraftImage() {
+    return isImageReceipt(draft);
+  }
+
+  function dataUrlBytes(dataUrl = "") {
+    const base64 = String(dataUrl || "").split(",")[1] || "";
+    return Math.floor((base64.length * 3) / 4);
+  }
+
+  function imageFromDataUrl(dataUrl) {
+    return new Promise((resolve, reject) => {
+      const img = new window.Image();
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = dataUrl;
+    });
+  }
+
+  async function cropReceiptPhoto(fileData) {
+    const img = await imageFromDataUrl(fileData);
+    const maxSide = 1400;
+    const scale = Math.min(1, maxSide / Math.max(img.naturalWidth || img.width, img.naturalHeight || img.height));
+    const width = Math.max(1, Math.round((img.naturalWidth || img.width) * scale));
+    const height = Math.max(1, Math.round((img.naturalHeight || img.height) * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return { fileData, cropped: false };
+    ctx.drawImage(img, 0, 0, width, height);
+
+    const { data } = ctx.getImageData(0, 0, width, height);
+    const rowHits = new Uint16Array(height);
+    const colHits = new Uint16Array(width);
+    const step = Math.max(2, Math.floor(Math.max(width, height) / 520));
+
+    for (let y = 0; y < height; y += step) {
+      for (let x = 0; x < width; x += step) {
+        const index = (y * width + x) * 4;
+        const r = data[index];
+        const g = data[index + 1];
+        const b = data[index + 2];
+        const bright = (r + g + b) / 3;
+        const contrast = Math.max(r, g, b) - Math.min(r, g, b);
+        const looksLikePaper = bright > 158 && (contrast < 85 || bright > 210);
+        if (looksLikePaper) {
+          rowHits[y]++;
+          colHits[x]++;
+        }
+      }
+    }
+
+    const colThreshold = Math.max(2, Math.floor((height / step) * 0.035));
+    const rowThreshold = Math.max(2, Math.floor((width / step) * 0.035));
+    let left = 0;
+    let right = width - 1;
+    let top = 0;
+    let bottom = height - 1;
+
+    while (left < width && colHits[left] < colThreshold) left += step;
+    while (right > left && colHits[right] < colThreshold) right -= step;
+    while (top < height && rowHits[top] < rowThreshold) top += step;
+    while (bottom > top && rowHits[bottom] < rowThreshold) bottom -= step;
+
+    const pad = Math.round(Math.min(width, height) * 0.025);
+    left = Math.max(0, left - pad);
+    top = Math.max(0, top - pad);
+    right = Math.min(width - 1, right + pad);
+    bottom = Math.min(height - 1, bottom + pad);
+
+    const cropWidth = right - left + 1;
+    const cropHeight = bottom - top + 1;
+    const cropArea = cropWidth * cropHeight;
+    const fullArea = width * height;
+    if (cropWidth < width * 0.22 || cropHeight < height * 0.22 || cropArea > fullArea * 0.94) {
+      return { fileData, cropped: false };
+    }
+
+    const output = document.createElement("canvas");
+    output.width = cropWidth;
+    output.height = cropHeight;
+    const outputCtx = output.getContext("2d");
+    if (!outputCtx) return { fileData, cropped: false };
+    outputCtx.drawImage(canvas, left, top, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
+    return { fileData: output.toDataURL("image/jpeg", 0.9), cropped: true };
+  }
+
   function toggleLinkedClient(clientId) {
     setDraft((current) => {
       const selected = current.linkedClientIds || [];
@@ -4908,21 +4997,42 @@ function ReceiptManager({ client, clients = [], receipts = [], addReceipt, updat
     }
 
     const reader = new FileReader();
-    reader.onload = () => {
-      const fileData = String(reader.result || "");
+    reader.onload = async () => {
+      let fileData = String(reader.result || "");
       const amount = draft.amount || extractReceiptAmount(file.name);
+      let fileName = file.name;
+      let fileType = file.type;
+      let fileSize = file.size;
+      let cropped = false;
+
+      if (!isPdf && fileData.startsWith("data:image/")) {
+        try {
+          const scan = await cropReceiptPhoto(fileData);
+          fileData = scan.fileData;
+          cropped = scan.cropped;
+          if (cropped) {
+            fileName = file.name.replace(/\.[^.]+$/, "") + "-scan.jpg";
+            fileType = "image/jpeg";
+            fileSize = dataUrlBytes(fileData);
+          }
+        } catch (error) {
+          cropped = false;
+        }
+      }
+
       setDraft((current) => ({
         ...current,
-        fileName: file.name,
-        fileType: file.type,
-        fileSize: file.size,
+        fileName,
+        fileType,
+        fileSize,
         fileData,
         amount: current.amount || amount,
       }));
       setFileStatus(
-        amount
-          ? `Attached ${file.name}. Amount was guessed from the file name.`
-          : `Attached ${file.name}. Enter or correct the amount.`
+        [
+          cropped ? "Receipt photo was auto-cropped to the paper." : `Attached ${file.name}.`,
+          amount ? "Amount was guessed from the file name." : "Enter or correct the amount.",
+        ].join(" ")
       );
     };
     reader.onerror = () => setFileStatus("Could not read that file.");
@@ -5095,6 +5205,14 @@ function ReceiptManager({ client, clients = [], receipts = [], addReceipt, updat
           <Input label="Amount For Selected Clients" value={draft.linkedClientAmount} onChange={(v) => updateDraft("linkedClientAmount", v)} />
           <Input label="HST / Tax" value={draft.hst} onChange={(v) => updateDraft("hst", v)} />
         </div>
+        {draft.fileData && isDraftImage() && (
+          <div className="mt-3 rounded-md border border-blue-100 bg-slate-900 p-2">
+            <div className="mx-auto flex max-h-80 min-h-44 max-w-sm items-center justify-center overflow-hidden rounded bg-white">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={draft.fileData} alt="" className="max-h-80 w-full object-contain" />
+            </div>
+          </div>
+        )}
         <div className="mt-3 rounded-md border border-blue-100 bg-white p-3">
           <p className="text-xs font-black uppercase text-slate-500">Other clients involved</p>
           <div className="mt-2 grid max-h-48 gap-2 overflow-auto sm:grid-cols-2">
@@ -5235,6 +5353,14 @@ function ReceiptManager({ client, clients = [], receipts = [], addReceipt, updat
                   </div>
                   <p className="text-right text-lg font-black">{money(selectedReceipt.amount)}</p>
                 </div>
+                {receiptFileHref(selectedReceipt) && isImageReceipt(selectedReceipt) && (
+                  <div className="mt-3 rounded-md border border-slate-200 bg-slate-900 p-2">
+                    <div className="mx-auto flex max-h-[520px] min-h-64 max-w-md items-center justify-center overflow-hidden rounded bg-white">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={receiptFileHref(selectedReceipt)} alt="" className="max-h-[520px] w-full object-contain" />
+                    </div>
+                  </div>
+                )}
                 <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-6">
                   {receiptFileHref(selectedReceipt) ? (
                     <a

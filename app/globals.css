@@ -414,6 +414,10 @@
     display: none;
 }
 
+.invoice-notes-print {
+    display: none;
+}
+
 .epf .title {
     text-align: center;
 }
@@ -1725,6 +1729,22 @@ body.customer .epf .sec .roomHeader {
     .invoice-document textarea {
         min-height: 34px !important;
         overflow: visible !important;
+    }
+    .invoice-document .invoice-notes-section {
+        break-inside: auto;
+        page-break-inside: auto;
+    }
+    .invoice-document .invoice-notes-input {
+        display: none !important;
+    }
+    .invoice-document .invoice-notes-print {
+        display: block !important;
+        min-height: 34px;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+        color: #0f172a;
+        font: inherit;
     }
     .invoice-document button,
     .invoice-document .invoice-actions,

@@ -6,6 +6,7 @@ import { Suspense, startTransition, useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 
 const CRM_STORAGE_KEY = "epf.crm.clients";
+const CRM_SETTINGS_KEY = "epf.crm.settings";
 
 const BRAND_PROFILES = {
   epf: {
@@ -130,6 +131,16 @@ function parseStoredList(rawStr) {
     if (parsed && typeof parsed === "object") return [parsed];
   } catch {}
   return [];
+}
+
+function getStoredHstNumber() {
+  if (typeof window === "undefined") return "";
+  try {
+    const settings = JSON.parse(window.localStorage.getItem(CRM_SETTINGS_KEY) || "{}");
+    return String(settings?.hstNumber || "").trim();
+  } catch {
+    return "";
+  }
 }
 
 async function syncInvoiceToClientHistory(savedInvoice, savedAt) {
@@ -277,7 +288,10 @@ function InvoiceBasicPageInner() {
           });
         }
 
-        loaded = normalizeInvoice(loaded);
+        loaded = normalizeInvoice({
+          ...loaded,
+          hstNumber: loaded?.hstNumber || getStoredHstNumber(),
+        });
         if (!cancelled) {
           startTransition(() => {
             setInvoice(loaded);
@@ -764,15 +778,18 @@ function InvoiceBasicPageInner() {
 
         {/* Notes + totals */}
         <section className="grid sm:grid-cols-2 gap-4 mb-4">
-          <div>
+          <div className="invoice-notes-section">
             <div className="text-xs font-semibold text-slate-800 mb-1">
               Notes for client
             </div>
             <textarea
-              className="w-full border border-slate-200 rounded-md px-2 py-1 text-xs min-h-[80px]"
+              className="invoice-notes-input w-full border border-slate-200 rounded-md px-2 py-1 text-xs min-h-[80px]"
               value={invoice.notes || ""}
               onChange={(e) => updateField("notes", e.target.value)}
             />
+            <div className="invoice-notes-print">
+              {invoice.notes || "—"}
+            </div>
           </div>
           <div className="space-y-2 text-xs">
             <div className="invoice-settings grid grid-cols-[1.5fr,1fr] gap-2 mb-1">
