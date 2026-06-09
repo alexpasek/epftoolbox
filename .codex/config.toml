@@ -1,0 +1,34 @@
+[mcp_servers.epf_google_ads]
+command = "node"
+args = ["src/server.js"]
+cwd = "/Users/alex/epf-toolbox/epf-google-ads-mcp"
+startup_timeout_sec = 20
+tool_timeout_sec = 120
+default_tools_approval_mode = "prompt"
+
+[mcp_servers.epf_google_ads.tools.create_paused_campaign]
+approval_mode = "prompt"
+
+[mcp_servers.epf_google_ads.tools.create_paused_ad_group]
+approval_mode = "prompt"
+
+[mcp_servers.epf_google_ads.tools.create_paused_responsive_search_ad]
+approval_mode = "prompt"
+
+[mcp_servers.epf_google_ads.tools.add_negative_keywords_after_approval]
+approval_mode = "prompt"
+
+[mcp_servers.epf_google_ads.tools.set_campaign_status_after_approval]
+approval_mode = "prompt"
+
+[mcp_servers.epf_google_ads.tools.set_ad_group_status_after_approval]
+approval_mode = "prompt"
+
+[mcp_servers.epf_google_ads.tools.set_keyword_status_after_approval]
+approval_mode = "prompt"
+
+[mcp_servers.epf_google_ads.tools.update_budget_after_approval]
+approval_mode = "prompt"
+
+[mcp_servers.epf_google_ads.tools.add_keywords_after_approval]
+approval_mode = "prompt"

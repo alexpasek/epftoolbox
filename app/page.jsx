@@ -34,6 +34,13 @@ const tools = [
       "Track leads, follow-ups, estimates, payments, voice notes, and client emails from one mobile dashboard.",
   },
   {
+    href: "/ads-management",
+    label: "Ads Management",
+    badge: "Ads",
+    description:
+      "Separate Google Ads control menu for paid lead tracking, campaign workflow, keywords, negatives, and safe budget changes.",
+  },
+  {
     href: "/invoices",
     label: "Saved Invoices",
     badge: "History",
