@@ -113,3 +113,53 @@ default_tools_approval_mode = "prompt"
 ```
 
 For ChatGPT outside Codex, use a hosted MCP/App bridge rather than this local stdio config. Keep the same tool safety model and never expose `.env` secrets to the client UI.
+
+## Cloudflare Hosted MCP
+
+This project also includes a Cloudflare Worker HTTP MCP server:
+
+```bash
+cd epf-google-ads-mcp
+npm install
+npm run worker:dry-run
+npm run worker:deploy
+```
+
+The hosted endpoint is:
+
+```text
+https://epf-google-ads-mcp.<your-workers-subdomain>.workers.dev/mcp
+```
+
+The hosted server requires bearer auth. Configure these Cloudflare Worker secrets:
+
+```text
+GOOGLE_ADS_DEVELOPER_TOKEN
+GOOGLE_ADS_CLIENT_ID
+GOOGLE_ADS_CLIENT_SECRET
+GOOGLE_ADS_REFRESH_TOKEN
+GOOGLE_ADS_LOGIN_CUSTOMER_ID
+GOOGLE_ADS_CUSTOMER_ID
+MCP_BEARER_TOKEN
+```
+
+Example:
+
+```bash
+npx wrangler secret put GOOGLE_ADS_DEVELOPER_TOKEN
+npx wrangler secret put GOOGLE_ADS_CLIENT_ID
+npx wrangler secret put GOOGLE_ADS_CLIENT_SECRET
+npx wrangler secret put GOOGLE_ADS_REFRESH_TOKEN
+npx wrangler secret put GOOGLE_ADS_LOGIN_CUSTOMER_ID
+npx wrangler secret put GOOGLE_ADS_CUSTOMER_ID
+npx wrangler secret put MCP_BEARER_TOKEN
+```
+
+For Codex HTTP MCP:
+
+```toml
+[mcp_servers.epf_google_ads_hosted]
+url = "https://epf-google-ads-mcp.<your-workers-subdomain>.workers.dev/mcp"
+bearer_token_env_var = "EPF_GOOGLE_ADS_MCP_TOKEN"
+default_tools_approval_mode = "prompt"
+```
