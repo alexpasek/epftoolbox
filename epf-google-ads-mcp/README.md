@@ -71,6 +71,9 @@ Read tools:
 - `list_responsive_search_ads`
 - `get_ad_assets`
 - `list_negative_keywords`
+- `list_negative_keyword_lists`
+- `get_negative_keyword_list_keywords`
+- `list_all_negative_keywords`
 - `get_campaign_performance`
 - `get_search_terms`
 - `keyword_ideas`
@@ -95,6 +98,22 @@ Default targeting examples:
   "language": "languageConstants/1000",
   "geoTargetConstants": ["geoTargetConstants/2124"],
   "keywordPlanNetwork": "GOOGLE_SEARCH"
+}
+```
+
+Negative keyword tools:
+
+- `list_negative_keywords`: campaign and ad group negatives.
+- `list_negative_keyword_lists`: shared library exclusion lists, such as `popcorn removal - negative core`.
+- `get_negative_keyword_list_keywords`: keywords inside one shared negative keyword list by `sharedSetResourceName` or exact `name`.
+- `list_all_negative_keywords`: shared library, campaign, and ad group negatives in one response.
+
+Shared list example:
+
+```json
+{
+  "name": "popcorn removal - negative core",
+  "limit": 500
 }
 ```
 

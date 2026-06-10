@@ -114,6 +114,12 @@ const KeywordForecastSchema = KeywordPlanningSchema.extend({
   matchType: z.enum(["BROAD", "PHRASE", "EXACT"]).default("PHRASE"),
 });
 
+const NegativeKeywordListSchema = z.object({
+  sharedSetResourceName: z.string().optional().default(""),
+  name: z.string().optional().default(""),
+  limit: z.number().int().min(1).max(1000).default(500),
+});
+
 const GenericApprovedWriteSchema = z.object({
   resourceName: z.string().optional().default(""),
   campaignResourceName: z.string().optional().default(""),
@@ -761,6 +767,83 @@ function advancedReadTools(env) {
       },
     },
     simpleFilteredTool(env, "list_negative_keywords", "List campaign and ad group negative keywords.", OptionalCampaignAdGroupSchema, negativeKeywordQueries),
+    simpleQueryTool(env, "list_negative_keyword_lists", "List shared library negative keyword exclusion lists.", z.object({ limit: z.number().int().min(1).max(200).default(100) }), ({ limit }) => `
+      SELECT shared_set.resource_name, shared_set.id, shared_set.name, shared_set.type,
+        shared_set.status, shared_set.member_count, shared_set.reference_count
+      FROM shared_set
+      WHERE shared_set.type = NEGATIVE_KEYWORDS
+      ORDER BY shared_set.name
+      LIMIT ${limit}
+    `),
+    {
+      name: "get_negative_keyword_list_keywords",
+      description: "List keywords inside a shared library negative keyword list by resource name or list name.",
+      schema: NegativeKeywordListSchema,
+      handler: async (input) => {
+        const parsed = NegativeKeywordListSchema.parse(input);
+        const sharedSetResourceName = await resolveSharedNegativeKeywordList(env, parsed);
+        const rows = await queryGoogleAdsRest(env, `
+          SELECT shared_set.resource_name, shared_set.name,
+            shared_criterion.resource_name, shared_criterion.keyword.text,
+            shared_criterion.keyword.match_type
+          FROM shared_criterion
+          WHERE shared_criterion.shared_set = '${sharedSetResourceName}'
+          ORDER BY shared_criterion.keyword.text
+          LIMIT ${parsed.limit}
+        `);
+        return textResult({
+          ok: true,
+          sharedSetResourceName,
+          count: rows.length,
+          result: rows.map(formatSharedNegativeKeywordRow),
+        });
+      },
+    },
+    {
+      name: "list_all_negative_keywords",
+      description: "List shared library, campaign, and ad group negative keywords in one response.",
+      schema: OptionalCampaignAdGroupSchema,
+      handler: async (input) => {
+        const parsed = OptionalCampaignAdGroupSchema.parse(input);
+        const negativeQueries = negativeKeywordQueries(parsed);
+        const [sharedLists, campaignNegatives, adGroupNegatives] = await Promise.all([
+          queryGoogleAdsRest(env, `
+            SELECT shared_set.resource_name, shared_set.id, shared_set.name, shared_set.type,
+              shared_set.status, shared_set.member_count, shared_set.reference_count
+            FROM shared_set
+            WHERE shared_set.type = NEGATIVE_KEYWORDS
+            ORDER BY shared_set.name
+            LIMIT ${parsed.limit}
+          `).catch((error) => [{ error: error.message }]),
+          queryGoogleAdsRest(env, negativeQueries.campaignNegatives).catch((error) => [{ error: error.message }]),
+          queryGoogleAdsRest(env, negativeQueries.adGroupNegatives).catch((error) => [{ error: error.message }]),
+        ]);
+        const sharedListKeywords = {};
+        for (const row of sharedLists.filter((item) => !item.error)) {
+          const resourceName = row.sharedSet?.resourceName || row.shared_set?.resource_name;
+          const listName = row.sharedSet?.name || row.shared_set?.name || resourceName;
+          if (!resourceName) continue;
+          sharedListKeywords[listName] = await queryGoogleAdsRest(env, `
+            SELECT shared_set.resource_name, shared_set.name,
+              shared_criterion.resource_name, shared_criterion.keyword.text,
+              shared_criterion.keyword.match_type
+            FROM shared_criterion
+            WHERE shared_criterion.shared_set = '${resourceName}'
+            ORDER BY shared_criterion.keyword.text
+            LIMIT ${parsed.limit}
+          `).then((rows) => rows.map(formatSharedNegativeKeywordRow)).catch((error) => [{ error: error.message }]);
+        }
+        return textResult({
+          ok: true,
+          result: {
+            sharedLists,
+            sharedListKeywords,
+            campaignNegatives,
+            adGroupNegatives,
+          },
+        });
+      },
+    },
     simpleCampaignTool(env, "list_campaign_locations", "List targeted/excluded campaign location criteria.", campaignCriteriaQuery("LOCATION")),
     simpleCampaignTool(env, "list_campaign_languages", "List campaign language criteria.", campaignCriteriaQuery("LANGUAGE")),
     simpleCampaignTool(env, "list_ad_schedule", "List campaign ad schedule criteria.", campaignCriteriaQuery("AD_SCHEDULE")),
@@ -1223,6 +1306,34 @@ function negativeKeywordQueries(input) {
         ${adGroupFilter ? `AND ${adGroupFilter}` : ""}
       LIMIT ${input.limit}
     `,
+  };
+}
+
+async function resolveSharedNegativeKeywordList(env, input) {
+  if (input.sharedSetResourceName) return input.sharedSetResourceName;
+  if (!input.name) throw new Error("Provide sharedSetResourceName or name.");
+  const cleanName = String(input.name).replace(/'/g, "\\'");
+  const rows = await queryGoogleAdsRest(env, `
+    SELECT shared_set.resource_name, shared_set.name, shared_set.type, shared_set.status
+    FROM shared_set
+    WHERE shared_set.type = NEGATIVE_KEYWORDS
+      AND shared_set.name = '${cleanName}'
+    LIMIT 1
+  `);
+  const resourceName = rows[0]?.sharedSet?.resourceName || rows[0]?.shared_set?.resource_name;
+  if (!resourceName) throw new Error(`Negative keyword list not found: ${input.name}`);
+  return resourceName;
+}
+
+function formatSharedNegativeKeywordRow(row) {
+  const sharedSet = row.sharedSet || row.shared_set || {};
+  const criterion = row.sharedCriterion || row.shared_criterion || {};
+  return {
+    listName: sharedSet.name,
+    sharedSetResourceName: sharedSet.resourceName || sharedSet.resource_name,
+    criterionResourceName: criterion.resourceName || criterion.resource_name,
+    keyword: criterion.keyword?.text,
+    matchType: criterion.keyword?.matchType || criterion.keyword?.match_type,
   };
 }
 
