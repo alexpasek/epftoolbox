@@ -113,12 +113,56 @@ Paused create tools:
 
 Approval-gated control tools:
 
+- `rename_campaign_after_approval`
+- `rename_ad_group_after_approval`
 - `add_negative_keywords_after_approval`
+- `remove_negative_keyword_after_approval`
 - `set_campaign_status_after_approval`
 - `set_ad_group_status_after_approval`
+- `set_ad_status_after_approval`
 - `set_keyword_status_after_approval`
 - `update_budget_after_approval`
+- `change_bidding_strategy_after_approval`
 - `add_keywords_after_approval`
+- `update_keyword_match_type_after_approval`
+- `update_keyword_bid_after_approval`
+- `update_responsive_search_ad_after_approval`
+- `update_ad_final_url_after_approval`
+- `add_location_target_after_approval`
+- `remove_location_target_after_approval`
+- `set_location_bid_modifier_after_approval`
+- `add_language_after_approval`
+- `remove_language_after_approval`
+- `add_ad_schedule_after_approval`
+- `remove_ad_schedule_after_approval`
+- `set_ad_schedule_bid_modifier_after_approval`
+- `create_sitelink_asset_after_approval`
+- `attach_sitelink_to_campaign_after_approval`
+- `create_callout_asset_after_approval`
+- `attach_callout_to_campaign_after_approval`
+- `create_call_asset_after_approval`
+- `attach_call_asset_to_campaign_after_approval`
+- `create_structured_snippet_asset_after_approval`
+- `attach_structured_snippet_to_campaign_after_approval`
+- `set_device_bid_modifier_after_approval`
+- `dismiss_recommendation_after_approval`
+- `apply_recommendation_after_approval`
+- `create_label_after_approval`
+- `apply_label_to_campaign_after_approval`
+- `apply_label_to_ad_group_after_approval`
+- `apply_label_to_keyword_after_approval`
+- `apply_label_to_ad_after_approval`
+
+Rename example:
+
+```json
+{
+  "resourceName": "customers/9466544876/campaigns/123",
+  "newName": "EPF - Popcorn Ceiling Removal - Mississauga",
+  "apply": true,
+  "approvalText": "APPROVE GOOGLE ADS CHANGE"
+}
+```
 
 Recommended agent workflow:
 

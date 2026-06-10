@@ -91,17 +91,32 @@ const toolGroups = [
     ],
   },
   {
-    title: "Preview-Only Writes",
+    title: "Approval-Gated Writes",
     tools: [
       "create_paused_campaign",
       "create_paused_ad_group",
       "create_paused_responsive_search_ad",
+      "rename_campaign_after_approval",
+      "rename_ad_group_after_approval",
       "add_negative_keywords_after_approval",
+      "remove_negative_keyword_after_approval",
       "update_budget_after_approval",
+      "change_bidding_strategy_after_approval",
       "set_campaign_status_after_approval",
       "set_ad_group_status_after_approval",
       "set_ad_status_after_approval",
+      "set_keyword_status_after_approval",
       "add_keywords_after_approval",
+      "update_keyword_match_type_after_approval",
+      "update_keyword_bid_after_approval",
+      "update_responsive_search_ad_after_approval",
+      "update_ad_final_url_after_approval",
+      "add_location_target_after_approval",
+      "remove_location_target_after_approval",
+      "add_language_after_approval",
+      "remove_language_after_approval",
+      "add_ad_schedule_after_approval",
+      "remove_ad_schedule_after_approval",
     ],
   },
 ];
@@ -135,6 +150,7 @@ const promptExamples = [
   "Create a paused draft campaign plan for popcorn ceiling removal in Mississauga with a $50 daily budget.",
   "Get keyword volume and bid estimates for popcorn ceiling removal Mississauga.",
   "Suggest budget changes based on conversions and cost per conversion, but do not apply them.",
+  "Rename this campaign after approval: use rename_campaign_after_approval with apply true and approvalText APPROVE GOOGLE ADS CHANGE.",
 ];
 
 const troubleshooting = [

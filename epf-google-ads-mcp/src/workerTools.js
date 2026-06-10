@@ -1406,6 +1406,9 @@ function advancedWriteTools(env) {
   });
 
   return [
+    writeTool("rename_campaign_after_approval", "Rename a campaign after exact approval.", (p) => [{
+      campaignOperation: { update: { resourceName: p.resourceName || p.campaignResourceName, name: p.newName }, updateMask: "name" },
+    }]),
     writeTool("rename_ad_group_after_approval", "Rename an ad group after exact approval.", (p) => [{
       adGroupOperation: { update: { resourceName: p.resourceName || p.adGroupResourceName, name: p.newName }, updateMask: "name" },
     }]),
