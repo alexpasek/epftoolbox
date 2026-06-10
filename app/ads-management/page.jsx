@@ -5,6 +5,50 @@ import { useEffect, useMemo, useState } from "react";
 
 const CRM_STORAGE_KEY = "epf.crm.clients";
 const adSignals = ["ad", "ads", "google", "gmb", "ppc", "campaign", "search"];
+const mcpServerUrl = "https://epf-google-ads-mcp.webtoronto22.workers.dev/mcp";
+const mcpHealthUrl = "https://epf-google-ads-mcp.webtoronto22.workers.dev/health";
+
+const mcpSetupSteps = [
+  "Open ChatGPT Developer Mode custom MCP app setup.",
+  "Name it EPF Google Ads.",
+  `Set Server URL to ${mcpServerUrl}.`,
+  "Set Authentication to No Auth.",
+  "Create the app, then ask ChatGPT to list campaigns or show ad assets.",
+];
+
+const mcpReadTools = [
+  "list_campaigns",
+  "get_campaign_performance",
+  "get_search_terms",
+  "list_ad_groups",
+  "list_keywords",
+  "list_ads",
+  "list_responsive_search_ads",
+  "get_ad_assets",
+  "list_negative_keywords",
+  "list_landing_pages",
+  "get_change_history",
+];
+
+const mcpWriteTools = [
+  "create_paused_campaign",
+  "create_paused_ad_group",
+  "create_paused_responsive_search_ad",
+  "add_negative_keywords_after_approval",
+  "update_budget_after_approval",
+  "set_campaign_status_after_approval",
+  "set_ad_group_status_after_approval",
+  "set_ad_status_after_approval",
+  "add_keywords_after_approval",
+];
+
+const mcpPromptExamples = [
+  "Show me all Google Ads campaigns with budget, status, clicks, cost, and conversions for the last 30 days.",
+  "Show the actual responsive search ad headlines and descriptions for each ad group.",
+  "Find wasted spend and suggest negative keywords. Do not apply anything yet.",
+  "Review campaign pcr/Mississuga/Serch and tell me what a human ads manager should fix first.",
+  "Create a paused draft campaign plan for popcorn ceiling removal in Mississauga with a $50 daily budget.",
+];
 
 function todayISO() {
   return new Date().toISOString().slice(0, 10);
@@ -69,6 +113,23 @@ function Row({ label, value, detail }) {
       </span>
       <span className="font-black text-slate-900">{value}</span>
     </div>
+  );
+}
+
+function InstructionCard({ title, children }) {
+  return (
+    <div className="rounded-lg border border-slate-300 bg-white p-3 shadow-md shadow-slate-300/50">
+      <h2 className="text-lg font-black">{title}</h2>
+      <div className="mt-3">{children}</div>
+    </div>
+  );
+}
+
+function CopyBlock({ children }) {
+  return (
+    <code className="block break-all rounded-md border border-slate-200 bg-slate-950 px-3 py-2 text-xs font-bold leading-relaxed text-white">
+      {children}
+    </code>
   );
 }
 
@@ -177,6 +238,31 @@ export default function AdsManagementPage() {
         </section>
 
         <section className="mt-4 grid gap-3 lg:grid-cols-[1fr_1fr]">
+          <InstructionCard title="ChatGPT MCP Setup">
+            <div className="space-y-3">
+              <CopyBlock>{mcpServerUrl}</CopyBlock>
+              <ol className="space-y-2">
+                {mcpSetupSteps.map((item, index) => (
+                  <li key={item} className="grid grid-cols-[auto_minmax(0,1fr)] gap-3 rounded-md border border-slate-200 bg-slate-50 p-3">
+                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-700 text-xs font-black text-white">{index + 1}</span>
+                    <span className="text-sm font-bold text-slate-800">{item}</span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          </InstructionCard>
+
+          <InstructionCard title="Safety Mode">
+            <div className="space-y-3 text-sm font-bold text-slate-700">
+              <p>Current hosted MCP mode is No Auth for ChatGPT connection.</p>
+              <p>Live write actions are disabled by default. Write tools return preview only until Cloudflare variable CONFIRM_WRITE_ACTION is set to true.</p>
+              <p>New campaigns, ad groups, and ads must be created paused first. Enable or budget changes require exact approval.</p>
+              <CopyBlock>{mcpHealthUrl}</CopyBlock>
+            </div>
+          </InstructionCard>
+        </section>
+
+        <section className="mt-4 grid gap-3 lg:grid-cols-[1fr_1fr]">
           <div className="rounded-lg border border-slate-300 bg-white p-3 shadow-md shadow-slate-300/50">
             <h2 className="text-lg font-black">Daily Ads Queue</h2>
             <p className="mt-1 text-xs font-bold text-slate-500">Clean up lead handling before changing campaign spend.</p>
@@ -224,25 +310,26 @@ export default function AdsManagementPage() {
           </div>
 
           <div className="rounded-lg border border-slate-300 bg-white p-3 shadow-md shadow-slate-300/50">
-            <h2 className="text-lg font-black">Google Ads MCP Setup</h2>
-            <p className="mt-1 text-sm font-bold text-slate-600">
-              Use the separate MCP blueprint for API tools. This page is the toolbox menu and lead-control surface.
-            </p>
+            <h2 className="text-lg font-black">Main MCP Tools</h2>
+            <p className="mt-1 text-sm font-bold text-slate-600">Use these from ChatGPT after connecting the MCP app.</p>
             <div className="mt-3 grid gap-2">
-              {[
-                "Reporting",
-                "Campaigns",
-                "Ad groups",
-                "Ads",
-                "Keywords",
-                "Negatives",
-                "Budgets",
-              ].map((item) => (
-                <span key={item} className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-black">
+              {[...mcpReadTools, ...mcpWriteTools].map((item) => (
+                <span key={item} className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-black">
                   {item}
                 </span>
               ))}
             </div>
+          </div>
+        </section>
+
+        <section className="mt-4 rounded-lg border border-slate-300 bg-white p-3 shadow-md shadow-slate-300/50">
+          <h2 className="text-lg font-black">Useful ChatGPT Prompts</h2>
+          <div className="mt-3 grid gap-2 md:grid-cols-2">
+            {mcpPromptExamples.map((prompt) => (
+              <div key={prompt} className="rounded-md border border-slate-200 bg-slate-50 p-3 text-sm font-bold text-slate-800">
+                {prompt}
+              </div>
+            ))}
           </div>
         </section>
       </div>
