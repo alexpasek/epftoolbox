@@ -18,6 +18,7 @@ export const epfLocations = [
   "Milton",
   "Stoney Creek",
   "Grimsby",
+  "St. Catharines",
 ];
 
 export const lowIntentKeywordFragments = [
@@ -55,6 +56,36 @@ export const highIntentKeywordExamples = [
   "ceiling refinishing mississauga",
   "drywall repair mississauga",
   "interior painting mississauga",
+];
+
+export const epfSellingPoints = [
+  "Popcorn ceiling removal",
+  "Smooth ceiling finish",
+  "Painted popcorn removal",
+  "Dust control / minimal mess",
+  "HEPA vacuum sanding",
+  "Floor and wall protection",
+  "Primer and ceiling paint",
+  "3-year workmanship warranty",
+  "Free estimate / quote",
+];
+
+export const epfSuggestedCallouts = [
+  "Dust Controlled Process",
+  "Smooth Ceiling Finish",
+  "Free Estimates",
+  "3-Year Workmanship Warranty",
+  "Floor Protection Included",
+  "HEPA Vacuum Sanding",
+];
+
+export const epfSuggestedSitelinks = [
+  "Popcorn Ceiling Removal",
+  "Painted Popcorn Removal",
+  "Mississauga Service Area",
+  "Get a Free Quote",
+  "Interior Painting",
+  "Drywall Repair",
 ];
 
 export function campaignNameFor(service, city) {

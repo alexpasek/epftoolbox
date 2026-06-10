@@ -68,11 +68,11 @@ function toolAnnotations(tool, env) {
 }
 
 function isWriteTool(name) {
-  return /^(create_|add_|set_|update_)/.test(name);
+  return name.endsWith("_after_approval") || /^(create_|add_|set_|update_|remove_|rename_|apply_|attach_|dismiss_|change_)/.test(name);
 }
 
 function isDestructiveWriteTool(name) {
-  return /^(set_|update_)/.test(name);
+  return /^(set_|update_|remove_|rename_|apply_|dismiss_|change_)/.test(name);
 }
 
 export default {

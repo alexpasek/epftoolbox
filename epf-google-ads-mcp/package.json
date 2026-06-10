@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "node --watch src/server.js",
+    "typecheck": "find src scripts -name '*.js' -print -exec node --check {} \\;",
     "build": "node --check src/server.js && node --check src/worker.js && node --check scripts/get-refresh-token.js",
     "worker:dev": "wrangler dev",
     "worker:deploy": "wrangler deploy",
