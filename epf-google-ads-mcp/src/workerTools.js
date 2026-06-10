@@ -633,6 +633,43 @@ function advancedReadTools(env) {
       },
     },
     {
+      name: "audit_campaign_targeting",
+      description: "Read campaign network settings, location type, locations, languages, and campaign negatives before enabling.",
+      schema: ResourceLookupSchema,
+      handler: async (input) => {
+        const { resourceName, id, limit } = ResourceLookupSchema.parse(input);
+        const filter = resourceName ? `campaign.resource_name = '${resourceName}'` : `campaign.id = ${id}`;
+        if (!resourceName && !id) throw new Error("Provide campaignResourceName/resourceName or campaignId/id.");
+        const campaign = await queryGoogleAdsRest(env, `
+          SELECT campaign.resource_name, campaign.id, campaign.name, campaign.status,
+            campaign.advertising_channel_type,
+            campaign.network_settings.target_google_search,
+            campaign.network_settings.target_search_network,
+            campaign.network_settings.target_partner_search_network,
+            campaign.network_settings.target_content_network,
+            campaign.geo_target_type_setting.positive_geo_target_type,
+            campaign.geo_target_type_setting.negative_geo_target_type
+          FROM campaign
+          WHERE ${filter}
+          LIMIT 1
+        `);
+        const campaignResourceName = campaign[0]?.campaign?.resourceName || campaign[0]?.campaign?.resource_name || resourceName;
+        const criteria = await queryGoogleAdsRest(env, `
+          SELECT campaign_criterion.resource_name, campaign_criterion.type, campaign_criterion.negative,
+            campaign_criterion.keyword.text, campaign_criterion.keyword.match_type,
+            campaign_criterion.location.geo_target_constant, campaign_criterion.language.language_constant
+          FROM campaign_criterion
+          WHERE campaign_criterion.campaign = '${campaignResourceName}'
+          LIMIT ${limit}
+        `);
+        return textResult({
+          ok: true,
+          summary: "Campaign targeting audit loaded.",
+          result: buildCampaignTargetingAudit(campaign, criteria),
+        });
+      },
+    },
+    {
       name: "get_ad_group_details",
       description: "Return ad group settings, keywords, ads, negatives, bid, and performance summary.",
       schema: ResourceLookupSchema,
@@ -1719,6 +1756,38 @@ function formatPerformanceRow(row) {
     cost: formatMoneyFromMicros(costMicros),
     ctr: `${(ctr * 100).toFixed(2)}%`,
     cpc: formatMoneyFromMicros(averageCpc || (clicks ? Number(costMicros) / clicks : 0)),
+  };
+}
+
+function buildCampaignTargetingAudit(campaignRows, criteriaRows) {
+  const campaign = campaignRows[0]?.campaign || {};
+  const network = campaign.networkSettings || campaign.network_settings || {};
+  const geoType = campaign.geoTargetTypeSetting || campaign.geo_target_type_setting || {};
+  const criteria = criteriaRows.map((row) => row.campaignCriterion || row.campaign_criterion || {});
+  const locations = criteria.filter((criterion) => criterion.type === "LOCATION" && !criterion.negative);
+  const excludedLocations = criteria.filter((criterion) => criterion.type === "LOCATION" && criterion.negative);
+  const languages = criteria.filter((criterion) => criterion.type === "LANGUAGE" && !criterion.negative);
+  const negativeKeywords = criteria.filter((criterion) => criterion.type === "KEYWORD" && criterion.negative);
+  return {
+    campaign,
+    networkSettings: network,
+    geoTargetTypeSetting: geoType,
+    locations,
+    excludedLocations,
+    languages,
+    negativeKeywords,
+    checks: {
+      searchOnly:
+        Boolean(network.targetGoogleSearch ?? network.target_google_search) &&
+        Boolean(network.targetSearchNetwork ?? network.target_search_network) &&
+        !Boolean(network.targetPartnerSearchNetwork ?? network.target_partner_search_network) &&
+        !Boolean(network.targetContentNetwork ?? network.target_content_network),
+      presenceOnly:
+        (geoType.positiveGeoTargetType || geoType.positive_geo_target_type) === "PRESENCE" &&
+        (geoType.negativeGeoTargetType || geoType.negative_geo_target_type) === "PRESENCE",
+      hasLocationTargets: locations.length > 0,
+      hasCampaignNegatives: negativeKeywords.length > 0,
+    },
   };
 }
 

@@ -128,6 +128,10 @@ Suggestion-only optimization tools:
 - `suggest_budget_changes`
 - `suggest_paused_keywords`
 
+Read-only audit tools:
+
+- `audit_campaign_targeting`
+
 Paused create tools:
 
 - `create_paused_campaign`
@@ -195,6 +199,15 @@ Search-only targeting example:
   "campaignResourceName": "customers/9466544876/campaigns/123",
   "apply": true,
   "approvalText": "APPROVER"
+}
+```
+
+Campaign targeting audit example:
+
+```json
+{
+  "campaignResourceName": "customers/9466544876/campaigns/123",
+  "limit": 100
 }
 ```
 
