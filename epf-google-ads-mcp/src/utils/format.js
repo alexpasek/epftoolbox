@@ -1,5 +1,7 @@
 export function textResult(data) {
+  const structuredContent = { result: data };
   return {
+    structuredContent,
     content: [
       {
         type: "text",

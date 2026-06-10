@@ -1,11 +1,13 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
+import { z } from "zod";
 import { assertMcpAuthorized, authMode, writeActionsEnabled } from "./workerGoogleAdsClient.js";
 import { workerTools } from "./workerTools.js";
 import { textResult } from "./utils/format.js";
 
 const INSTRUCTIONS =
   "EPF Google Ads MCP controls a live Google Ads account. Read and suggest tools may run directly. Mutations require a dry-run proposal first, then apply=true and exact approvalText. Never delete resources. New campaigns, ad groups, and ads are PAUSED.";
+const GENERIC_OUTPUT_SCHEMA = { result: z.any() };
 
 function corsHeaders() {
   return {
@@ -30,17 +32,47 @@ function createServer(env) {
   });
 
   for (const tool of workerTools(env)) {
-    server.tool(tool.name, tool.description, tool.schema.shape, async (input) => {
+    server.registerTool(
+      tool.name,
+      {
+        description: tool.description,
+        inputSchema: tool.schema.shape,
+        outputSchema: GENERIC_OUTPUT_SCHEMA,
+        annotations: toolAnnotations(tool, env),
+      },
+      async (input) => {
       try {
         const result = await tool.handler(input || {});
         return result?.content ? result : textResult(result);
       } catch (error) {
         return textResult({ ok: false, tool: tool.name, error: error?.message || String(error) });
       }
-    });
+      }
+    );
   }
 
   return server;
+}
+
+function toolAnnotations(tool, env) {
+  const writeTool = isWriteTool(tool.name);
+  const writesEnabled = writeActionsEnabled(env);
+  const readOnly = !writeTool || !writesEnabled;
+  return {
+    title: tool.name,
+    readOnlyHint: readOnly,
+    destructiveHint: readOnly ? false : isDestructiveWriteTool(tool.name),
+    idempotentHint: readOnly || tool.name.startsWith("set_") || tool.name.startsWith("update_"),
+    openWorldHint: false,
+  };
+}
+
+function isWriteTool(name) {
+  return /^(create_|add_|set_|update_)/.test(name);
+}
+
+function isDestructiveWriteTool(name) {
+  return /^(set_|update_)/.test(name);
 }
 
 export default {
