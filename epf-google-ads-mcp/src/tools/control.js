@@ -20,6 +20,12 @@ const BudgetSchema = z.object({
   apply: z.boolean().default(false),
 });
 
+const CampaignResourceSchema = z.object({
+  campaignResourceName: z.string().min(1),
+  approvalText: z.string().optional().default(""),
+  apply: z.boolean().default(false),
+});
+
 const AddKeywordsSchema = z.object({
   adGroupResourceName: z.string().min(1),
   keywords: z.array(z.string().min(1)).min(1),
@@ -113,6 +119,44 @@ export const controlTools = [
       if (!ensureApplyApproved(parsed.apply)) return approvalRequired("update_budget_after_approval", { ...parsed, operations });
       requireExactApproval(parsed.approvalText, APPROVAL_TEXT);
       return applied("update_budget_after_approval", await mutateGoogleAds(operations));
+    },
+  },
+  {
+    name: "set_search_campaign_targeting_after_approval",
+    description: "Set a campaign to Search-only networks and presence-only location targeting after exact approval.",
+    schema: CampaignResourceSchema,
+    handler: async (input) => {
+      const parsed = CampaignResourceSchema.parse(input);
+      const operations = [
+        {
+          entity: "campaign",
+          operation: "update",
+          resource: {
+            resource_name: parsed.campaignResourceName,
+            network_settings: {
+              target_google_search: true,
+              target_search_network: true,
+              target_partner_search_network: false,
+              target_content_network: false,
+            },
+            geo_target_type_setting: {
+              positive_geo_target_type: "PRESENCE",
+              negative_geo_target_type: "PRESENCE",
+            },
+          },
+          update_mask: [
+            "network_settings.target_google_search",
+            "network_settings.target_search_network",
+            "network_settings.target_partner_search_network",
+            "network_settings.target_content_network",
+            "geo_target_type_setting.positive_geo_target_type",
+            "geo_target_type_setting.negative_geo_target_type",
+          ],
+        },
+      ];
+      if (!ensureApplyApproved(parsed.apply)) return approvalRequired("set_search_campaign_targeting_after_approval", { ...parsed, operations });
+      requireExactApproval(parsed.approvalText, APPROVAL_TEXT);
+      return applied("set_search_campaign_targeting_after_approval", await mutateGoogleAds(operations));
     },
   },
   {

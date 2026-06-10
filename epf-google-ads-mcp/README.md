@@ -145,6 +145,7 @@ Approval-gated control tools:
 - `set_ad_status_after_approval`
 - `set_keyword_status_after_approval`
 - `update_budget_after_approval`
+- `set_search_campaign_targeting_after_approval`
 - `change_bidding_strategy_after_approval`
 - `add_keywords_after_approval`
 - `update_keyword_match_type_after_approval`
@@ -182,6 +183,16 @@ Rename example:
 {
   "resourceName": "customers/9466544876/campaigns/123",
   "newName": "EPF - Popcorn Ceiling Removal - Mississauga",
+  "apply": true,
+  "approvalText": "APPROVER"
+}
+```
+
+Search-only targeting example:
+
+```json
+{
+  "campaignResourceName": "customers/9466544876/campaigns/123",
   "apply": true,
   "approvalText": "APPROVER"
 }
