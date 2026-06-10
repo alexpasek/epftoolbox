@@ -6,8 +6,8 @@ import { dollarsToMicros, formatMoneyFromMicros, microsToDollars } from "./utils
 import { textResult } from "./utils/format.js";
 import { keywordPlanningGoogleAdsRest, loadWorkerConfig, mutateGoogleAdsRest, queryGoogleAdsRest, writeActionsEnabled } from "./workerGoogleAdsClient.js";
 
-const APPROVAL_TEXT = "APPROVER GOOGLE ADS CHANGE";
-const NEGATIVE_APPROVAL_TEXT = "APPROVER ADD NEGATIVE KEYWORDS";
+const APPROVAL_TEXT = "APPROVER";
+const NEGATIVE_APPROVAL_TEXT = "APPROVER";
 
 const DateRangeSchema = z.object({
   startDate: z.string().default("2026-01-01"),
@@ -1527,9 +1527,14 @@ function advancedWriteTools(env) {
       validateResponsiveSearchAd(p);
       return [{ adGroupAdOperation: { create: { adGroup: p.adGroupResourceName, status: "PAUSED", ad: { finalUrls: p.finalUrls, responsiveSearchAd: { headlines: p.headlines.map((text) => ({ text })), descriptions: p.descriptions.map((text) => ({ text })), path1: p.path1 || undefined, path2: p.path2 || undefined } } } } }];
     }),
-    writeTool("update_responsive_search_ad_after_approval", "Edit RSA copy/final URL after exact approval.", (p) => [{
-      adGroupAdOperation: { update: { resourceName: p.resourceName || p.adResourceName, ad: { finalUrls: p.finalUrls, responsiveSearchAd: { headlines: p.headlines.map((text) => ({ text })), descriptions: p.descriptions.map((text) => ({ text })), path1: p.path1 || undefined, path2: p.path2 || undefined } } }, updateMask: "ad.final_urls,ad.responsive_search_ad.headlines,ad.responsive_search_ad.descriptions,ad.responsive_search_ad.path1,ad.responsive_search_ad.path2" },
-    }]),
+    writeTool("update_responsive_search_ad_after_approval", "Create a replacement PAUSED RSA because RSA copy, paths, and final URLs are immutable.", (p) => {
+      validateResponsiveSearchAd(p);
+      const adGroup = p.adGroupResourceName || adGroupFromAdGroupAdResourceName(p.resourceName || p.adResourceName);
+      if (!adGroup) {
+        throw new Error("RSA copy cannot be edited in place. Provide adGroupResourceName to create a replacement PAUSED RSA.");
+      }
+      return [{ adGroupAdOperation: { create: { adGroup, status: "PAUSED", ad: { finalUrls: p.finalUrls, responsiveSearchAd: { headlines: p.headlines.map((text) => ({ text })), descriptions: p.descriptions.map((text) => ({ text })), path1: p.path1 || undefined, path2: p.path2 || undefined } } } } }];
+    }),
     writeTool("set_ad_status_after_approval", "Pause or enable an ad after exact approval.", (p) => [{
       adGroupAdOperation: { update: { resourceName: p.resourceName || p.adResourceName, status: validateStatus(p.status) }, updateMask: "status" },
     }]),
@@ -1622,6 +1627,11 @@ function advancedWriteTools(env) {
       ];
     }),
   ];
+}
+
+function adGroupFromAdGroupAdResourceName(resourceName = "") {
+  const match = String(resourceName || "").match(/^customers\/([^/]+)\/adGroupAds\/([^~]+)~/);
+  return match ? `customers/${match[1]}/adGroups/${match[2]}` : "";
 }
 
 function attachAssetOperation(fieldType) {

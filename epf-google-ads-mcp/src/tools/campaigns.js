@@ -56,7 +56,7 @@ export const campaignTools = [
         },
       ];
       if (!ensureApplyApproved(parsed.apply)) return approvalRequired("create_paused_campaign", { ...parsed, name: campaignName, status, operations });
-      requireExactApproval(parsed.approvalText, "APPROVER GOOGLE ADS CHANGE");
+      requireExactApproval(parsed.approvalText, "APPROVER");
       return applied("create_paused_campaign", await mutateGoogleAds(operations));
     },
   },

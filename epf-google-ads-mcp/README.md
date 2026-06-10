@@ -34,7 +34,7 @@ Write tools default to dry-run proposals and return `requiresApproval: true`. To
 ```json
 {
   "apply": true,
-  "approvalText": "APPROVER GOOGLE ADS CHANGE"
+  "approvalText": "APPROVER"
 }
 ```
 
@@ -43,7 +43,7 @@ For negative keyword application, use:
 ```json
 {
   "apply": true,
-  "approvalText": "APPROVER ADD NEGATIVE KEYWORDS"
+  "approvalText": "APPROVER"
 }
 ```
 
@@ -183,7 +183,7 @@ Rename example:
   "resourceName": "customers/9466544876/campaigns/123",
   "newName": "EPF - Popcorn Ceiling Removal - Mississauga",
   "apply": true,
-  "approvalText": "APPROVER GOOGLE ADS CHANGE"
+  "approvalText": "APPROVER"
 }
 ```
 

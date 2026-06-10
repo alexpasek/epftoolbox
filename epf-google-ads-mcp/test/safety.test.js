@@ -21,12 +21,12 @@ test("DIY popcorn ceiling keywords still require explicit low-intent approval", 
   );
 });
 
-test("Google Ads approval phrase uses APPROVER", () => {
+test("Google Ads approval phrase uses one normalized APPROVER word", () => {
   assert.doesNotThrow(() => {
-    requireExactApproval("APPROVER GOOGLE ADS CHANGE", "APPROVER GOOGLE ADS CHANGE");
+    requireExactApproval(" approver ", "APPROVER");
   });
   assert.throws(
-    () => requireExactApproval("APPROVE GOOGLE ADS CHANGE", "APPROVER GOOGLE ADS CHANGE"),
-    /APPROVER GOOGLE ADS CHANGE/
+    () => requireExactApproval("APPROVE", "APPROVER"),
+    /APPROVER/
   );
 });

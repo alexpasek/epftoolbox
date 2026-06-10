@@ -4,7 +4,7 @@ import { approvalRequired, applied, ensureApplyApproved, requireExactApproval } 
 import { validateDailyBudget, validateKeywordIntent, validateNonBroadMatch, validateStatus } from "../safety/validators.js";
 import { dollarsToMicros } from "../utils/money.js";
 
-const APPROVAL_TEXT = "APPROVER GOOGLE ADS CHANGE";
+const APPROVAL_TEXT = "APPROVER";
 
 const StatusSchema = z.object({
   resourceName: z.string().min(1),

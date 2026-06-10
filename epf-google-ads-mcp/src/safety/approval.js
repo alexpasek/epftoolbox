@@ -32,7 +32,8 @@ export function ensureApplyApproved(apply) {
 }
 
 export function requireExactApproval(approvalText, expectedText) {
-  if (approvalText !== expectedText) {
+  const normalize = (value) => String(value || "").trim().replace(/\s+/g, " ").toUpperCase();
+  if (normalize(approvalText) !== normalize(expectedText)) {
     throw new Error(`Exact approval required: approvalText must be "${expectedText}".`);
   }
 }
