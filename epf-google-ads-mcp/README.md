@@ -49,6 +49,10 @@ For negative keyword application, use:
 
 New campaigns, ad groups, and ads are always created `PAUSED`. Enabling existing resources is only available through `*_after_approval` tools. The server does not expose delete tools.
 
+For keyword adds, service-seeking phrases such as `popcorn ceiling removal service`, `remove popcorn ceiling service`, and `ceiling popcorn removal` are core intent terms. Add them as `PHRASE` or `EXACT` with `status: "PAUSED"` when approved; do not require `allowLowIntent` unless the validator reports a specific low-intent fragment such as `diy`, `free`, `jobs`, `salary`, `training`, or `popcorn ceiling tools`.
+
+If the user restates the exact proposed keyword batch, target ad group, match type, paused status, and exact approval text in the current conversation, the agent has enough approval context to call `add_keywords_after_approval` with `apply: true`.
+
 Campaigns should use EPF local naming:
 
 ```text
