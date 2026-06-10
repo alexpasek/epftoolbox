@@ -427,6 +427,18 @@ export function workerTools(env) {
                 status: "PAUSED",
                 advertisingChannelType: "SEARCH",
                 campaignBudget: `customers/${config.customerId}/campaignBudgets/${budgetTempId}`,
+                manualCpc: {},
+                containsEuPoliticalAdvertising: "DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING",
+                networkSettings: {
+                  targetGoogleSearch: true,
+                  targetSearchNetwork: true,
+                  targetPartnerSearchNetwork: false,
+                  targetContentNetwork: false,
+                },
+                geoTargetTypeSetting: {
+                  positiveGeoTargetType: "PRESENCE",
+                  negativeGeoTargetType: "PRESENCE",
+                },
               },
             },
           },
@@ -586,8 +598,8 @@ function advancedReadTools(env) {
         if (!resourceName && !id) throw new Error("Provide campaignResourceName or campaignId.");
         const campaign = await queryGoogleAdsRest(env, `
           SELECT campaign.resource_name, campaign.id, campaign.name, campaign.status, campaign.serving_status,
-            campaign.advertising_channel_type, campaign.bidding_strategy_type, campaign.start_date,
-            campaign.end_date, campaign.final_url_suffix, campaign.tracking_url_template,
+            campaign.advertising_channel_type, campaign.bidding_strategy_type,
+            campaign.final_url_suffix, campaign.tracking_url_template,
             campaign.network_settings.target_google_search,
             campaign.network_settings.target_search_network,
             campaign.network_settings.target_partner_search_network,
@@ -1519,6 +1531,24 @@ function advancedWriteTools(env) {
   return [
     writeTool("rename_campaign_after_approval", "Rename a campaign after exact approval.", (p) => [{
       campaignOperation: { update: { resourceName: p.resourceName || p.campaignResourceName, name: p.newName }, updateMask: "name" },
+    }]),
+    writeTool("set_search_campaign_targeting_after_approval", "Set a campaign to Search-only networks and presence-only location targeting after exact approval.", (p) => [{
+      campaignOperation: {
+        update: {
+          resourceName: p.resourceName || p.campaignResourceName,
+          networkSettings: {
+            targetGoogleSearch: true,
+            targetSearchNetwork: true,
+            targetPartnerSearchNetwork: false,
+            targetContentNetwork: false,
+          },
+          geoTargetTypeSetting: {
+            positiveGeoTargetType: "PRESENCE",
+            negativeGeoTargetType: "PRESENCE",
+          },
+        },
+        updateMask: "network_settings.target_google_search,network_settings.target_search_network,network_settings.target_partner_search_network,network_settings.target_content_network,geo_target_type_setting.positive_geo_target_type,geo_target_type_setting.negative_geo_target_type",
+      },
     }]),
     writeTool("rename_ad_group_after_approval", "Rename an ad group after exact approval.", (p) => [{
       adGroupOperation: { update: { resourceName: p.resourceName || p.adGroupResourceName, name: p.newName }, updateMask: "name" },

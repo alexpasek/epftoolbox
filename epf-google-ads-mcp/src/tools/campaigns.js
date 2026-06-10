@@ -52,6 +52,18 @@ export const campaignTools = [
             status,
             advertising_channel_type: "SEARCH",
             campaign_budget: `customers/${config.customerId}/campaignBudgets/${budgetTempId}`,
+            manual_cpc: {},
+            contains_eu_political_advertising: "DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING",
+            network_settings: {
+              target_google_search: true,
+              target_search_network: true,
+              target_partner_search_network: false,
+              target_content_network: false,
+            },
+            geo_target_type_setting: {
+              positive_geo_target_type: "PRESENCE",
+              negative_geo_target_type: "PRESENCE",
+            },
           },
         },
       ];
