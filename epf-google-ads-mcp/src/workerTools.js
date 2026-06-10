@@ -678,6 +678,26 @@ function advancedReadTools(env) {
         `));
       },
     },
+    {
+      name: "get_ad_assets",
+      description: "Read actual ad creative assets: final URLs, RSA headlines, descriptions, paths, ad strength, and policy status.",
+      schema: OptionalCampaignAdGroupSchema.extend({ adResourceName: z.string().optional().default("") }),
+      handler: async (input) => {
+        const parsed = OptionalCampaignAdGroupSchema.extend({ adResourceName: z.string().optional().default("") }).parse(input);
+        const filters = [
+          parsed.adResourceName && `ad_group_ad.resource_name = '${parsed.adResourceName}'`,
+          parsed.campaignResourceName && `campaign.resource_name = '${parsed.campaignResourceName}'`,
+          parsed.adGroupResourceName && `ad_group.resource_name = '${parsed.adGroupResourceName}'`,
+          parsed.status && `ad_group_ad.status = ${parsed.status}`,
+        ].filter(Boolean);
+        const rows = await queryGoogleAdsRest(env, adQuery(filters.join(" AND "), parsed.limit));
+        return textResult({
+          ok: true,
+          summary: `${rows.length} ads loaded with creative assets.`,
+          result: rows.map(formatAdAssetRow),
+        });
+      },
+    },
     reportTool(env, "get_ad_group_performance", "ad_group", "campaign.name, ad_group.name, ad_group.resource_name", "ad_group.name"),
     reportTool(env, "get_keyword_performance", "keyword_view", "campaign.name, ad_group.name, ad_group_criterion.resource_name, ad_group_criterion.keyword.text, ad_group_criterion.keyword.match_type, ad_group_criterion.quality_info.quality_score", "ad_group_criterion.keyword.text"),
     reportTool(env, "get_ad_performance", "ad_group_ad", "campaign.name, ad_group.name, ad_group_ad.resource_name, ad_group_ad.ad.id, ad_group_ad.ad.type", "ad_group_ad.ad.id"),
@@ -949,6 +969,44 @@ function adQuery(filter = "", limit = 100) {
     ORDER BY campaign.name, ad_group.name, ad_group_ad.ad.id
     LIMIT ${limit}
   `;
+}
+
+function formatAdAssetRow(row) {
+  const adGroupAd = row.adGroupAd || row.ad_group_ad || {};
+  const ad = adGroupAd.ad || {};
+  const rsa = ad.responsiveSearchAd || ad.responsive_search_ad || {};
+  return {
+    campaign: {
+      name: row.campaign?.name,
+      resourceName: row.campaign?.resourceName || row.campaign?.resource_name,
+    },
+    adGroup: {
+      name: row.adGroup?.name || row.ad_group?.name,
+      resourceName: row.adGroup?.resourceName || row.ad_group?.resource_name,
+    },
+    ad: {
+      resourceName: adGroupAd.resourceName || adGroupAd.resource_name,
+      adResourceName: ad.resourceName || ad.resource_name,
+      id: ad.id,
+      type: ad.type,
+      status: adGroupAd.status,
+      finalUrls: ad.finalUrls || ad.final_urls || [],
+      path1: rsa.path1 || "",
+      path2: rsa.path2 || "",
+      headlines: (rsa.headlines || []).map((asset) => ({
+        text: asset.text,
+        performanceLabel: asset.assetPerformanceLabel || asset.asset_performance_label || "",
+        approvalStatus: asset.policySummaryInfo?.approvalStatus || asset.policy_summary_info?.approval_status || "",
+      })),
+      descriptions: (rsa.descriptions || []).map((asset) => ({
+        text: asset.text,
+        performanceLabel: asset.assetPerformanceLabel || asset.asset_performance_label || "",
+        approvalStatus: asset.policySummaryInfo?.approvalStatus || asset.policy_summary_info?.approval_status || "",
+      })),
+      adStrength: adGroupAd.adStrength || adGroupAd.ad_strength || "",
+      policyApprovalStatus: adGroupAd.policySummary?.approvalStatus || adGroupAd.policy_summary?.approval_status || "",
+    },
+  };
 }
 
 function negativeKeywordQueries(input) {
