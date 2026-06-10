@@ -91,6 +91,11 @@ export async function mutateGoogleAdsRest(env, mutateOperations) {
   });
 }
 
+export async function keywordPlanningGoogleAdsRest(env, method, body) {
+  const config = loadWorkerConfig(env);
+  return googleAdsFetch(config, `/customers/${config.customerId}:${method}`, body);
+}
+
 export function assertMcpAuthorized(request, env) {
   if (authMode(env) === "no_auth") return null;
 

@@ -4,7 +4,7 @@ import { approvalRequired, applied, ensureApplyApproved, requireExactApproval } 
 import { validateCampaignName, validateDailyBudget, validateKeywordIntent, validateLocalIntentName, validateNonBroadMatch, validateResponsiveSearchAd, validateServiceAndLocation, validateStatus } from "./safety/validators.js";
 import { dollarsToMicros, formatMoneyFromMicros, microsToDollars } from "./utils/money.js";
 import { textResult } from "./utils/format.js";
-import { loadWorkerConfig, mutateGoogleAdsRest, queryGoogleAdsRest, writeActionsEnabled } from "./workerGoogleAdsClient.js";
+import { keywordPlanningGoogleAdsRest, loadWorkerConfig, mutateGoogleAdsRest, queryGoogleAdsRest, writeActionsEnabled } from "./workerGoogleAdsClient.js";
 
 const APPROVAL_TEXT = "APPROVE GOOGLE ADS CHANGE";
 const NEGATIVE_APPROVAL_TEXT = "APPROVE ADD NEGATIVE KEYWORDS";
@@ -94,6 +94,24 @@ const OptionalCampaignAdGroupSchema = z.object({
   adGroupResourceName: z.string().optional().default(""),
   status: z.string().optional().default(""),
   limit: z.number().int().min(1).max(200).default(100),
+});
+
+const KeywordPlanningSchema = z.object({
+  keywords: z.array(z.string().min(1)).min(1).max(200),
+  language: z.string().optional().default("languageConstants/1000"),
+  geoTargetConstants: z.array(z.string().min(1)).optional().default(["geoTargetConstants/2124"]),
+  keywordPlanNetwork: z.enum(["GOOGLE_SEARCH", "GOOGLE_SEARCH_AND_PARTNERS"]).default("GOOGLE_SEARCH"),
+  pageSize: z.number().int().min(1).max(10000).default(100),
+});
+
+const KeywordIdeasSchema = KeywordPlanningSchema.extend({
+  siteUrl: z.string().url().optional().default(""),
+  includeAdultKeywords: z.boolean().default(false),
+});
+
+const KeywordForecastSchema = KeywordPlanningSchema.extend({
+  cpcBidMicros: z.number().int().positive().optional(),
+  matchType: z.enum(["BROAD", "PHRASE", "EXACT"]).default("PHRASE"),
 });
 
 const GenericApprovedWriteSchema = z.object({
@@ -215,6 +233,7 @@ export function workerTools(env) {
       },
     },
     ...advancedReadTools(env),
+    ...keywordPlanningTools(env),
     ...epfPlanningTools(),
     {
       name: "get_campaign_performance",
@@ -808,6 +827,118 @@ function advancedReadTools(env) {
   ];
 }
 
+function keywordPlanningTools(env) {
+  return [
+    {
+      name: "keyword_ideas",
+      description: "Search Google Keyword Planner for new keyword ideas with search volume, top-of-page bids, and competition. Read-only.",
+      schema: KeywordIdeasSchema,
+      handler: async (input) => {
+        const parsed = KeywordIdeasSchema.parse(input);
+        const seed = parsed.siteUrl
+          ? { keywordAndUrlSeed: { keywords: parsed.keywords, url: parsed.siteUrl } }
+          : { keywordSeed: { keywords: parsed.keywords } };
+        const data = await safeKeywordPlanningCall(env, "generateKeywordIdeas", {
+          language: parsed.language,
+          geoTargetConstants: parsed.geoTargetConstants,
+          keywordPlanNetwork: parsed.keywordPlanNetwork,
+          includeAdultKeywords: parsed.includeAdultKeywords,
+          pageSize: parsed.pageSize,
+          ...seed,
+        });
+        if (data.error) return textResult(data);
+        const ideas = (data.results || []).map(formatKeywordIdea);
+        return textResult({
+          ok: true,
+          mutationAllowed: false,
+          summary: `${ideas.length} keyword ideas returned.`,
+          result: ideas,
+        });
+      },
+    },
+    {
+      name: "get_keyword_volume",
+      description: "Get monthly search volume, top-of-page bid estimates, and competition level for supplied keywords. Read-only.",
+      schema: KeywordPlanningSchema,
+      handler: async (input) => {
+        const parsed = KeywordPlanningSchema.parse(input);
+        const data = await safeKeywordPlanningCall(env, "generateKeywordHistoricalMetrics", {
+          keywords: parsed.keywords,
+          language: parsed.language,
+          geoTargetConstants: parsed.geoTargetConstants,
+          keywordPlanNetwork: parsed.keywordPlanNetwork,
+        });
+        if (data.error) return textResult(data);
+        const metrics = (data.results || []).map(formatKeywordHistoricalMetric);
+        return textResult({
+          ok: true,
+          mutationAllowed: false,
+          summary: `${metrics.length} keyword volume rows returned.`,
+          result: metrics,
+        });
+      },
+    },
+    {
+      name: "get_keyword_forecast",
+      description: "Get forecast estimates for keyword clicks, impressions, cost, conversions, CPC, and CTR. Read-only.",
+      schema: KeywordForecastSchema,
+      handler: async (input) => {
+        const parsed = KeywordForecastSchema.parse(input);
+        const data = await safeKeywordPlanningCall(env, "generateKeywordForecastMetrics", {
+          campaign: {
+            keywordPlanNetwork: parsed.keywordPlanNetwork,
+            geoModifiers: parsed.geoTargetConstants.map((geoTargetConstant) => ({ geoTargetConstant })),
+            languageConstants: [parsed.language],
+            biddingStrategy: {
+              manualCpcBiddingStrategy: {
+                maxCpcBidMicros: parsed.cpcBidMicros ? String(parsed.cpcBidMicros) : undefined,
+              },
+            },
+            adGroups: [
+              {
+                keywords: parsed.keywords.map((text) => ({
+                  text,
+                  matchType: parsed.matchType,
+                  cpcBidMicros: parsed.cpcBidMicros ? String(parsed.cpcBidMicros) : undefined,
+                })),
+              },
+            ],
+          },
+        });
+        if (data.error) return textResult(data);
+        return textResult({
+          ok: true,
+          mutationAllowed: false,
+          summary: "Keyword forecast loaded.",
+          result: formatKeywordForecast(data),
+        });
+      },
+    },
+  ];
+}
+
+async function safeKeywordPlanningCall(env, method, body) {
+  try {
+    return await keywordPlanningGoogleAdsRest(env, method, body);
+  } catch (error) {
+    const message = error?.message || String(error);
+    if (message.includes("DEVELOPER_TOKEN_NOT_APPROVED") || message.includes("explorer access")) {
+      return {
+        ok: false,
+        error: "Google Ads developer token is not approved for Keyword Planner API methods.",
+        code: "DEVELOPER_TOKEN_NOT_APPROVED",
+        requiredAction: "Apply for Basic or Standard Google Ads API access in Google Ads API Center. Explorer access can read normal account data but cannot use Keyword Planner idea, volume, or forecast methods.",
+        mutationAllowed: false,
+      };
+    }
+    return {
+      ok: false,
+      error: message,
+      mutationAllowed: false,
+    };
+  }
+}
+
 function controlTools(env) {
   return [
     statusTool(env, "set_campaign_status_after_approval", "campaignOperation"),
@@ -1006,6 +1137,69 @@ function formatAdAssetRow(row) {
       adStrength: adGroupAd.adStrength || adGroupAd.ad_strength || "",
       policyApprovalStatus: adGroupAd.policySummary?.approvalStatus || adGroupAd.policy_summary?.approval_status || "",
     },
+  };
+}
+
+function formatKeywordIdea(row) {
+  const metrics = row.keywordIdeaMetrics || row.keyword_idea_metrics || {};
+  return {
+    text: row.text,
+    closeVariants: row.closeVariants || row.close_variants || [],
+    avgMonthlySearches: Number(metrics.avgMonthlySearches || metrics.avg_monthly_searches || 0),
+    competition: metrics.competition || "",
+    competitionIndex: Number(metrics.competitionIndex || metrics.competition_index || 0),
+    lowTopOfPageBid: formatMoneyFromMicros(metrics.lowTopOfPageBidMicros || metrics.low_top_of_page_bid_micros || 0),
+    highTopOfPageBid: formatMoneyFromMicros(metrics.highTopOfPageBidMicros || metrics.high_top_of_page_bid_micros || 0),
+    monthlySearchVolumes: formatMonthlySearchVolumes(metrics.monthlySearchVolumes || metrics.monthly_search_volumes || []),
+  };
+}
+
+function formatKeywordHistoricalMetric(row) {
+  const metrics = row.keywordMetrics || row.keyword_metrics || {};
+  return {
+    text: row.text,
+    closeVariants: row.closeVariants || row.close_variants || [],
+    avgMonthlySearches: Number(metrics.avgMonthlySearches || metrics.avg_monthly_searches || 0),
+    competition: metrics.competition || "",
+    competitionIndex: Number(metrics.competitionIndex || metrics.competition_index || 0),
+    lowTopOfPageBid: formatMoneyFromMicros(metrics.lowTopOfPageBidMicros || metrics.low_top_of_page_bid_micros || 0),
+    highTopOfPageBid: formatMoneyFromMicros(metrics.highTopOfPageBidMicros || metrics.high_top_of_page_bid_micros || 0),
+    monthlySearchVolumes: formatMonthlySearchVolumes(metrics.monthlySearchVolumes || metrics.monthly_search_volumes || []),
+  };
+}
+
+function formatMonthlySearchVolumes(volumes = []) {
+  return volumes.map((item) => ({
+    year: item.year,
+    month: item.month,
+    monthlySearches: Number(item.monthlySearches || item.monthly_searches || 0),
+  }));
+}
+
+function formatKeywordForecast(data = {}) {
+  const metrics = data.campaignForecastMetrics || data.campaign_forecast_metrics || {};
+  const keywordForecasts = data.keywordForecasts || data.keyword_forecasts || [];
+  return {
+    campaignForecast: formatForecastMetrics(metrics),
+    keywordForecasts: keywordForecasts.map((item) => ({
+      keyword: item.keyword,
+      matchType: item.matchType || item.match_type,
+      forecast: formatForecastMetrics(item.keywordForecastMetrics || item.keyword_forecast_metrics || {}),
+    })),
+  };
+}
+
+function formatForecastMetrics(metrics = {}) {
+  const clicks = Number(metrics.clicks || 0);
+  const impressions = Number(metrics.impressions || 0);
+  const costMicros = metrics.costMicros || metrics.cost_micros || 0;
+  return {
+    clicks,
+    impressions,
+    cost: formatMoneyFromMicros(costMicros),
+    conversions: Number(metrics.conversions || 0),
+    ctr: impressions ? `${((clicks / impressions) * 100).toFixed(2)}%` : "0.00%",
+    averageCpc: formatMoneyFromMicros(metrics.averageCpcMicros || metrics.average_cpc_micros || (clicks ? Number(costMicros) / clicks : 0)),
   };
 }
 

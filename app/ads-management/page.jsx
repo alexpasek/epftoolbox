@@ -25,6 +25,9 @@ const mcpReadTools = [
   "list_ads",
   "list_responsive_search_ads",
   "get_ad_assets",
+  "keyword_ideas",
+  "get_keyword_volume",
+  "get_keyword_forecast",
   "list_negative_keywords",
   "list_landing_pages",
   "get_change_history",
@@ -45,6 +48,8 @@ const mcpWriteTools = [
 const mcpPromptExamples = [
   "Show me all Google Ads campaigns with budget, status, clicks, cost, and conversions for the last 30 days.",
   "Show the actual responsive search ad headlines and descriptions for each ad group.",
+  "Find keyword ideas for popcorn ceiling removal in Mississauga and show monthly volume, competition, and top-of-page bids.",
+  "Get keyword volume and bid estimates for popcorn ceiling removal, painted popcorn removal, and smooth ceiling finish.",
   "Find wasted spend and suggest negative keywords. Do not apply anything yet.",
   "Review campaign pcr/Mississuga/Serch and tell me what a human ads manager should fix first.",
   "Create a paused draft campaign plan for popcorn ceiling removal in Mississauga with a $50 daily budget.",
@@ -257,6 +262,7 @@ export default function AdsManagementPage() {
               <p>Current hosted MCP mode is No Auth for ChatGPT connection.</p>
               <p>Live write actions are disabled by default. Write tools return preview only until Cloudflare variable CONFIRM_WRITE_ACTION is set to true.</p>
               <p>New campaigns, ad groups, and ads must be created paused first. Enable or budget changes require exact approval.</p>
+              <p>Keyword Planner tools require Basic or Standard Google Ads API developer-token access. Explorer access cannot return keyword ideas, volume, bids, or forecasts.</p>
               <CopyBlock>{mcpHealthUrl}</CopyBlock>
             </div>
           </InstructionCard>

@@ -12,6 +12,7 @@ The server exposes MCP tools for:
 - EPF service + city campaign naming
 - Low-intent keyword blocking unless approved
 - Negative keyword flagging for DIY/free/jobs/tools terms
+- Keyword Planner ideas, monthly volume, competition, bid estimates, and forecasts
 
 ## Setup
 
@@ -62,8 +63,40 @@ Reports include campaign name, spend, clicks, impressions, CTR, CPC, and convers
 
 Read tools:
 
+- `get_customer_info`
+- `list_campaigns`
+- `list_ad_groups`
+- `list_keywords`
+- `list_ads`
+- `list_responsive_search_ads`
+- `get_ad_assets`
+- `list_negative_keywords`
 - `get_campaign_performance`
 - `get_search_terms`
+- `keyword_ideas`
+- `get_keyword_volume`
+- `get_keyword_forecast`
+
+Keyword Planner tools:
+
+- `keyword_ideas`: find new keyword ideas from seed keywords or seed URL.
+- `get_keyword_volume`: return average monthly searches, monthly search volume history, competition, and top-of-page bid estimates.
+- `get_keyword_forecast`: return forecast clicks, impressions, cost, conversions, CTR, and CPC for proposed keywords.
+
+Google Ads API access note:
+
+Keyword Planner API methods are not available with Explorer access developer tokens. If these tools return `DEVELOPER_TOKEN_NOT_APPROVED`, apply for Basic or Standard access in Google Ads API Center. Normal campaign, ad, keyword, and reporting read tools can still work while the token is Explorer access.
+
+Default targeting examples:
+
+```json
+{
+  "keywords": ["popcorn ceiling removal mississauga"],
+  "language": "languageConstants/1000",
+  "geoTargetConstants": ["geoTargetConstants/2124"],
+  "keywordPlanNetwork": "GOOGLE_SEARCH"
+}
+```
 
 Suggestion-only optimization tools:
 
