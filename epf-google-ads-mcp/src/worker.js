@@ -1,6 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
-import { assertBearerAuthorized } from "./workerGoogleAdsClient.js";
+import { assertMcpAuthorized, authMode, writeActionsEnabled } from "./workerGoogleAdsClient.js";
 import { workerTools } from "./workerTools.js";
 import { textResult } from "./utils/format.js";
 
@@ -54,10 +54,12 @@ export default {
     if (url.pathname === "/" || url.pathname === "/health") {
       return json({
         ok: true,
+        service: "epf-google-ads-mcp",
+        authMode: authMode(env),
+        writeActionsEnabled: writeActionsEnabled(env),
         name: "epf-google-ads-mcp",
         transport: "streamable-http",
         mcpPath: "/mcp",
-        protected: Boolean(env?.MCP_BEARER_TOKEN),
       });
     }
 
@@ -65,8 +67,18 @@ export default {
       return json({ ok: false, error: "Not found" }, 404);
     }
 
-    const authError = assertBearerAuthorized(request, env);
+    const authError = assertMcpAuthorized(request, env);
     if (authError) return withCors(authError);
+
+    if (request.method === "GET" && !(request.headers.get("accept") || "").includes("text/event-stream")) {
+      return json({
+        ok: true,
+        service: "epf-google-ads-mcp",
+        endpoint: "/mcp",
+        transport: "streamable-http",
+        message: "MCP endpoint is available. MCP clients should POST JSON-RPC or GET with Accept: text/event-stream.",
+      });
+    }
 
     const transport = new WebStandardStreamableHTTPServerTransport({
       sessionIdGenerator: undefined,

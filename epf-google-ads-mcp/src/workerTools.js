@@ -4,7 +4,7 @@ import { approvalRequired, applied, ensureApplyApproved, requireExactApproval } 
 import { validateCampaignName, validateDailyBudget, validateKeywordIntent, validateLocalIntentName, validateNonBroadMatch, validateResponsiveSearchAd, validateServiceAndLocation, validateStatus } from "./safety/validators.js";
 import { dollarsToMicros, formatMoneyFromMicros, microsToDollars } from "./utils/money.js";
 import { textResult } from "./utils/format.js";
-import { loadWorkerConfig, mutateGoogleAdsRest, queryGoogleAdsRest } from "./workerGoogleAdsClient.js";
+import { loadWorkerConfig, mutateGoogleAdsRest, queryGoogleAdsRest, writeActionsEnabled } from "./workerGoogleAdsClient.js";
 
 const APPROVAL_TEXT = "APPROVE GOOGLE ADS CHANGE";
 const NEGATIVE_APPROVAL_TEXT = "APPROVE ADD NEGATIVE KEYWORDS";
@@ -79,6 +79,70 @@ const AddKeywordsSchema = z.object({
 
 export function workerTools(env) {
   return [
+    {
+      name: "get_customer_info",
+      description: "Read basic Google Ads customer account information.",
+      schema: z.object({}),
+      handler: async () => {
+        const rows = await queryGoogleAdsRest(env, `
+          SELECT customer.id, customer.descriptive_name, customer.currency_code, customer.time_zone, customer.manager
+          FROM customer
+          LIMIT 1
+        `);
+        return textResult(rows);
+      },
+    },
+    {
+      name: "list_campaigns",
+      description: "List campaigns with status and budget resource names.",
+      schema: z.object({ limit: z.number().int().min(1).max(200).default(100) }),
+      handler: async (input) => {
+        const { limit } = z.object({ limit: z.number().int().min(1).max(200).default(100) }).parse(input);
+        const rows = await queryGoogleAdsRest(env, `
+          SELECT campaign.id, campaign.name, campaign.status, campaign.resource_name,
+            campaign_budget.resource_name, campaign_budget.amount_micros
+          FROM campaign
+          ORDER BY campaign.name
+          LIMIT ${limit}
+        `);
+        return textResult(rows.map((row) => ({
+          ...row,
+          dailyBudget: formatMoneyFromMicros(row.campaignBudget?.amountMicros || row.campaign_budget?.amount_micros || 0),
+        })));
+      },
+    },
+    {
+      name: "list_ad_groups",
+      description: "List ad groups with campaign context.",
+      schema: z.object({ limit: z.number().int().min(1).max(200).default(100) }),
+      handler: async (input) => {
+        const { limit } = z.object({ limit: z.number().int().min(1).max(200).default(100) }).parse(input);
+        const rows = await queryGoogleAdsRest(env, `
+          SELECT campaign.name, ad_group.id, ad_group.name, ad_group.status, ad_group.resource_name
+          FROM ad_group
+          ORDER BY campaign.name, ad_group.name
+          LIMIT ${limit}
+        `);
+        return textResult(rows);
+      },
+    },
+    {
+      name: "list_keywords",
+      description: "List keywords with ad group and campaign context.",
+      schema: z.object({ limit: z.number().int().min(1).max(200).default(100) }),
+      handler: async (input) => {
+        const { limit } = z.object({ limit: z.number().int().min(1).max(200).default(100) }).parse(input);
+        const rows = await queryGoogleAdsRest(env, `
+          SELECT campaign.name, ad_group.name, ad_group_criterion.resource_name,
+            ad_group_criterion.status, ad_group_criterion.keyword.text,
+            ad_group_criterion.keyword.match_type
+          FROM keyword_view
+          ORDER BY campaign.name, ad_group.name
+          LIMIT ${limit}
+        `);
+        return textResult(rows);
+      },
+    },
     {
       name: "get_campaign_performance",
       description: "Read campaign performance for a date range.",
@@ -269,6 +333,8 @@ export function workerTools(env) {
             },
           },
         ];
+        const preview = previewOnlyIfWritesDisabled(env, "create_paused_campaign", { ...parsed, name: campaignName, status: "PAUSED", mutateOperations });
+        if (preview) return preview;
         if (!ensureApplyApproved(parsed.apply)) return approvalRequired("create_paused_campaign", { ...parsed, name: campaignName, status: "PAUSED", mutateOperations });
         requireExactApproval(parsed.approvalText, APPROVAL_TEXT);
         return applied("create_paused_campaign", await mutateGoogleAdsRest(env, mutateOperations));
@@ -294,6 +360,8 @@ export function workerTools(env) {
             },
           },
         ];
+        const preview = previewOnlyIfWritesDisabled(env, "create_paused_ad_group", { ...parsed, name, status: "PAUSED", mutateOperations });
+        if (preview) return preview;
         if (!ensureApplyApproved(parsed.apply)) return approvalRequired("create_paused_ad_group", { ...parsed, name, status: "PAUSED", mutateOperations });
         requireExactApproval(parsed.approvalText, APPROVAL_TEXT);
         return applied("create_paused_ad_group", await mutateGoogleAdsRest(env, mutateOperations));
@@ -325,6 +393,8 @@ export function workerTools(env) {
             },
           },
         ];
+        const preview = previewOnlyIfWritesDisabled(env, "create_paused_responsive_search_ad", { ...parsed, status: "PAUSED", mutateOperations });
+        if (preview) return preview;
         if (!ensureApplyApproved(parsed.apply)) return approvalRequired("create_paused_responsive_search_ad", { ...parsed, status: "PAUSED", mutateOperations });
         requireExactApproval(parsed.approvalText, APPROVAL_TEXT);
         return applied("create_paused_responsive_search_ad", await mutateGoogleAdsRest(env, mutateOperations));
@@ -350,6 +420,8 @@ export function workerTools(env) {
             },
           },
         }));
+        const preview = previewOnlyIfWritesDisabled(env, "add_negative_keywords_after_approval", { ...parsed, flagged, mutateOperations });
+        if (preview) return preview;
         if (!ensureApplyApproved(parsed.apply)) return approvalRequired("add_negative_keywords_after_approval", { ...parsed, flagged, mutateOperations });
         requireExactApproval(parsed.approvalText, NEGATIVE_APPROVAL_TEXT);
         return applied("add_negative_keywords_after_approval", await mutateGoogleAdsRest(env, mutateOperations));
@@ -381,6 +453,8 @@ function controlTools(env) {
             },
           },
         ];
+        const preview = previewOnlyIfWritesDisabled(env, "update_budget_after_approval", { ...parsed, mutateOperations });
+        if (preview) return preview;
         if (!ensureApplyApproved(parsed.apply)) return approvalRequired("update_budget_after_approval", { ...parsed, mutateOperations });
         requireExactApproval(parsed.approvalText, APPROVAL_TEXT);
         return applied("update_budget_after_approval", await mutateGoogleAdsRest(env, mutateOperations));
@@ -404,6 +478,8 @@ function controlTools(env) {
             },
           },
         }));
+        const preview = previewOnlyIfWritesDisabled(env, "add_keywords_after_approval", { ...parsed, matchType, status, intentWarnings, mutateOperations });
+        if (preview) return preview;
         if (!ensureApplyApproved(parsed.apply)) return approvalRequired("add_keywords_after_approval", { ...parsed, matchType, status, intentWarnings, mutateOperations });
         requireExactApproval(parsed.approvalText, APPROVAL_TEXT);
         return applied("add_keywords_after_approval", await mutateGoogleAdsRest(env, mutateOperations));
@@ -428,11 +504,26 @@ function statusTool(env, name, operationKey) {
           },
         },
       ];
+      const preview = previewOnlyIfWritesDisabled(env, name, { ...parsed, status, mutateOperations });
+      if (preview) return preview;
       if (!ensureApplyApproved(parsed.apply)) return approvalRequired(name, { ...parsed, status, mutateOperations });
       requireExactApproval(parsed.approvalText, APPROVAL_TEXT);
       return applied(name, await mutateGoogleAdsRest(env, mutateOperations));
     },
   };
+}
+
+function previewOnlyIfWritesDisabled(env, action, proposedChange) {
+  if (writeActionsEnabled(env)) return null;
+  return textResult({
+    ok: true,
+    mode: "preview_only",
+    requiresApproval: true,
+    writeActionsEnabled: false,
+    action,
+    proposedChange,
+    message: "Preview only. Set CONFIRM_WRITE_ACTION=true to allow live Google Ads changes.",
+  });
 }
 
 function formatPerformanceRow(row) {

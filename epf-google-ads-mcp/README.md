@@ -143,6 +143,26 @@ GOOGLE_ADS_CUSTOMER_ID
 MCP_BEARER_TOKEN
 ```
 
+For ChatGPT Developer Mode testing, `wrangler.toml` sets:
+
+```toml
+[vars]
+MCP_AUTH_MODE = "no_auth"
+CONFIRM_WRITE_ACTION = "false"
+```
+
+`MCP_AUTH_MODE=no_auth` allows ChatGPT's custom MCP app screen to connect with **No Auth**.
+
+`MCP_AUTH_MODE=bearer` keeps production bearer-token protection for direct API/MCP clients.
+
+`CONFIRM_WRITE_ACTION=false` makes every write tool return only a preview:
+
+```text
+Preview only. Set CONFIRM_WRITE_ACTION=true to allow live Google Ads changes.
+```
+
+Read-only tools still work in no-auth mode. Live write APIs are not called unless `CONFIRM_WRITE_ACTION=true` is set and the tool's exact approval text is provided.
+
 Example:
 
 ```bash
@@ -153,6 +173,28 @@ npx wrangler secret put GOOGLE_ADS_REFRESH_TOKEN
 npx wrangler secret put GOOGLE_ADS_LOGIN_CUSTOMER_ID
 npx wrangler secret put GOOGLE_ADS_CUSTOMER_ID
 npx wrangler secret put MCP_BEARER_TOKEN
+```
+
+Deploy:
+
+```bash
+npm run worker:dry-run
+npm run worker:deploy
+```
+
+Test:
+
+```bash
+curl https://epf-google-ads-mcp.webtoronto22.workers.dev/health
+curl https://epf-google-ads-mcp.webtoronto22.workers.dev/mcp
+```
+
+ChatGPT Developer Mode custom MCP app:
+
+```text
+Name: EPF Google Ads
+Server URL: https://epf-google-ads-mcp.webtoronto22.workers.dev/mcp
+Authentication: No Auth
 ```
 
 For Codex HTTP MCP:

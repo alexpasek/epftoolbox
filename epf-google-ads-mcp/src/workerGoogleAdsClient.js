@@ -24,6 +24,14 @@ export function loadWorkerConfig(env) {
   };
 }
 
+export function authMode(env) {
+  return env?.MCP_AUTH_MODE === "no_auth" ? "no_auth" : "bearer";
+}
+
+export function writeActionsEnabled(env) {
+  return env?.CONFIRM_WRITE_ACTION === "true";
+}
+
 async function getAccessToken(config) {
   const res = await fetch(TOKEN_URL, {
     method: "POST",
@@ -83,13 +91,17 @@ export async function mutateGoogleAdsRest(env, mutateOperations) {
   });
 }
 
-export function assertBearerAuthorized(request, env) {
+export function assertMcpAuthorized(request, env) {
+  if (authMode(env) === "no_auth") return null;
+
   const expected = env?.MCP_BEARER_TOKEN || "";
   if (!expected) {
+    console.log("MCP auth failed: bearer mode is enabled but MCP_BEARER_TOKEN is missing.");
     return new Response("MCP_BEARER_TOKEN is not configured.", { status: 500 });
   }
   const header = request.headers.get("authorization") || "";
   if (header !== `Bearer ${expected}`) {
+    console.log("MCP auth failed: missing or invalid bearer authorization header.");
     return new Response("Unauthorized", {
       status: 401,
       headers: { "WWW-Authenticate": "Bearer" },
