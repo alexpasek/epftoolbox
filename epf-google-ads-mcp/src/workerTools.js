@@ -670,6 +670,68 @@ function advancedReadTools(env) {
       },
     },
     {
+      name: "diagnose_ad_serving_readiness",
+      description: "Diagnose whether a campaign is structurally ready to show ads using Google Ads API data. The official Ad Preview UI itself is not exposed by the API.",
+      schema: ResourceLookupSchema.extend({ keywordText: z.string().optional().default("") }),
+      handler: async (input) => {
+        const { resourceName, id, keywordText, limit } = ResourceLookupSchema.extend({ keywordText: z.string().optional().default("") }).parse(input);
+        const filter = resourceName ? `campaign.resource_name = '${resourceName}'` : `campaign.id = ${id}`;
+        if (!resourceName && !id) throw new Error("Provide campaignResourceName/resourceName or campaignId/id.");
+        const campaign = await queryGoogleAdsRest(env, `
+          SELECT campaign.resource_name, campaign.id, campaign.name, campaign.status,
+            campaign.serving_status, campaign.advertising_channel_type,
+            campaign.network_settings.target_google_search,
+            campaign.network_settings.target_search_network,
+            campaign.network_settings.target_partner_search_network,
+            campaign.network_settings.target_content_network,
+            campaign.geo_target_type_setting.positive_geo_target_type,
+            campaign.geo_target_type_setting.negative_geo_target_type,
+            campaign_budget.amount_micros
+          FROM campaign
+          WHERE ${filter}
+          LIMIT 1
+        `);
+        const campaignResourceName = campaign[0]?.campaign?.resourceName || campaign[0]?.campaign?.resource_name || resourceName;
+        const keywordFilter = keywordText ? `AND ad_group_criterion.keyword.text LIKE '%${escapeGaqlString(keywordText)}%'` : "";
+        const [adGroups, keywords, ads, criteria] = await Promise.all([
+          queryGoogleAdsRest(env, `
+            SELECT campaign.name, ad_group.resource_name, ad_group.name, ad_group.status
+            FROM ad_group
+            WHERE campaign.resource_name = '${campaignResourceName}'
+            LIMIT ${limit}
+          `).catch((error) => [{ error: error.message }]),
+          queryGoogleAdsRest(env, `
+            SELECT campaign.name, ad_group.name, ad_group_criterion.resource_name,
+              ad_group_criterion.status, ad_group_criterion.keyword.text,
+              ad_group_criterion.keyword.match_type, ad_group_criterion.quality_info.quality_score
+            FROM keyword_view
+            WHERE campaign.resource_name = '${campaignResourceName}' ${keywordFilter}
+            LIMIT ${limit}
+          `).catch((error) => [{ error: error.message }]),
+          queryGoogleAdsRest(env, `
+            SELECT campaign.name, ad_group.name, ad_group_ad.resource_name, ad_group_ad.status,
+              ad_group_ad.policy_summary.approval_status, ad_group_ad.ad.type, ad_group_ad.ad_strength
+            FROM ad_group_ad
+            WHERE campaign.resource_name = '${campaignResourceName}'
+            LIMIT ${limit}
+          `).catch((error) => [{ error: error.message }]),
+          queryGoogleAdsRest(env, `
+            SELECT campaign_criterion.resource_name, campaign_criterion.type, campaign_criterion.negative,
+              campaign_criterion.keyword.text, campaign_criterion.keyword.match_type,
+              campaign_criterion.location.geo_target_constant, campaign_criterion.language.language_constant
+            FROM campaign_criterion
+            WHERE campaign_criterion.campaign = '${campaignResourceName}'
+            LIMIT ${limit}
+          `).catch((error) => [{ error: error.message }]),
+        ]);
+        return textResult({
+          ok: true,
+          summary: "Ad serving readiness diagnosis loaded.",
+          result: buildAdServingDiagnosis({ campaignRows: campaign, adGroupRows: adGroups, keywordRows: keywords, adRows: ads, criteriaRows: criteria, keywordText }),
+        });
+      },
+    },
+    {
       name: "get_ad_group_details",
       description: "Return ad group settings, keywords, ads, negatives, bid, and performance summary.",
       schema: ResourceLookupSchema,
@@ -1764,10 +1826,10 @@ function buildCampaignTargetingAudit(campaignRows, criteriaRows) {
   const network = campaign.networkSettings || campaign.network_settings || {};
   const geoType = campaign.geoTargetTypeSetting || campaign.geo_target_type_setting || {};
   const criteria = criteriaRows.map((row) => row.campaignCriterion || row.campaign_criterion || {});
-  const locations = criteria.filter((criterion) => criterion.type === "LOCATION" && !criterion.negative);
-  const excludedLocations = criteria.filter((criterion) => criterion.type === "LOCATION" && criterion.negative);
-  const languages = criteria.filter((criterion) => criterion.type === "LANGUAGE" && !criterion.negative);
-  const negativeKeywords = criteria.filter((criterion) => criterion.type === "KEYWORD" && criterion.negative);
+  const locations = criteria.filter((criterion) => isCriterionType(criterion.type, "LOCATION") && !criterion.negative);
+  const excludedLocations = criteria.filter((criterion) => isCriterionType(criterion.type, "LOCATION") && criterion.negative);
+  const languages = criteria.filter((criterion) => isCriterionType(criterion.type, "LANGUAGE") && !criterion.negative);
+  const negativeKeywords = criteria.filter((criterion) => isCriterionType(criterion.type, "KEYWORD") && criterion.negative);
   return {
     campaign,
     networkSettings: network,
@@ -1779,7 +1841,6 @@ function buildCampaignTargetingAudit(campaignRows, criteriaRows) {
     checks: {
       searchOnly:
         Boolean(network.targetGoogleSearch ?? network.target_google_search) &&
-        Boolean(network.targetSearchNetwork ?? network.target_search_network) &&
         !Boolean(network.targetPartnerSearchNetwork ?? network.target_partner_search_network) &&
         !Boolean(network.targetContentNetwork ?? network.target_content_network),
       presenceOnly:
@@ -1789,6 +1850,60 @@ function buildCampaignTargetingAudit(campaignRows, criteriaRows) {
       hasCampaignNegatives: negativeKeywords.length > 0,
     },
   };
+}
+
+function buildAdServingDiagnosis({ campaignRows, adGroupRows, keywordRows, adRows, criteriaRows, keywordText }) {
+  const targeting = buildCampaignTargetingAudit(campaignRows, criteriaRows);
+  const campaign = campaignRows[0]?.campaign || {};
+  const budget = campaignRows[0]?.campaignBudget || campaignRows[0]?.campaign_budget || {};
+  const adGroups = adGroupRows.map((row) => row.adGroup || row.ad_group || {});
+  const keywords = keywordRows.map((row) => row.adGroupCriterion || row.ad_group_criterion || {});
+  const ads = adRows.map((row) => row.adGroupAd || row.ad_group_ad || {});
+  const blockers = [];
+  if (!isEnabledStatus(campaign.status)) blockers.push(`Campaign status is ${statusLabel(campaign.status)}.`);
+  if (!Number(budget.amountMicros || budget.amount_micros || 0)) blockers.push("Campaign budget is missing or zero.");
+  if (!targeting.checks.searchOnly) blockers.push("Campaign is not configured as Google Search only.");
+  if (!targeting.checks.hasLocationTargets) blockers.push("Campaign has no location targets.");
+  if (!adGroups.some((adGroup) => isEnabledStatus(adGroup.status))) blockers.push("No enabled ad groups.");
+  if (!keywords.some((keyword) => isEnabledStatus(keyword.status))) blockers.push(keywordText ? `No enabled keywords matching '${keywordText}'.` : "No enabled keywords.");
+  if (!ads.some((ad) => isEnabledStatus(ad.status) && !["DISAPPROVED", "AREA_OF_INTEREST_ONLY"].includes(ad.policySummary?.approvalStatus || ad.policy_summary?.approval_status || ""))) blockers.push("No enabled, approved ads found.");
+  return {
+    officialAdPreviewUiAccess: "not_exposed_by_google_ads_api",
+    officialAdPreviewUrl: "https://ads.google.com/aw/diagnostic/AdPreview",
+    campaign,
+    budget,
+    targeting,
+    counts: {
+      adGroups: adGroups.length,
+      enabledAdGroups: adGroups.filter((adGroup) => isEnabledStatus(adGroup.status)).length,
+      keywords: keywords.length,
+      enabledKeywords: keywords.filter((keyword) => isEnabledStatus(keyword.status)).length,
+      ads: ads.length,
+      enabledAds: ads.filter((ad) => isEnabledStatus(ad.status)).length,
+    },
+    keywordText: keywordText || null,
+    blockers,
+    readyToShowAdsByApiChecks: blockers.length === 0,
+  };
+}
+
+function escapeGaqlString(value) {
+  return String(value).replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+}
+
+function isEnabledStatus(status) {
+  return status === "ENABLED" || status === 2;
+}
+
+function statusLabel(status) {
+  if (status === 2) return "ENABLED";
+  if (status === 3) return "PAUSED";
+  return status || "unknown";
+}
+
+function isCriterionType(type, expected) {
+  const numericTypes = { KEYWORD: 2, LOCATION: 7, LANGUAGE: 20 };
+  return type === expected || type === numericTypes[expected];
 }
 
 function budgetSuggestion(row, minConversions, maxCostPerConversion, lowConversionSpend) {

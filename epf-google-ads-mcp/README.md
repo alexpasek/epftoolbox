@@ -131,6 +131,7 @@ Suggestion-only optimization tools:
 Read-only audit tools:
 
 - `audit_campaign_targeting`
+- `diagnose_ad_serving_readiness`
 
 Paused create tools:
 
@@ -207,6 +208,16 @@ Campaign targeting audit example:
 ```json
 {
   "campaignResourceName": "customers/9466544876/campaigns/123",
+  "limit": 100
+}
+```
+
+Ad serving readiness diagnosis example:
+
+```json
+{
+  "campaignResourceName": "customers/9466544876/campaigns/123",
+  "keywordText": "drywall repair",
   "limit": 100
 }
 ```
