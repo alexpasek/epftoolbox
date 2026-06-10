@@ -181,20 +181,22 @@ For ChatGPT Developer Mode testing, `wrangler.toml` sets:
 ```toml
 [vars]
 MCP_AUTH_MODE = "no_auth"
-CONFIRM_WRITE_ACTION = "false"
+CONFIRM_WRITE_ACTION = "true"
 ```
 
 `MCP_AUTH_MODE=no_auth` allows ChatGPT's custom MCP app screen to connect with **No Auth**.
 
 `MCP_AUTH_MODE=bearer` keeps production bearer-token protection for direct API/MCP clients.
 
-`CONFIRM_WRITE_ACTION=false` makes every write tool return only a preview:
+`CONFIRM_WRITE_ACTION=true` allows live Google Ads write APIs only when the tool is called with `apply: true` and the exact approval text.
+
+If you set `CONFIRM_WRITE_ACTION=false`, every write tool returns only a preview:
 
 ```text
 Preview only. Set CONFIRM_WRITE_ACTION=true to allow live Google Ads changes.
 ```
 
-Read-only tools still work in no-auth mode. Live write APIs are not called unless `CONFIRM_WRITE_ACTION=true` is set and the tool's exact approval text is provided.
+Read-only tools still work in no-auth mode. With live writes enabled, keep approval prompts strict and review proposed changes before calling approval-gated tools.
 
 Example:
 

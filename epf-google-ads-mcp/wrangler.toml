@@ -5,7 +5,7 @@ compatibility_flags = ["nodejs_compat"]
 
 [vars]
 MCP_AUTH_MODE = "no_auth"
-CONFIRM_WRITE_ACTION = "false"
+CONFIRM_WRITE_ACTION = "true"
 
 [observability]
 enabled = true

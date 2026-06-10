@@ -26,8 +26,8 @@ const statusCards = [
   },
   {
     label: "Live Writes",
-    value: "Preview Only",
-    detail: "CONFIRM_WRITE_ACTION=false",
+    value: "Approval Required",
+    detail: "CONFIRM_WRITE_ACTION=true",
   },
   {
     label: "Keyword Planner",
@@ -108,7 +108,7 @@ const toolGroups = [
 
 const safetyRules = [
   "Read, reporting, analysis, and suggestion tools can run directly.",
-  "All write tools return preview only while CONFIRM_WRITE_ACTION=false.",
+  "Write tools can make live changes only when called with apply=true and exact approval text.",
   "New campaigns, ad groups, ads, and keywords must be created paused first.",
   "Do not enable campaigns, raise budgets, or add live keywords without exact approval.",
   "Use phrase or exact match keywords by default. Broad match requires a specific reason.",
@@ -147,8 +147,8 @@ const troubleshooting = [
     fix: "Apply for Basic or Standard access in Google Ads API Center. Explorer access cannot use Keyword Planner API methods.",
   },
   {
-    issue: "Write tool says preview only",
-    fix: "That is expected. Cloudflare CONFIRM_WRITE_ACTION is false to protect live campaigns.",
+    issue: "Write tool still asks for approval",
+    fix: "That is expected. Live writes are enabled, but tools still require apply=true and exact approval text.",
   },
   {
     issue: "Need production auth later",
@@ -277,7 +277,7 @@ export default function AdsManagementPage() {
                 </div>
               ))}
               <p className="text-sm font-bold text-slate-700">
-                Even with approval text, live writes stay blocked until CONFIRM_WRITE_ACTION=true is set in Cloudflare.
+                Live writes are enabled, but the MCP still requires apply=true and exact approval text for write tools.
               </p>
             </div>
           </Card>
