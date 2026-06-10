@@ -45,7 +45,7 @@ export const adTools = [
       if (!ensureApplyApproved(parsed.apply)) {
         return approvalRequired("create_paused_responsive_search_ad", { ...parsed, status, operations });
       }
-      requireExactApproval(parsed.approvalText, "APPROVE GOOGLE ADS CHANGE");
+      requireExactApproval(parsed.approvalText, "APPROVER GOOGLE ADS CHANGE");
       return applied("create_paused_responsive_search_ad", await mutateGoogleAds(operations));
     },
   },

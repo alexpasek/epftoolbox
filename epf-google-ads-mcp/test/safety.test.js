@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { requireExactApproval } from "../src/safety/approval.js";
 import { validateKeywordIntent } from "../src/safety/validators.js";
 
 test("core popcorn removal service keywords are not blocked as low intent", () => {
@@ -17,5 +18,15 @@ test("DIY popcorn ceiling keywords still require explicit low-intent approval", 
   assert.throws(
     () => validateKeywordIntent(["diy popcorn ceiling removal"]),
     /Low-intent keywords require allowLowIntent: true approval/
+  );
+});
+
+test("Google Ads approval phrase uses APPROVER", () => {
+  assert.doesNotThrow(() => {
+    requireExactApproval("APPROVER GOOGLE ADS CHANGE", "APPROVER GOOGLE ADS CHANGE");
+  });
+  assert.throws(
+    () => requireExactApproval("APPROVE GOOGLE ADS CHANGE", "APPROVER GOOGLE ADS CHANGE"),
+    /APPROVER GOOGLE ADS CHANGE/
   );
 });

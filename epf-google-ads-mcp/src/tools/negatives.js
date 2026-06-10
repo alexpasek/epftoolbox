@@ -82,8 +82,8 @@ export const negativeTools = [
         },
       }));
       if (!ensureApplyApproved(parsed.apply)) return approvalRequired("add_negative_keywords_after_approval", { ...parsed, flagged, operations });
-      if (parsed.approvalText !== "APPROVE ADD NEGATIVE KEYWORDS") {
-        throw new Error('Exact approval required: approvalText must be "APPROVE ADD NEGATIVE KEYWORDS".');
+      if (parsed.approvalText !== "APPROVER ADD NEGATIVE KEYWORDS") {
+        throw new Error('Exact approval required: approvalText must be "APPROVER ADD NEGATIVE KEYWORDS".');
       }
       return applied("add_negative_keywords_after_approval", await mutateGoogleAds(operations));
     },

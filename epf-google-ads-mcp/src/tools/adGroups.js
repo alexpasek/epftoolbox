@@ -34,7 +34,7 @@ export const adGroupTools = [
         },
       ];
       if (!ensureApplyApproved(parsed.apply)) return approvalRequired("create_paused_ad_group", { ...parsed, name, status, operations });
-      requireExactApproval(parsed.approvalText, "APPROVE GOOGLE ADS CHANGE");
+      requireExactApproval(parsed.approvalText, "APPROVER GOOGLE ADS CHANGE");
       return applied("create_paused_ad_group", await mutateGoogleAds(operations));
     },
   },

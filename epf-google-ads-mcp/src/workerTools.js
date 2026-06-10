@@ -6,8 +6,8 @@ import { dollarsToMicros, formatMoneyFromMicros, microsToDollars } from "./utils
 import { textResult } from "./utils/format.js";
 import { keywordPlanningGoogleAdsRest, loadWorkerConfig, mutateGoogleAdsRest, queryGoogleAdsRest, writeActionsEnabled } from "./workerGoogleAdsClient.js";
 
-const APPROVAL_TEXT = "APPROVE GOOGLE ADS CHANGE";
-const NEGATIVE_APPROVAL_TEXT = "APPROVE ADD NEGATIVE KEYWORDS";
+const APPROVAL_TEXT = "APPROVER GOOGLE ADS CHANGE";
+const NEGATIVE_APPROVAL_TEXT = "APPROVER ADD NEGATIVE KEYWORDS";
 
 const DateRangeSchema = z.object({
   startDate: z.string().default("2026-01-01"),
