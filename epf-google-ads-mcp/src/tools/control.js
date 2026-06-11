@@ -1,10 +1,12 @@
 import { z } from "zod";
+import { enums } from "google-ads-api/build/src/protos/index.js";
 import { mutateGoogleAds } from "../googleAdsClient.js";
 import { approvalRequired, applied, ensureApplyApproved, requireExactApproval } from "../safety/approval.js";
 import { validateDailyBudget, validateKeywordIntent, validateNonBroadMatch, validateStatus } from "../safety/validators.js";
 import { dollarsToMicros } from "../utils/money.js";
 
 const APPROVAL_TEXT = "APPROVER";
+const ASSET_FIELD_TYPES = enums.AssetFieldType;
 
 const StatusSchema = z.object({
   resourceName: z.string().min(1),
@@ -267,7 +269,7 @@ export const controlTools = [
           resource: {
             campaign: parsed.campaignResourceName,
             asset: parsed.assetResourceName,
-            field_type: "IMAGE",
+            field_type: assetFieldTypeValue("AD_IMAGE"),
             status: "ENABLED",
           },
         },
@@ -382,7 +384,7 @@ function buildAssetAttachment(parsed) {
       resource: {
         ad_group: parsed.adGroupResourceName,
         asset: parsed.assetResourceName,
-        field_type: parsed.fieldType,
+        field_type: assetFieldTypeValue(parsed.fieldType),
         status: parsed.status,
       },
     };
@@ -393,7 +395,7 @@ function buildAssetAttachment(parsed) {
       resource: {
         campaign: parsed.campaignResourceName,
         asset: parsed.assetResourceName,
-        field_type: parsed.fieldType,
+        field_type: assetFieldTypeValue(parsed.fieldType),
         status: parsed.status,
       },
     };
@@ -404,10 +406,16 @@ function buildAssetAttachment(parsed) {
       resource: {
         customer: parsed.customerResourceName,
         asset: parsed.assetResourceName,
-        field_type: parsed.fieldType,
+        field_type: assetFieldTypeValue(parsed.fieldType),
         status: parsed.status,
       },
     };
   }
   throw new Error("Provide customerResourceName, campaignResourceName, or adGroupResourceName.");
+}
+
+function assetFieldTypeValue(value) {
+  const key = String(value || "").trim().toUpperCase();
+  if (!key) throw new Error("Provide a fieldType.");
+  return ASSET_FIELD_TYPES[key] ?? value;
 }
