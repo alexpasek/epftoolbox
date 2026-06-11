@@ -1680,9 +1680,16 @@ function advancedWriteTools(env) {
       }
       return [{ adGroupAdOperation: { create: { adGroup, status: "PAUSED", ad: { finalUrls: p.finalUrls, responsiveSearchAd: { headlines: p.headlines.map((text) => ({ text })), descriptions: p.descriptions.map((text) => ({ text })), path1: p.path1 || undefined, path2: p.path2 || undefined } } } } }];
     }),
-    writeTool("set_ad_status_after_approval", "Pause, enable, or remove an ad after exact approval.", (p) => [{
-      adGroupAdOperation: { update: { resourceName: p.resourceName || p.adResourceName, status: validateStatus(p.status) }, updateMask: "status" },
-    }]),
+    writeTool("set_ad_status_after_approval", "Pause, enable, or remove an ad after exact approval.", (p) => {
+      const resourceName = p.resourceName || p.adResourceName;
+      const status = validateStatus(p.status);
+      if (status === "REMOVED") {
+        return [{ adGroupAdOperation: { remove: resourceName } }];
+      }
+      return [{
+        adGroupAdOperation: { update: { resourceName, status }, updateMask: "status" },
+      }];
+    }),
     writeTool("update_ad_final_url_after_approval", "Change an ad final URL after exact approval.", (p) => [{
       adGroupAdOperation: { update: { resourceName: p.resourceName || p.adResourceName, ad: { finalUrls: [p.finalUrl] } }, updateMask: "ad.final_urls" },
     }]),
