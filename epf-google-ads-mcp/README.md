@@ -172,6 +172,10 @@ Approval-gated control tools:
 - `attach_callout_to_campaign_after_approval`
 - `create_image_asset_after_approval`
 - `attach_image_to_campaign_after_approval`
+- `create_asset_from_json_after_approval`
+- `update_asset_from_json_after_approval`
+- `attach_asset_after_approval`
+- `remove_asset_link_after_approval`
 - `create_call_asset_after_approval`
 - `attach_call_asset_to_campaign_after_approval`
 - `create_structured_snippet_asset_after_approval`
@@ -234,6 +238,51 @@ Attach image asset example:
 {
   "campaignResourceName": "customers/9466544876/campaigns/123",
   "assetResourceName": "customers/9466544876/assets/456",
+  "apply": true,
+  "approvalText": "APPROVER"
+}
+```
+
+Generic asset tools cover Google Ads asset types that do not have a dedicated helper yet, including business name, business logo, headline, description, lead form, location, price, app, and promotion assets when supported by the Google Ads API. Use raw Google Ads asset JSON for create/update and attach the resulting asset with the correct `fieldType`.
+
+Generic asset create example:
+
+```json
+{
+  "assetJson": {
+    "name": "EPF Business Name",
+    "businessNameAsset": {
+      "businessName": "Expert Popcorn Ceiling Removal"
+    }
+  },
+  "apply": true,
+  "approvalText": "APPROVER"
+}
+```
+
+Generic asset attach example:
+
+```json
+{
+  "campaignResourceName": "customers/9466544876/campaigns/123",
+  "assetResourceName": "customers/9466544876/assets/456",
+  "fieldType": "BUSINESS_NAME",
+  "apply": true,
+  "approvalText": "APPROVER"
+}
+```
+
+Generic asset update example:
+
+```json
+{
+  "assetResourceName": "customers/9466544876/assets/456",
+  "assetJson": {
+    "businessNameAsset": {
+      "businessName": "EPF Ceiling Removal"
+    }
+  },
+  "updateMask": ["business_name_asset.business_name"],
   "apply": true,
   "approvalText": "APPROVER"
 }

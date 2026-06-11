@@ -44,6 +44,38 @@ const AttachImageAssetSchema = z.object({
   apply: z.boolean().default(false),
 });
 
+const AssetJsonSchema = z.object({
+  assetJson: z.record(z.any()),
+  approvalText: z.string().optional().default(""),
+  apply: z.boolean().default(false),
+});
+
+const UpdateAssetJsonSchema = z.object({
+  assetResourceName: z.string().min(1),
+  assetJson: z.record(z.any()),
+  updateMask: z.array(z.string().min(1)).min(1),
+  approvalText: z.string().optional().default(""),
+  apply: z.boolean().default(false),
+});
+
+const AttachAssetSchema = z.object({
+  assetResourceName: z.string().min(1),
+  fieldType: z.string().trim().min(1),
+  customerResourceName: z.string().optional().default(""),
+  campaignResourceName: z.string().optional().default(""),
+  adGroupResourceName: z.string().optional().default(""),
+  status: z.enum(["ENABLED", "PAUSED"]).default("ENABLED"),
+  approvalText: z.string().optional().default(""),
+  apply: z.boolean().default(false),
+});
+
+const RemoveAssetLinkSchema = z.object({
+  resourceName: z.string().min(1),
+  level: z.enum(["CUSTOMER", "CAMPAIGN", "AD_GROUP"]),
+  approvalText: z.string().optional().default(""),
+  apply: z.boolean().default(false),
+});
+
 const AddKeywordsSchema = z.object({
   adGroupResourceName: z.string().min(1),
   keywords: z.array(z.string().min(1)).min(1),
@@ -246,6 +278,63 @@ export const controlTools = [
     },
   },
   {
+    name: "create_asset_from_json_after_approval",
+    description: "Create any Google Ads asset type from raw asset JSON after exact approval.",
+    schema: AssetJsonSchema,
+    handler: async (input) => {
+      const parsed = AssetJsonSchema.parse(input);
+      const operations = [{ entity: "asset", operation: "create", resource: parsed.assetJson }];
+      const preview = scrubSensitiveWritePreview({ ...parsed, operations });
+      if (!ensureApplyApproved(parsed.apply)) return approvalRequired("create_asset_from_json_after_approval", preview);
+      requireExactApproval(parsed.approvalText, APPROVAL_TEXT);
+      return applied("create_asset_from_json_after_approval", await mutateGoogleAds(operations));
+    },
+  },
+  {
+    name: "update_asset_from_json_after_approval",
+    description: "Update any mutable Google Ads asset fields from raw asset JSON after exact approval.",
+    schema: UpdateAssetJsonSchema,
+    handler: async (input) => {
+      const parsed = UpdateAssetJsonSchema.parse(input);
+      const operations = [{
+        entity: "asset",
+        operation: "update",
+        resource: { resource_name: parsed.assetResourceName, ...parsed.assetJson },
+        update_mask: parsed.updateMask,
+      }];
+      const preview = scrubSensitiveWritePreview({ ...parsed, operations });
+      if (!ensureApplyApproved(parsed.apply)) return approvalRequired("update_asset_from_json_after_approval", preview);
+      requireExactApproval(parsed.approvalText, APPROVAL_TEXT);
+      return applied("update_asset_from_json_after_approval", await mutateGoogleAds(operations));
+    },
+  },
+  {
+    name: "attach_asset_after_approval",
+    description: "Attach any asset to customer, campaign, or ad group level after exact approval.",
+    schema: AttachAssetSchema,
+    handler: async (input) => {
+      const parsed = AttachAssetSchema.parse(input);
+      const { entity, resource } = buildAssetAttachment(parsed);
+      const operations = [{ entity, operation: "create", resource }];
+      if (!ensureApplyApproved(parsed.apply)) return approvalRequired("attach_asset_after_approval", { ...parsed, operations });
+      requireExactApproval(parsed.approvalText, APPROVAL_TEXT);
+      return applied("attach_asset_after_approval", await mutateGoogleAds(operations));
+    },
+  },
+  {
+    name: "remove_asset_link_after_approval",
+    description: "Remove a customer, campaign, or ad group asset link after exact approval.",
+    schema: RemoveAssetLinkSchema,
+    handler: async (input) => {
+      const parsed = RemoveAssetLinkSchema.parse(input);
+      const entity = { CUSTOMER: "customer_asset", CAMPAIGN: "campaign_asset", AD_GROUP: "ad_group_asset" }[parsed.level];
+      const operations = [{ entity, operation: "remove", resource: parsed.resourceName }];
+      if (!ensureApplyApproved(parsed.apply)) return approvalRequired("remove_asset_link_after_approval", { ...parsed, operations });
+      requireExactApproval(parsed.approvalText, APPROVAL_TEXT);
+      return applied("remove_asset_link_after_approval", await mutateGoogleAds(operations));
+    },
+  },
+  {
     name: "add_keywords_after_approval",
     description: "Add phrase/exact keywords after exact approval. Broad and low-intent keywords require explicit flags.",
     schema: AddKeywordsSchema,
@@ -284,4 +373,41 @@ function scrubSensitiveWritePreview(value) {
     if (["imageDataBase64", "data"].includes(key)) return [key, "[base64 image data omitted]"];
     return [key, scrubSensitiveWritePreview(item)];
   }));
+}
+
+function buildAssetAttachment(parsed) {
+  if (parsed.adGroupResourceName) {
+    return {
+      entity: "ad_group_asset",
+      resource: {
+        ad_group: parsed.adGroupResourceName,
+        asset: parsed.assetResourceName,
+        field_type: parsed.fieldType,
+        status: parsed.status,
+      },
+    };
+  }
+  if (parsed.campaignResourceName) {
+    return {
+      entity: "campaign_asset",
+      resource: {
+        campaign: parsed.campaignResourceName,
+        asset: parsed.assetResourceName,
+        field_type: parsed.fieldType,
+        status: parsed.status,
+      },
+    };
+  }
+  if (parsed.customerResourceName) {
+    return {
+      entity: "customer_asset",
+      resource: {
+        customer: parsed.customerResourceName,
+        asset: parsed.assetResourceName,
+        field_type: parsed.fieldType,
+        status: parsed.status,
+      },
+    };
+  }
+  throw new Error("Provide customerResourceName, campaignResourceName, or adGroupResourceName.");
 }

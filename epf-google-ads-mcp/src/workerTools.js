@@ -171,6 +171,11 @@ const GenericApprovedWriteSchema = z.object({
   snippetHeader: z.string().optional().default("Services"),
   snippetValues: z.array(z.string()).optional().default([]),
   labelName: z.string().optional().default(""),
+  assetJson: z.record(z.any()).optional().default({}),
+  updateMask: z.array(z.string()).optional().default([]),
+  fieldType: z.string().optional().default(""),
+  customerResourceName: z.string().optional().default(""),
+  level: z.enum(["CUSTOMER", "CAMPAIGN", "AD_GROUP"]).optional(),
   planJson: z.any().optional(),
   approvalText: z.string().optional().default(""),
   apply: z.boolean().default(false),
@@ -1733,6 +1738,16 @@ function advancedWriteTools(env) {
     writeTool("attach_image_to_campaign_after_approval", "Attach an image asset to a campaign after exact approval.", (p) => [{
       campaignAssetOperation: { create: { campaign: p.campaignResourceName, asset: p.assetResourceName || p.resourceName, fieldType: "IMAGE", status: "ENABLED" } },
     }]),
+    writeTool("create_asset_from_json_after_approval", "Create any Google Ads asset type from raw asset JSON after exact approval.", (p) => [{
+      assetOperation: { create: p.assetJson },
+    }]),
+    writeTool("update_asset_from_json_after_approval", "Update any mutable Google Ads asset fields from raw asset JSON after exact approval.", (p) => {
+      if (!p.resourceName && !p.assetResourceName) throw new Error("Provide resourceName or assetResourceName.");
+      if (!p.updateMask?.length) throw new Error("Provide updateMask.");
+      return [{ assetOperation: { update: { resourceName: p.resourceName || p.assetResourceName, ...p.assetJson }, updateMask: p.updateMask.join(",") } }];
+    }),
+    writeTool("attach_asset_after_approval", "Attach any asset to customer, campaign, or ad group level after exact approval.", (p, envArg) => [buildAssetAttachmentOperation(p, envArg)]),
+    writeTool("remove_asset_link_after_approval", "Remove a customer, campaign, or ad group asset link after exact approval.", (p) => [buildAssetLinkRemoveOperation(p)]),
     writeTool("create_call_asset_after_approval", "Create a call asset after exact approval.", (p) => [{
       assetOperation: { create: { callAsset: { countryCode: p.countryCode, phoneNumber: p.phoneNumber } } },
     }]),
@@ -1795,6 +1810,30 @@ function attachAssetOperation(fieldType) {
       },
     },
   }];
+}
+
+function buildAssetAttachmentOperation(p, envArg) {
+  const asset = p.assetResourceName || p.resourceName;
+  const fieldType = p.fieldType;
+  const status = p.status || "ENABLED";
+  if (!asset) throw new Error("Provide assetResourceName or resourceName.");
+  if (!fieldType) throw new Error("Provide fieldType, for example IMAGE, BUSINESS_LOGO, LEAD_FORM, PRICE, PROMOTION, MOBILE_APP, BUSINESS_NAME, HEADLINE, DESCRIPTION.");
+  if (p.adGroupResourceName) {
+    return { adGroupAssetOperation: { create: { adGroup: p.adGroupResourceName, asset, fieldType, status } } };
+  }
+  if (p.campaignResourceName) {
+    return { campaignAssetOperation: { create: { campaign: p.campaignResourceName, asset, fieldType, status } } };
+  }
+  const customer = p.customerResourceName || `customers/${loadWorkerConfig(envArg).customerId}`;
+  return { customerAssetOperation: { create: { customer, asset, fieldType, status } } };
+}
+
+function buildAssetLinkRemoveOperation(p) {
+  const resourceName = p.resourceName || p.assetResourceName;
+  if (!resourceName) throw new Error("Provide the customer/campaign/ad group asset link resourceName to remove.");
+  if (p.level === "CUSTOMER" || resourceName.includes("/customerAssets/")) return { customerAssetOperation: { remove: resourceName } };
+  if (p.level === "AD_GROUP" || resourceName.includes("/adGroupAssets/")) return { adGroupAssetOperation: { remove: resourceName } };
+  return { campaignAssetOperation: { remove: resourceName } };
 }
 
 function biddingOperation(p) {
