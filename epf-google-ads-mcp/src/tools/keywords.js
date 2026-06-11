@@ -15,7 +15,7 @@ const AddKeywordsSchema = z.object({
 
 const KeywordStatusSchema = z.object({
   criterionResourceName: z.string().min(1),
-  status: z.enum(["PAUSED", "ENABLED"]),
+  status: z.enum(["PAUSED", "ENABLED", "REMOVED"]),
   apply: z.boolean().default(false),
 });
 
@@ -47,7 +47,7 @@ export const keywordTools = [
   },
   {
     name: "set_keyword_status",
-    description: "Pause or enable a keyword after approval.",
+    description: "Pause, enable, or remove a keyword after approval.",
     schema: KeywordStatusSchema,
     handler: async (input) => {
       const parsed = KeywordStatusSchema.parse(input);

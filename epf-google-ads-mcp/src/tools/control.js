@@ -10,7 +10,7 @@ const ASSET_FIELD_TYPES = enums.AssetFieldType;
 
 const StatusSchema = z.object({
   resourceName: z.string().min(1),
-  status: z.enum(["PAUSED", "ENABLED"]),
+  status: z.enum(["PAUSED", "ENABLED", "REMOVED"]),
   approvalText: z.string().optional().default(""),
   apply: z.boolean().default(false),
 });

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { requireExactApproval } from "../src/safety/approval.js";
-import { validateKeywordIntent } from "../src/safety/validators.js";
+import { validateKeywordIntent, validateStatus } from "../src/safety/validators.js";
 
 test("core popcorn removal service keywords are not blocked as low intent", () => {
   const keywords = [
@@ -29,4 +29,8 @@ test("Google Ads approval phrase uses one normalized APPROVER word", () => {
     () => requireExactApproval("APPROVE", "APPROVER"),
     /APPROVER/
   );
+});
+
+test("status validator allows removed resources", () => {
+  assert.equal(validateStatus("removed"), "REMOVED");
 });

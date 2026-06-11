@@ -54,7 +54,7 @@ const AddNegativesSchema = z.object({
 
 const StatusSchema = z.object({
   resourceName: z.string().min(1),
-  status: z.enum(["PAUSED", "ENABLED"]),
+  status: z.enum(["PAUSED", "ENABLED", "REMOVED"]),
   approvalText: z.string().optional().default(""),
   apply: z.boolean().default(false),
 });
@@ -1680,7 +1680,7 @@ function advancedWriteTools(env) {
       }
       return [{ adGroupAdOperation: { create: { adGroup, status: "PAUSED", ad: { finalUrls: p.finalUrls, responsiveSearchAd: { headlines: p.headlines.map((text) => ({ text })), descriptions: p.descriptions.map((text) => ({ text })), path1: p.path1 || undefined, path2: p.path2 || undefined } } } } }];
     }),
-    writeTool("set_ad_status_after_approval", "Pause or enable an ad after exact approval.", (p) => [{
+    writeTool("set_ad_status_after_approval", "Pause, enable, or remove an ad after exact approval.", (p) => [{
       adGroupAdOperation: { update: { resourceName: p.resourceName || p.adResourceName, status: validateStatus(p.status) }, updateMask: "status" },
     }]),
     writeTool("update_ad_final_url_after_approval", "Change an ad final URL after exact approval.", (p) => [{

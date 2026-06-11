@@ -1,6 +1,6 @@
 import { epfLocations, epfServices, campaignNameFor, keywordIntentWarning } from "./businessRules.js";
 
-const allowedStatuses = ["PAUSED", "ENABLED"];
+const allowedStatuses = ["PAUSED", "ENABLED", "REMOVED"];
 const allowedMatchTypes = ["PHRASE", "EXACT", "BROAD"];
 
 export function validateStatus(status = "PAUSED") {
