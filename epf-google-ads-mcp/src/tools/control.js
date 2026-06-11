@@ -30,6 +30,20 @@ const CampaignUrlSuffixSchema = CampaignResourceSchema.extend({
   finalUrlSuffix: z.string().trim().min(1).max(2048),
 });
 
+const CreateImageAssetSchema = z.object({
+  imageName: z.string().trim().min(1).max(255).default("EPF Image Asset"),
+  imageDataBase64: z.string().trim().min(100),
+  approvalText: z.string().optional().default(""),
+  apply: z.boolean().default(false),
+});
+
+const AttachImageAssetSchema = z.object({
+  campaignResourceName: z.string().min(1),
+  assetResourceName: z.string().min(1),
+  approvalText: z.string().optional().default(""),
+  apply: z.boolean().default(false),
+});
+
 const AddKeywordsSchema = z.object({
   adGroupResourceName: z.string().min(1),
   keywords: z.array(z.string().min(1)).min(1),
@@ -186,6 +200,52 @@ export const controlTools = [
     },
   },
   {
+    name: "create_image_asset_after_approval",
+    description: "Create an image asset from base64 image bytes after exact approval.",
+    schema: CreateImageAssetSchema,
+    handler: async (input) => {
+      const parsed = CreateImageAssetSchema.parse(input);
+      const operations = [
+        {
+          entity: "asset",
+          operation: "create",
+          resource: {
+            name: parsed.imageName,
+            image_asset: {
+              data: normalizeBase64Image(parsed.imageDataBase64),
+            },
+          },
+        },
+      ];
+      if (!ensureApplyApproved(parsed.apply)) return approvalRequired("create_image_asset_after_approval", scrubSensitiveWritePreview({ ...parsed, operations }));
+      requireExactApproval(parsed.approvalText, APPROVAL_TEXT);
+      return applied("create_image_asset_after_approval", await mutateGoogleAds(operations));
+    },
+  },
+  {
+    name: "attach_image_to_campaign_after_approval",
+    description: "Attach an image asset to a campaign after exact approval.",
+    schema: AttachImageAssetSchema,
+    handler: async (input) => {
+      const parsed = AttachImageAssetSchema.parse(input);
+      const operations = [
+        {
+          entity: "campaign_asset",
+          operation: "create",
+          resource: {
+            campaign: parsed.campaignResourceName,
+            asset: parsed.assetResourceName,
+            field_type: "IMAGE",
+            status: "ENABLED",
+          },
+        },
+      ];
+      if (!ensureApplyApproved(parsed.apply)) return approvalRequired("attach_image_to_campaign_after_approval", { ...parsed, operations });
+      requireExactApproval(parsed.approvalText, APPROVAL_TEXT);
+      return applied("attach_image_to_campaign_after_approval", await mutateGoogleAds(operations));
+    },
+  },
+  {
     name: "add_keywords_after_approval",
     description: "Add phrase/exact keywords after exact approval. Broad and low-intent keywords require explicit flags.",
     schema: AddKeywordsSchema,
@@ -212,3 +272,16 @@ export const controlTools = [
     },
   },
 ];
+
+function normalizeBase64Image(value) {
+  return String(value).replace(/^data:image\/[a-z0-9.+-]+;base64,/i, "").trim();
+}
+
+function scrubSensitiveWritePreview(value) {
+  if (Array.isArray(value)) return value.map(scrubSensitiveWritePreview);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => {
+    if (["imageDataBase64", "data"].includes(key)) return [key, "[base64 image data omitted]"];
+    return [key, scrubSensitiveWritePreview(item)];
+  }));
+}

@@ -170,6 +170,8 @@ Approval-gated control tools:
 - `attach_sitelink_to_campaign_after_approval`
 - `create_callout_asset_after_approval`
 - `attach_callout_to_campaign_after_approval`
+- `create_image_asset_after_approval`
+- `attach_image_to_campaign_after_approval`
 - `create_call_asset_after_approval`
 - `attach_call_asset_to_campaign_after_approval`
 - `create_structured_snippet_asset_after_approval`
@@ -210,6 +212,28 @@ Campaign final URL suffix example:
 {
   "campaignResourceName": "customers/9466544876/campaigns/123",
   "finalUrlSuffix": "utm_source=google&utm_medium=cpc&utm_campaign=drywall_repair",
+  "apply": true,
+  "approvalText": "APPROVER"
+}
+```
+
+Image asset example:
+
+```json
+{
+  "imageName": "Popcorn Ceiling Before After",
+  "imageDataBase64": "data:image/jpeg;base64,...",
+  "apply": true,
+  "approvalText": "APPROVER"
+}
+```
+
+Attach image asset example:
+
+```json
+{
+  "campaignResourceName": "customers/9466544876/campaigns/123",
+  "assetResourceName": "customers/9466544876/assets/456",
   "apply": true,
   "approvalText": "APPROVER"
 }

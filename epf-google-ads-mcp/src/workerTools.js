@@ -158,6 +158,9 @@ const GenericApprovedWriteSchema = z.object({
   endMinute: z.number().int().min(0).max(59).optional(),
   device: z.string().optional().default("MOBILE"),
   assetText: z.string().optional().default(""),
+  imageName: z.string().optional().default("EPF Image Asset"),
+  imageDataBase64: z.string().optional().default(""),
+  assetResourceName: z.string().optional().default(""),
   phoneNumber: z.string().optional().default(""),
   countryCode: z.string().optional().default("CA"),
   linkText: z.string().optional().default(""),
@@ -1473,7 +1476,10 @@ function assetQueries(input) {
       SELECT campaign.name, campaign_asset.resource_name, campaign_asset.status, campaign_asset.field_type,
         asset.resource_name, asset.id, asset.type, asset.sitelink_asset.link_text,
         asset.callout_asset.callout_text, asset.call_asset.phone_number,
-        asset.structured_snippet_asset.header, asset.structured_snippet_asset.values
+        asset.structured_snippet_asset.header, asset.structured_snippet_asset.values,
+        asset.image_asset.full_size.url, asset.image_asset.full_size.height_pixels,
+        asset.image_asset.full_size.width_pixels, asset.image_asset.mime_type,
+        asset.image_asset.file_size
       FROM campaign_asset
       ${campaignFilter ? `WHERE ${campaignFilter}` : ""}
       LIMIT ${input.limit}
@@ -1482,7 +1488,10 @@ function assetQueries(input) {
       SELECT ad_group.name, ad_group_asset.resource_name, ad_group_asset.status, ad_group_asset.field_type,
         asset.resource_name, asset.id, asset.type, asset.sitelink_asset.link_text,
         asset.callout_asset.callout_text, asset.call_asset.phone_number,
-        asset.structured_snippet_asset.header, asset.structured_snippet_asset.values
+        asset.structured_snippet_asset.header, asset.structured_snippet_asset.values,
+        asset.image_asset.full_size.url, asset.image_asset.full_size.height_pixels,
+        asset.image_asset.full_size.width_pixels, asset.image_asset.mime_type,
+        asset.image_asset.file_size
       FROM ad_group_asset
       ${adGroupFilter ? `WHERE ${adGroupFilter}` : ""}
       LIMIT ${input.limit}
@@ -1620,9 +1629,10 @@ function advancedWriteTools(env) {
     handler: async (input) => {
       const parsed = schema.parse(input);
       const mutateOperations = operationFactory(parsed, env);
-      const preview = previewOnlyIfWritesDisabled(env, name, { ...parsed, mutateOperations });
+      const proposedChange = scrubSensitiveWritePreview({ ...parsed, mutateOperations });
+      const preview = previewOnlyIfWritesDisabled(env, name, proposedChange);
       if (preview) return preview;
-      if (!ensureApplyApproved(parsed.apply)) return approvalRequired(name, { ...parsed, mutateOperations });
+      if (!ensureApplyApproved(parsed.apply)) return approvalRequired(name, proposedChange);
       requireExactApproval(parsed.approvalText, APPROVAL_TEXT);
       return applied(name, await mutateGoogleAdsRest(env, mutateOperations));
     },
@@ -1716,6 +1726,13 @@ function advancedWriteTools(env) {
       assetOperation: { create: { calloutAsset: { calloutText: p.assetText } } },
     }]),
     writeTool("attach_callout_to_campaign_after_approval", "Attach a callout asset to a campaign after exact approval.", attachAssetOperation("CALLOUT")),
+    writeTool("create_image_asset_after_approval", "Create an image asset from base64 image bytes after exact approval.", (p) => {
+      if (!p.imageDataBase64) throw new Error("Provide imageDataBase64.");
+      return [{ assetOperation: { create: { name: p.imageName || "EPF Image Asset", imageAsset: { data: normalizeBase64Image(p.imageDataBase64) } } } }];
+    }),
+    writeTool("attach_image_to_campaign_after_approval", "Attach an image asset to a campaign after exact approval.", (p) => [{
+      campaignAssetOperation: { create: { campaign: p.campaignResourceName, asset: p.assetResourceName || p.resourceName, fieldType: "IMAGE", status: "ENABLED" } },
+    }]),
     writeTool("create_call_asset_after_approval", "Create a call asset after exact approval.", (p) => [{
       assetOperation: { create: { callAsset: { countryCode: p.countryCode, phoneNumber: p.phoneNumber } } },
     }]),
@@ -1810,6 +1827,15 @@ function previewOnlyIfWritesDisabled(env, action, proposedChange) {
   });
 }
 
+function scrubSensitiveWritePreview(value) {
+  if (Array.isArray(value)) return value.map(scrubSensitiveWritePreview);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => {
+    if (["imageDataBase64", "data"].includes(key)) return [key, "[base64 image data omitted]"];
+    return [key, scrubSensitiveWritePreview(item)];
+  }));
+}
+
 function formatPerformanceRow(row) {
   const metrics = row.metrics || {};
   const impressions = Number(metrics.impressions || 0);
@@ -1893,6 +1919,10 @@ function buildAdServingDiagnosis({ campaignRows, adGroupRows, keywordRows, adRow
 
 function escapeGaqlString(value) {
   return String(value).replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+}
+
+function normalizeBase64Image(value) {
+  return String(value).replace(/^data:image\/[a-z0-9.+-]+;base64,/i, "").trim();
 }
 
 function isEnabledStatus(status) {
