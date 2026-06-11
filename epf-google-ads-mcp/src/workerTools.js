@@ -164,6 +164,7 @@ const GenericApprovedWriteSchema = z.object({
   line1: z.string().optional().default(""),
   line2: z.string().optional().default(""),
   finalUrl: z.string().optional().default(""),
+  finalUrlSuffix: z.string().optional().default(""),
   snippetHeader: z.string().optional().default("Services"),
   snippetValues: z.array(z.string()).optional().default([]),
   labelName: z.string().optional().default(""),
@@ -1669,6 +1670,9 @@ function advancedWriteTools(env) {
     }]),
     writeTool("update_ad_final_url_after_approval", "Change an ad final URL after exact approval.", (p) => [{
       adGroupAdOperation: { update: { resourceName: p.resourceName || p.adResourceName, ad: { finalUrls: [p.finalUrl] } }, updateMask: "ad.final_urls" },
+    }]),
+    writeTool("update_campaign_final_url_suffix_after_approval", "Update a campaign final URL suffix after exact approval.", (p) => [{
+      campaignOperation: { update: { resourceName: p.resourceName || p.campaignResourceName, finalUrlSuffix: p.finalUrlSuffix }, updateMask: "final_url_suffix" },
     }]),
     writeTool("update_keyword_match_type_after_approval", "Change a keyword match type after exact approval.", (p) => [{
       adGroupCriterionOperation: { update: { resourceName: p.resourceName || p.keywordResourceName, keyword: { matchType: validateNonBroadMatch(p.newMatchType, p.allowBroad) } }, updateMask: "keyword.match_type" },

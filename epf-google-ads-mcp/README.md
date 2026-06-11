@@ -157,6 +157,7 @@ Approval-gated control tools:
 - `update_keyword_bid_after_approval`
 - `update_responsive_search_ad_after_approval`
 - `update_ad_final_url_after_approval`
+- `update_campaign_final_url_suffix_after_approval`
 - `add_location_target_after_approval`
 - `remove_location_target_after_approval`
 - `set_location_bid_modifier_after_approval`
@@ -198,6 +199,17 @@ Search-only targeting example:
 ```json
 {
   "campaignResourceName": "customers/9466544876/campaigns/123",
+  "apply": true,
+  "approvalText": "APPROVER"
+}
+```
+
+Campaign final URL suffix example:
+
+```json
+{
+  "campaignResourceName": "customers/9466544876/campaigns/123",
+  "finalUrlSuffix": "utm_source=google&utm_medium=cpc&utm_campaign=drywall_repair",
   "apply": true,
   "approvalText": "APPROVER"
 }

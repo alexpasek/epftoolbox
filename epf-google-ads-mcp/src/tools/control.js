@@ -26,6 +26,10 @@ const CampaignResourceSchema = z.object({
   apply: z.boolean().default(false),
 });
 
+const CampaignUrlSuffixSchema = CampaignResourceSchema.extend({
+  finalUrlSuffix: z.string().trim().min(1).max(2048),
+});
+
 const AddKeywordsSchema = z.object({
   adGroupResourceName: z.string().min(1),
   keywords: z.array(z.string().min(1)).min(1),
@@ -157,6 +161,28 @@ export const controlTools = [
       if (!ensureApplyApproved(parsed.apply)) return approvalRequired("set_search_campaign_targeting_after_approval", { ...parsed, operations });
       requireExactApproval(parsed.approvalText, APPROVAL_TEXT);
       return applied("set_search_campaign_targeting_after_approval", await mutateGoogleAds(operations));
+    },
+  },
+  {
+    name: "update_campaign_final_url_suffix_after_approval",
+    description: "Update a campaign final URL suffix after exact approval.",
+    schema: CampaignUrlSuffixSchema,
+    handler: async (input) => {
+      const parsed = CampaignUrlSuffixSchema.parse(input);
+      const operations = [
+        {
+          entity: "campaign",
+          operation: "update",
+          resource: {
+            resource_name: parsed.campaignResourceName,
+            final_url_suffix: parsed.finalUrlSuffix,
+          },
+          update_mask: ["final_url_suffix"],
+        },
+      ];
+      if (!ensureApplyApproved(parsed.apply)) return approvalRequired("update_campaign_final_url_suffix_after_approval", { ...parsed, operations });
+      requireExactApproval(parsed.approvalText, APPROVAL_TEXT);
+      return applied("update_campaign_final_url_suffix_after_approval", await mutateGoogleAds(operations));
     },
   },
   {
