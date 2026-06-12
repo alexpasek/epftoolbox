@@ -199,14 +199,16 @@ function addIndicators(candles) {
 function buildSnapshot(rows, index, accountSize, riskPercent) {
   const row = rows[index];
   const prev = rows[index - 1] || row;
+  const prev2 = rows[index - 2] || prev;
   const levels = supportResistance(rows, index);
   const risk = riskPlan(row, levels, accountSize, riskPercent);
   const trend = trendStatus(row);
-  const facts = conditionFacts(row, prev, levels, risk);
+  const facts = conditionFacts(row, prev, prev2, levels, risk);
   const score = scoreSetup(facts);
-  const signal = signalFor(row, prev, trend, facts, score, risk);
-  const action = buildAction(row, prev, signal, trend, facts, risk);
-  const strategies = strategyPlans(row, prev, levels, risk, accountSize, riskPercent, signal, trend, facts);
+  const ruleEngine = buildRuleEngine(row, prev, prev2, levels, risk, trend, facts, accountSize, riskPercent);
+  const signal = ruleEngine.swing.now;
+  const action = buildAction(row, prev, signal, trend, facts, risk, ruleEngine.swing);
+  const strategies = strategyPlans(row, prev, levels, risk, accountSize, riskPercent, signal, trend, facts, ruleEngine);
   const reason = formatAction(action);
 
   return {
@@ -232,42 +234,88 @@ function buildSnapshot(rows, index, accountSize, riskPercent) {
     lastSignalDate: row.Date,
     action,
     strategies,
+    ruleEngine,
     reason,
     levels,
     facts,
   };
 }
 
-function conditionFacts(row, prev, levels, risk) {
+function conditionFacts(row, prev, prev2, levels, risk) {
   const nearEma20 = row.Close <= row.EMA20 * 1.025 && row.Close >= row.EMA20 * 0.96;
+  const nearSma20 = row.Close <= row.SMA20 * 1.025 && row.Close >= row.SMA20 * 0.96;
+  const nearSma50 = row.Close <= row.SMA50 * 1.035 && row.Close >= row.SMA50 * 0.96;
+  const nearEma50 = row.Close <= row.EMA50 * 1.035 && row.Close >= row.EMA50 * 0.96;
   const nearLowerBand = row.Close <= row.BBLower * 1.04;
+  const nearUpperBand = row.Close >= row.BBUpper * 0.98;
   const resistanceDistance = levels.nearestResistance
     ? (levels.nearestResistance - row.Close) / row.Close
     : 0.05;
+  const macdCrossUp = prev.MACD <= prev.MACDSignal && row.MACD > row.MACDSignal;
+  const macdCrossDown = prev.MACD >= prev.MACDSignal && row.MACD < row.MACDSignal;
+  const macdWeakensTwoCandles = row.MACDHist < prev.MACDHist && prev.MACDHist < prev2.MACDHist;
+  const williamsRecovery = prev.WilliamsR < -80 && row.WilliamsR > -80;
+  const williamsTakeProfit = prev.WilliamsR > -20 && row.WilliamsR < -20;
+  const williamsBearish = row.WilliamsR < -50 && row.WilliamsR < prev.WilliamsR;
+  const bullishDmiCross = prev.PlusDI <= prev.MinusDI && row.PlusDI > row.MinusDI && row.ADX >= 18;
+  const bearishDmiCross = prev.MinusDI <= prev.PlusDI && row.MinusDI > row.PlusDI && row.ADX >= 18;
+  const strongBullishCandle = row.Close > row.Open && row.Close >= row.High - (row.High - row.Low) * 0.25 && row.Close > prev.High;
+  const strongBearishCandle = row.Close < row.Open && row.Close <= row.Low + (row.High - row.Low) * 0.25 && row.Close < prev.Low;
   return {
     priceAboveEma200: row.Close > row.EMA200,
+    priceAboveSma200: row.Close > row.SMA200,
     ema50AboveEma200: row.EMA50 > row.EMA200,
-    pullbackArea: nearEma20 || nearLowerBand,
+    pullbackArea: nearEma20 || nearSma20 || nearLowerBand,
+    positionPullbackArea: nearSma50 || nearEma50,
     rsiRecoveryZone: row.RSI >= 40 && row.RSI <= 58,
     rsiImproving: row.RSI > prev.RSI,
     macdImproving: row.MACDHist > prev.MACDHist,
-    dmiPositive: row.PlusDI > row.MinusDI || (prev.PlusDI <= prev.MinusDI && row.PlusDI > row.MinusDI),
-    adxTrend: row.ADX > 18,
-    volumeOkay: row.Volume >= row.VolumeSMA20 * 0.85,
+    macdWeakening: row.MACDHist < prev.MACDHist,
+    macdWeakensTwoCandles,
+    macdCrossUp,
+    macdCrossDown,
+    dmiPositive: row.PlusDI > row.MinusDI || bullishDmiCross,
+    dmiSellers: row.MinusDI > row.PlusDI || bearishDmiCross,
+    bullishDmiCross,
+    bearishDmiCross,
+    adxTrend: row.ADX >= 18,
+    strongTrend: row.ADX >= 25,
+    volumeStrong: row.Volume >= row.VolumeSMA20 * 1.2,
+    volumeNormal: row.Volume >= row.VolumeSMA20 * 0.8 && row.Volume < row.VolumeSMA20 * 1.2,
+    volumeWeak: row.Volume < row.VolumeSMA20 * 0.8,
+    volumeOkay: row.Volume >= row.VolumeSMA20 * 0.8,
+    bullishVolume: row.Close > prev.Close && row.Volume >= row.VolumeSMA20,
+    bearishVolume: row.Close < prev.Close && row.Volume >= row.VolumeSMA20,
     notNearResistance: resistanceDistance >= 0.025,
     candleConfirm: row.Close > prev.High,
+    strongBullishCandle,
+    strongBearishCandle,
     closeAboveEma20: row.Close > row.EMA20,
+    closeAboveSma20: row.Close > row.SMA20,
     riskRewardOkay: risk.riskReward >= 2,
+    swingWatchRiskReward: risk.riskReward >= 1.5,
+    positionRiskRewardOkay: risk.riskReward >= 3,
     rsiTooHigh: row.RSI > 68,
     extended: row.Close > row.EMA20 * 1.08,
+    nearUpperBand,
+    aboveUpperBand: row.Close > row.BBUpper,
+    aboveMiddleBand: row.Close > row.BBMiddle,
+    farAboveUpperBand: row.Close > row.BBUpper * 1.015,
     closeBelowEma20: row.Close < row.EMA20,
     closeBelowEma50: row.Close < row.EMA50,
     closeBelowEma200: row.Close < row.EMA200,
+    closeBelowSma200: row.Close < row.SMA200,
     macdBearish: row.MACDHist < 0 && row.MACD < row.MACDSignal,
     rsiFallingUnder40: row.RSI < 40 && row.RSI < prev.RSI,
     weakTrend: row.ADX < 18,
     nearResistance: resistanceDistance < 0.025,
     atrStopHit: row.Close <= risk.suggestedStop,
+    structureStopHit: row.Close <= risk.structureStop,
+    williamsRecovery,
+    williamsOverbought: row.WilliamsR > -20,
+    williamsOversold: row.WilliamsR < -80,
+    williamsTakeProfit,
+    williamsBearish,
   };
 }
 
@@ -284,6 +332,216 @@ function scoreSetup(facts) {
 
 function points(items, max) {
   return (items.filter(Boolean).length / items.length) * max;
+}
+
+function buildRuleEngine(row, prev, prev2, levels, risk, trend, facts, accountSize, riskPercent) {
+  const swing = swingDecision(row, prev, levels, risk, trend, facts);
+  const position = positionDecision(row, prev, levels, risk, trend, facts);
+  const day = {
+    mode: "Day trade",
+    now: "WAIT",
+    enabled: false,
+    why: "Day trade unavailable. Current data is daily only.",
+    enterOnlyIf: "Load 5m or 15m intraday candles before using day-trade rules.",
+    stopArea: null,
+    targetArea: null,
+    riskReward: null,
+    riskPercentUsed: Math.min(riskPercent, 0.5),
+    warning: "Do not use daily candles for day-trade entries. No margin or automatic trading.",
+    passed: [],
+    failed: ["Intraday candles are not available."],
+  };
+  return {
+    source: "Daily candles only",
+    disclaimer: "Analysis and education only. No broker connection, no market orders, no automatic trading, and no guaranteed profit.",
+    indicatorRules: indicatorRuleCards(row, prev, prev2, levels, risk, facts, trend),
+    day,
+    swing,
+    position,
+    chartNotes: [
+      { label: "NOW", value: swing.now, tone: swing.now.includes("EXIT") ? "danger" : swing.now.includes("ENTRY") ? "success" : "neutral" },
+      { label: "WHY", value: swing.why, tone: "neutral" },
+      { label: "ENTRY RULE", value: swing.enterOnlyIf, tone: "success" },
+      { label: "STOP", value: money(swing.stopArea), tone: "danger" },
+      { label: "TARGET", value: money(swing.targetArea), tone: "success" },
+    ],
+  };
+}
+
+function indicatorRuleCards(row, prev, prev2, levels, risk, facts, trend) {
+  return [
+    ruleCard(
+      "Williams %R 14",
+      facts.williamsRecovery ? "BUY WATCH" : facts.williamsTakeProfit ? "OUT WATCH" : facts.williamsOverbought ? "WAIT" : facts.williamsBearish ? "OUT WATCH" : "NEUTRAL",
+      facts.williamsRecovery
+        ? `Williams %R crossed above -80 from oversold (${numberText(prev.WilliamsR)} to ${numberText(row.WilliamsR)}).`
+        : facts.williamsTakeProfit
+          ? `Williams %R crossed below -20 after overbought (${numberText(prev.WilliamsR)} to ${numberText(row.WilliamsR)}).`
+          : facts.williamsOverbought
+            ? `Williams %R is above -20 at ${numberText(row.WilliamsR)}, so do not chase without strong volume.`
+            : facts.williamsBearish
+              ? `Williams %R is below -50 and falling at ${numberText(row.WilliamsR)}.`
+              : `Williams %R is neutral at ${numberText(row.WilliamsR)}.`,
+      "Above -20 is overbought; below -80 is oversold; crossing above -80 is recovery."
+    ),
+    ruleCard(
+      "Volume 20",
+      facts.volumeStrong ? "BUY CONFIRM" : facts.volumeWeak ? "WAIT" : facts.bearishVolume ? "OUT WATCH" : "NEUTRAL",
+      facts.volumeStrong
+        ? `Volume is strong: ${Math.round(row.Volume)} is at least 1.2x the 20-day average.`
+        : facts.volumeWeak
+          ? `Volume is weak: ${Math.round(row.Volume)} is below 0.8x the 20-day average.`
+          : facts.bearishVolume
+            ? "Price fell on confirming volume, so sellers are active."
+            : "Volume is normal, so it can support a normal swing setup.",
+      "Breakouts need at least average volume; strong breakouts need 1.2x average volume."
+    ),
+    ruleCard(
+      "DMI / ADX 14",
+      facts.bullishDmiCross ? "BUY CONFIRM" : facts.bearishDmiCross ? "OUT WATCH" : facts.dmiPositive && facts.adxTrend ? "BUY WATCH" : facts.dmiSellers ? "OUT WATCH" : "WAIT",
+      facts.bullishDmiCross
+        ? "+DI crossed above -DI while ADX is tradable."
+        : facts.bearishDmiCross
+          ? "-DI crossed above +DI while ADX is tradable."
+          : facts.dmiPositive && facts.adxTrend
+            ? `Buyers are stronger (+DI ${numberText(row.PlusDI)} > -DI ${numberText(row.MinusDI)}) and ADX is ${numberText(row.ADX)}.`
+            : facts.weakTrend
+              ? `ADX is ${numberText(row.ADX)}, which is choppy/weak.`
+              : "DMI is not giving a clean buyer signal.",
+      "ADX measures trend strength; +DI above -DI means buyers are stronger."
+    ),
+    ruleCard(
+      "MACD 12/26/9",
+      facts.macdCrossUp ? "BUY CONFIRM" : facts.macdCrossDown || facts.macdWeakensTwoCandles ? "OUT WATCH" : facts.macdImproving ? "BUY WATCH" : facts.macdBearish ? "OUT WATCH" : "NEUTRAL",
+      facts.macdCrossUp
+        ? "MACD crossed above the signal line."
+        : facts.macdCrossDown
+          ? "MACD crossed below the signal line."
+          : facts.macdWeakensTwoCandles
+            ? "MACD histogram weakened for 2 candles."
+            : facts.macdImproving
+              ? "MACD histogram is improving versus yesterday."
+              : "MACD does not confirm a fresh entry.",
+      "MACD must be confirmed with trend, volume, and ADX."
+    ),
+    ruleCard(
+      "Bollinger Bands 20/2",
+      facts.aboveUpperBand && facts.volumeStrong && row.ADX > prev.ADX ? "BUY WATCH" : facts.farAboveUpperBand && facts.williamsOverbought && facts.volumeWeak ? "WAIT" : facts.aboveMiddleBand && facts.macdImproving && facts.williamsRecovery ? "BUY WATCH" : facts.pullbackArea && trend === "Bullish" ? "BUY WATCH" : facts.nearUpperBand && facts.macdWeakening ? "OUT WATCH" : "NEUTRAL",
+      facts.aboveUpperBand && facts.volumeStrong && row.ADX > prev.ADX
+        ? "Price closed above the upper band with strong volume and rising ADX."
+        : facts.farAboveUpperBand && facts.williamsOverbought && facts.volumeWeak
+          ? "Price is far above the upper band, Williams %R is overbought, and volume is weak."
+          : facts.pullbackArea && trend === "Bullish"
+            ? "Price is near EMA20/SMA20 or the lower band while the long trend is bullish."
+            : facts.nearUpperBand && facts.macdWeakening
+              ? "Price is near the upper band while MACD is weakening."
+              : "Bands do not show a clean entry or exit warning.",
+      "Lower band can be pullback area; upper band needs strong volume to confirm breakout."
+    ),
+    ruleCard(
+      "Candle",
+      facts.strongBullishCandle ? "BUY CONFIRM" : facts.strongBearishCandle || facts.closeBelowEma50 ? "OUT" : facts.closeBelowEma20 ? "OUT WATCH" : "NEUTRAL",
+      facts.strongBullishCandle
+        ? "Strong bullish candle closed near the high and above the previous high."
+        : facts.strongBearishCandle
+          ? "Strong bearish candle closed near the low and below the previous low."
+          : facts.closeBelowEma50
+            ? "Daily close is below EMA50, which triggers swing exit."
+            : facts.closeBelowEma20
+              ? "Daily close is below EMA20, which is a swing warning."
+              : "Candle is not a decisive buy or exit candle.",
+      "Entry candle must close above previous high and above EMA20/SMA20."
+    ),
+    ruleCard(
+      "Risk",
+      risk.riskReward >= 3 ? "BUY CONFIRM" : risk.riskReward >= 2 ? "BUY WATCH" : risk.riskReward >= 1.5 ? "WAIT" : "NO TRADE",
+      `Current risk/reward is ${numberText(risk.riskReward)}:1 using stop ${money(risk.suggestedStop)} and target ${money(risk.target)}.`,
+      "Minimum risk/reward: day 1.5:1, swing 2:1, position 3:1."
+    ),
+  ];
+}
+
+function ruleCard(name, status, why, rule) {
+  return { name, status, why, rule };
+}
+
+function swingDecision(row, prev, levels, risk, trend, facts) {
+  const stop = risk.suggestedStop;
+  const target = risk.target;
+  const trigger = Math.max(row.High, prev.High);
+  const exitTrigger = facts.closeBelowEma50 || facts.structureStopHit || facts.atrStopHit || facts.macdCrossDown;
+  const exitWatch =
+    facts.nearResistance ||
+    facts.williamsTakeProfit ||
+    facts.macdWeakensTwoCandles ||
+    facts.closeBelowEma20 ||
+    facts.dmiSellers;
+  const entryConfirmed =
+    row.Close > prev.High &&
+    facts.closeAboveEma20 &&
+    facts.closeAboveSma20 &&
+    (facts.macdImproving || facts.macdCrossUp) &&
+    (facts.williamsRecovery || row.WilliamsR > -80) &&
+    risk.riskReward >= 2;
+  const entryWatch =
+    facts.priceAboveEma200 &&
+    facts.ema50AboveEma200 &&
+    facts.pullbackArea &&
+    row.WilliamsR >= -80 &&
+    row.WilliamsR <= -50 &&
+    row.WilliamsR > prev.WilliamsR &&
+    facts.macdImproving &&
+    facts.dmiPositive &&
+    facts.adxTrend &&
+    facts.volumeOkay &&
+    risk.riskReward >= 1.5;
+
+  if (exitTrigger) {
+    return decision("Swing trade", "EXIT TRIGGER", "Daily exit rule triggered by EMA50, stop, ATR stop, or MACD bearish cross.", `Do not enter; reconsider only if daily candle closes above ${money(trigger)}.`, stop, target, risk.riskReward, ["Close below EMA50/stop/ATR stop or MACD bearish cross."], "If already holding, the rule says the setup failed.");
+  }
+  if (exitWatch) {
+    return decision("Swing trade", "EXIT WATCH", "Price is near resistance or momentum is cooling.", `Do not enter; wait for a new close above ${money(trigger)} with normal or strong volume.`, stop, target, risk.riskReward, ["Resistance, Williams %R cooling, MACD weakening, EMA20 warning, or sellers gaining."], "If price closes below EMA50, this becomes an exit trigger.");
+  }
+  if (entryConfirmed) {
+    return decision("Swing trade", "ENTRY CONFIRMED", "Daily candle closed above previous high, above EMA20/SMA20, with momentum confirmation.", `Latest daily candle closed above ${money(prev.High)} and above EMA20/SMA20.`, stop, target, risk.riskReward, ["Candle confirmation", "MACD improving", "Risk/reward >= 2:1"], "If price closes below the stop area, the trade setup fails.");
+  }
+  if (entryWatch) {
+    return decision("Swing trade", "ENTRY WATCH", "Bullish trend is intact and pullback/momentum rules are lining up.", `Enter only if daily candle closes above ${money(trigger)} with volume at least normal.`, stop, target, risk.riskReward, ["Bullish trend", "Pullback area", "Williams %R improving", "MACD improving", "ADX tradable"], "If volume is weak or Williams %R turns down, do not confirm entry.");
+  }
+  return decision("Swing trade", "WAIT", "The full swing entry rule is not confirmed.", `Wait for daily candle close above ${money(trigger)} plus MACD improvement and risk/reward >= 2:1.`, stop, target, risk.riskReward, [], "Do not buy just because price is moving; rules need confirmation.");
+}
+
+function positionDecision(row, prev, levels, risk, trend, facts) {
+  const trigger = levels.swingHigh50;
+  const stop = Math.min(levels.swingLow50, row.EMA50 || levels.swingLow50);
+  const riskPerShare = Math.max(row.Close - stop, 0.01);
+  const target = row.Close + riskPerShare * 3;
+  const riskReward = (target - row.Close) / riskPerShare;
+  const exitTrigger = facts.closeBelowSma200 || row.EMA50 < row.EMA200 || row.Close < levels.swingLow50;
+  const exitWatch = facts.nearResistance || facts.macdWeakening || facts.williamsTakeProfit || facts.closeBelowEma50;
+  const entryConfirmed = row.Close > trigger && facts.priceAboveSma200 && facts.bullishVolume && riskReward >= 3;
+  const entryWatch = facts.priceAboveSma200 && facts.ema50AboveEma200 && facts.positionPullbackArea && facts.macdImproving && facts.adxTrend && facts.dmiPositive && riskReward >= 3;
+
+  if (exitTrigger) return decision("Position trade", "EXIT TRIGGER", "Position exit rule triggered: below SMA200, EMA50 under EMA200, or major support broke.", `Do not enter until price reclaims SMA200 and closes above ${money(trigger)}.`, stop, target, riskReward, ["SMA200 / EMA trend / support failure."], "Long-term setup is weak below SMA200.");
+  if (exitWatch) return decision("Position trade", "EXIT WATCH", "Longer-term momentum is weakening or price is near resistance.", `Wait for daily or weekly close above ${money(trigger)} before adding.`, stop, target, riskReward, ["Resistance, MACD weakening, Williams %R cooling, or EMA50 warning."], "If price closes below SMA200, exit trigger fires.");
+  if (entryConfirmed) return decision("Position trade", "ENTRY CONFIRMED", "Price closed above the swing high, remains above SMA200, and volume confirms.", `Daily candle closed above previous swing high ${money(trigger)} while above SMA200.`, stop, target, riskReward, ["Swing high break", "Above SMA200", "Volume confirms"], "If price closes below SMA200, position trade fails.");
+  if (entryWatch) return decision("Position trade", "ENTRY WATCH", "Longer trend is bullish and price is pulling back near SMA50/EMA50.", `Enter only after daily or weekly candle closes above ${money(trigger)}.`, stop, target, riskReward, ["Above SMA200", "EMA50 > EMA200", "MACD improving", "ADX tradable"], "If risk/reward falls below 3:1, skip the position trade.");
+  return decision("Position trade", "WAIT", "Position rules are not aligned yet.", `Wait for price above SMA200 and close above ${money(trigger)} with volume confirmation.`, stop, target, riskReward, [], "Do not use a position trade while long-term trend is weak.");
+}
+
+function decision(mode, now, why, enterOnlyIf, stopArea, targetArea, riskReward, passed, warning) {
+  return {
+    mode,
+    now,
+    why,
+    enterOnlyIf,
+    stopArea: round(stopArea),
+    targetArea: round(targetArea),
+    riskReward: round(riskReward, 2),
+    passed,
+    failed: [],
+    warning,
+  };
 }
 
 function signalFor(row, prev, trend, facts, score, risk) {
@@ -377,71 +635,68 @@ function riskPlan(row, levels, accountSize, riskPercent) {
   };
 }
 
-function strategyPlans(row, prev, levels, risk, accountSize, riskPercent, signal, trend, facts) {
-  const maxRiskDollars = accountSize * (riskPercent / 100);
+function strategyPlans(row, prev, levels, risk, accountSize, riskPercent, signal, trend, facts, ruleEngine) {
+  const dayRiskDollars = accountSize * (Math.min(riskPercent, 0.5) / 100);
+  const swingRiskDollars = accountSize * (Math.min(riskPercent, 1) / 100);
+  const positionRiskDollars = accountSize * (Math.min(riskPercent, 1) / 100);
   const nextHigh = Math.max(row.High, prev.High);
   const dayEntry = nextHigh;
   const dayStop = Math.min(row.Low, row.Close - row.ATR * 0.6);
   const dayRisk = Math.max(dayEntry - dayStop, 0.01);
+  const swingDecisionPlan = ruleEngine?.swing;
+  const positionDecisionPlan = ruleEngine?.position;
   const swingEntry = signal === "ENTRY CONFIRMED" ? row.Close : nextHigh;
-  const swingStop = risk.suggestedStop;
+  const swingStop = swingDecisionPlan?.stopArea ?? risk.suggestedStop;
   const swingRisk = Math.max(swingEntry - swingStop, 0.01);
   const positionEntry = row.Close;
-  const positionStop = Math.min(levels.swingLow50, row.EMA50 || levels.swingLow50);
+  const positionStop = positionDecisionPlan?.stopArea ?? Math.min(levels.swingLow50, row.EMA50 || levels.swingLow50);
   const positionRisk = Math.max(positionEntry - positionStop, 0.01);
 
   return [
     makeStrategyPlan({
       label: "Day trade",
-      horizon: "Same day to 2 days",
-      now: facts.closeAboveEma20 && facts.macdImproving ? "ENTRY WATCH" : "WAIT",
-      why: facts.closeAboveEma20 && facts.macdImproving
-        ? "Price is above SMA20/EMA20 and intraday momentum can be watched."
-        : "Daily trend is not strong enough for a fast entry yet.",
-      entryCondition: `Only if price breaks above ${money(dayEntry)} and stays above SMA20/EMA20 with volume stronger than normal.`,
+      horizon: "Unavailable until intraday data exists",
+      now: ruleEngine.day.now,
+      enabled: false,
+      why: ruleEngine.day.why,
+      entryCondition: ruleEngine.day.enterOnlyIf,
       entry: dayEntry,
       stop: dayStop,
       target: dayEntry + dayRisk * 1.5,
       accountSize,
-      maxRiskDollars,
-      warning: `If price falls back under ${money(row.EMA20)}, do not chase the move.`,
+      maxRiskDollars: dayRiskDollars,
+      warning: ruleEngine.day.warning,
     }),
     makeStrategyPlan({
       label: "Swing trade",
       horizon: "Several days to weeks",
-      now: signal,
-      why: signal === "ENTRY CONFIRMED"
-        ? "The latest daily candle already confirmed the swing entry rule."
-        : "Wait for a daily candle to confirm above resistance before buying.",
-      entryCondition: signal === "ENTRY CONFIRMED"
-        ? `Entry is already confirmed near ${money(swingEntry)}; avoid chasing far above that price.`
-        : `Enter only if a daily candle closes above ${money(swingEntry)}.`,
+      now: swingDecisionPlan.now,
+      why: swingDecisionPlan.why,
+      entryCondition: swingDecisionPlan.enterOnlyIf,
       entry: swingEntry,
       stop: swingStop,
-      target: Math.max(risk.target, swingEntry + swingRisk * 2),
+      target: Math.max(swingDecisionPlan.targetArea ?? risk.target, swingEntry + swingRisk * 2),
       accountSize,
-      maxRiskDollars,
-      warning: `If daily close is below ${money(row.EMA20)}, the swing setup becomes weak.`,
+      maxRiskDollars: swingRiskDollars,
+      warning: swingDecisionPlan.warning,
     }),
     makeStrategyPlan({
       label: "Position trade",
       horizon: "Weeks to months",
-      now: trend === "Bullish" && row.Close > row.SMA200 ? "ENTRY WATCH" : "WAIT",
-      why: trend === "Bullish" && row.Close > row.SMA200
-        ? "Longer trend is above the 200-day average."
-        : "Longer trend needs price back above SMA200 before the risk is cleaner.",
-      entryCondition: `Use only after price closes above SMA20 and remains above SMA200 at ${money(row.SMA200)}.`,
+      now: positionDecisionPlan.now,
+      why: positionDecisionPlan.why,
+      entryCondition: positionDecisionPlan.enterOnlyIf,
       entry: positionEntry,
       stop: positionStop,
-      target: positionEntry + positionRisk * 3,
+      target: Math.max(positionDecisionPlan.targetArea ?? 0, positionEntry + positionRisk * 3),
       accountSize,
-      maxRiskDollars,
-      warning: `If price closes below SMA200 at ${money(row.SMA200)}, the long-term setup is weak.`,
+      maxRiskDollars: positionRiskDollars,
+      warning: positionDecisionPlan.warning,
     }),
   ];
 }
 
-function makeStrategyPlan({ label, horizon, now, why, entryCondition, entry, stop, target, accountSize, maxRiskDollars, warning }) {
+function makeStrategyPlan({ label, horizon, now, enabled = true, why, entryCondition, entry, stop, target, accountSize, maxRiskDollars, warning }) {
   const cleanEntry = Number.isFinite(entry) ? entry : 0;
   const cleanStop = Number.isFinite(stop) && stop < cleanEntry ? stop : cleanEntry * 0.97;
   const riskPerShare = Math.max(cleanEntry - cleanStop, 0.01);
@@ -458,6 +713,7 @@ function makeStrategyPlan({ label, horizon, now, why, entryCondition, entry, sto
     label,
     horizon,
     now,
+    enabled,
     why,
     entryCondition,
     entry: round(cleanEntry),
@@ -476,12 +732,25 @@ function makeStrategyPlan({ label, horizon, now, why, entryCondition, entry, sto
   };
 }
 
-function buildAction(row, prev, signal, trend, facts, risk) {
+function buildAction(row, prev, signal, trend, facts, risk, modeDecision) {
   const trigger = round(prev.High);
   const stop = round(risk.suggestedStop);
   const target = round(risk.target);
   const riskReward = round(risk.riskReward, 2);
   const ema20 = round(row.EMA20);
+
+  if (modeDecision) {
+    return {
+      now: modeDecision.now,
+      why: modeDecision.why,
+      enterOnlyIf: modeDecision.enterOnlyIf,
+      stopArea: modeDecision.stopArea,
+      targetArea: modeDecision.targetArea,
+      riskReward: modeDecision.riskReward,
+      whatCanGoWrong: modeDecision.warning,
+      trend,
+    };
+  }
 
   const whyBySignal = {
     "ENTRY WATCH": facts.macdImproving
@@ -762,6 +1031,10 @@ function daysBetween(start, end) {
 
 function money(value) {
   return typeof value === "number" && Number.isFinite(value) ? `$${value.toFixed(2)}` : "$0.00";
+}
+
+function numberText(value) {
+  return typeof value === "number" && Number.isFinite(value) ? value.toFixed(2).replace(/\.00$/, "") : "-";
 }
 
 function capitalizeSentence(value) {

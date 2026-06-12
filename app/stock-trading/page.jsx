@@ -357,6 +357,7 @@ function SingleAnalysis({ item }) {
             </span>
           </div>
           <ActionBlock item={item} />
+          <RuleEnginePanel item={item} />
         </div>
         <div className="grid grid-cols-2 gap-2 text-xs md:min-w-[320px]">
           <Metric label="Price" value={money(item.price)} />
@@ -428,7 +429,7 @@ function BeginnerPlan({ item }) {
 
 function StrategyCard({ plan }) {
   return (
-    <article className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+    <article className={`rounded-lg border p-3 ${plan.enabled === false ? "border-amber-200 bg-amber-50" : "border-slate-200 bg-slate-50"}`}>
       <div className="flex items-start justify-between gap-3">
         <div>
           <h4 className="text-base font-black text-slate-950">{plan.label}</h4>
@@ -454,6 +455,52 @@ function StrategyCard({ plan }) {
       <p className="mt-3 text-xs font-bold text-slate-500">{plan.calculation}</p>
       <p className="mt-2 text-xs font-bold text-rose-700">Warning: {plan.warning}</p>
     </article>
+  );
+}
+
+function RuleEnginePanel({ item }) {
+  const rules = item.ruleEngine?.indicatorRules || [];
+  const modes = [item.ruleEngine?.day, item.ruleEngine?.swing, item.ruleEngine?.position].filter(Boolean);
+  if (!rules.length && !modes.length) return null;
+
+  return (
+    <div className="mt-4 rounded-lg border border-slate-200 bg-white p-4">
+      <div className="flex flex-col gap-1 md:flex-row md:items-end md:justify-between">
+        <div>
+          <h3 className="text-xs font-black uppercase tracking-wide text-slate-500">Rule Engine: Why Buy / Wait / Out</h3>
+          <p className="mt-1 text-xs font-semibold text-slate-500">
+            Daily rules use candles, volume, Williams %R, DMI/ADX, MACD, Bollinger Bands, moving averages, and risk/reward.
+          </p>
+        </div>
+        <span className="text-xs font-black text-slate-500">{item.ruleEngine?.source}</span>
+      </div>
+      <div className="mt-3 grid gap-3 xl:grid-cols-3">
+        {modes.map((mode) => (
+          <div key={mode.mode} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-sm font-black text-slate-950">{mode.mode}</p>
+              <SignalPill signal={mode.now} />
+            </div>
+            <p className="mt-2 text-xs font-bold leading-5 text-slate-700">{mode.why}</p>
+            <p className="mt-2 text-xs font-semibold leading-5 text-slate-500">
+              <span className="font-black text-slate-800">Rule: </span>{mode.enterOnlyIf}
+            </p>
+          </div>
+        ))}
+      </div>
+      <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+        {rules.map((rule) => (
+          <div key={rule.name} className="rounded-md border border-slate-200 bg-slate-50 p-3">
+            <div className="flex items-start justify-between gap-2">
+              <p className="text-xs font-black uppercase tracking-wide text-slate-700">{rule.name}</p>
+              <RuleStatusPill status={rule.status} />
+            </div>
+            <p className="mt-2 text-xs font-bold leading-5 text-slate-700">{rule.why}</p>
+            <p className="mt-2 text-[11px] font-semibold leading-4 text-slate-500">{rule.rule}</p>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -535,6 +582,7 @@ function ChartPanel({ item, timeframe, tools, onToggleTool }) {
       <div className="mt-4">
         <ChartToolBar tools={tools} onToggleTool={onToggleTool} />
       </div>
+      <ChartRuleOverlay item={item} />
       <div className="mt-4">
         <CandlestickChart rows={rows} item={item} tools={tools} />
       </div>
@@ -548,6 +596,31 @@ function ChartPanel({ item, timeframe, tools, onToggleTool }) {
         {indicatorCards}
       </div>
     </section>
+  );
+}
+
+function ChartRuleOverlay({ item }) {
+  const notes = item.ruleEngine?.chartNotes || [];
+  if (!notes.length) return null;
+
+  return (
+    <div className="mt-4 grid gap-2 lg:grid-cols-[160px_minmax(0,1fr)_minmax(0,1fr)_130px_130px]">
+      {notes.map((note) => (
+        <div
+          key={note.label}
+          className={`rounded-lg border p-3 ${
+            note.tone === "danger"
+              ? "border-rose-200 bg-rose-50"
+              : note.tone === "success"
+                ? "border-emerald-200 bg-emerald-50"
+                : "border-slate-200 bg-slate-50"
+          }`}
+        >
+          <p className="text-[10px] font-black uppercase tracking-wide text-slate-500">{note.label}</p>
+          <p className="mt-1 text-xs font-black leading-5 text-slate-950">{note.value || "-"}</p>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -644,6 +717,7 @@ function CandlestickChart({ rows, item, tools }) {
     ["Stop", item.stop, "#dc2626"],
     ["Target", item.target, "#16a34a"],
   ].filter(([, value]) => Number.isFinite(value));
+  const chartNotes = item.ruleEngine?.chartNotes || [];
 
   return (
     <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
@@ -665,6 +739,27 @@ function CandlestickChart({ rows, item, tools }) {
             </g>
           );
         })}
+
+        {chartNotes.length ? (
+          <g>
+            <rect x={padding.left + 8} y={padding.top + 8} width="390" height="116" rx="8" fill="#ffffff" stroke="#cbd5e1" opacity="0.96" />
+            <text x={padding.left + 22} y={padding.top + 32} className="fill-slate-500 text-[11px] font-black">
+              RULE POSITION
+            </text>
+            <text x={padding.left + 22} y={padding.top + 54} className="fill-slate-950 text-[16px] font-black">
+              {item.ruleEngine?.swing?.now || item.signal}
+            </text>
+            <text x={padding.left + 22} y={padding.top + 76} className="fill-slate-700 text-[11px] font-bold">
+              {truncateText(item.ruleEngine?.swing?.why || item.action?.why, 68)}
+            </text>
+            <text x={padding.left + 22} y={padding.top + 96} className="fill-slate-700 text-[11px] font-bold">
+              Entry: {truncateText(item.ruleEngine?.swing?.enterOnlyIf || item.action?.enterOnlyIf, 62)}
+            </text>
+            <text x={padding.left + 22} y={padding.top + 114} className="fill-slate-700 text-[11px] font-bold">
+              Stop {money(item.ruleEngine?.swing?.stopArea ?? item.stop)} / Target {money(item.ruleEngine?.swing?.targetArea ?? item.target)}
+            </text>
+          </g>
+        ) : null}
 
         {tools.bollinger ? (
           <>
@@ -1013,6 +1108,23 @@ function SignalPill({ signal }) {
   );
 }
 
+function RuleStatusPill({ status }) {
+  const styles = {
+    "BUY CONFIRM": "border-emerald-300 bg-emerald-100 text-emerald-900",
+    "BUY WATCH": "border-sky-300 bg-sky-100 text-sky-900",
+    WAIT: "border-amber-300 bg-amber-100 text-amber-900",
+    NEUTRAL: "border-slate-300 bg-white text-slate-700",
+    "OUT WATCH": "border-orange-300 bg-orange-100 text-orange-900",
+    OUT: "border-rose-300 bg-rose-100 text-rose-900",
+    "NO TRADE": "border-rose-300 bg-rose-100 text-rose-900",
+  };
+  return (
+    <span className={`inline-flex whitespace-nowrap rounded-md border px-2 py-1 text-[10px] font-black ${styles[status] || styles.NEUTRAL}`}>
+      {status}
+    </span>
+  );
+}
+
 function Metric({ label, value }) {
   return (
     <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
@@ -1049,4 +1161,9 @@ function capitalizeSentence(value) {
 function withPeriod(value) {
   const text = String(value || "");
   return text.endsWith(".") ? text : `${text}.`;
+}
+
+function truncateText(value, maxLength) {
+  const text = String(value || "");
+  return text.length > maxLength ? `${text.slice(0, maxLength - 3)}...` : text;
 }
