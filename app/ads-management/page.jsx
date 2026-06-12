@@ -1,69 +1,48 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 
 const mcpServerUrl = "https://epf-google-ads-mcp.webtoronto22.workers.dev/mcp";
 const mcpHealthUrl = "https://epf-google-ads-mcp.webtoronto22.workers.dev/health";
 const sourceCheckUrl = "https://epf-google-ads-mcp.webtoronto22.workers.dev/source-check";
 
-const setupSteps = [
-  "Open ChatGPT settings and create a custom MCP app.",
-  "Name it EPF Google Ads.",
-  `Use this server URL: ${mcpServerUrl}`,
-  "Set Authentication to No Auth.",
-  "Create the app, then ask ChatGPT to list campaigns or show ad assets.",
-];
-
 const statusCards = [
   {
-    label: "MCP Endpoint",
+    label: "MCP",
     value: "Live",
-    detail: "Streamable HTTP plus API resources",
-  },
-  {
-    label: "ChatGPT Auth",
-    value: "No Auth",
-    detail: "Enabled for Developer Mode testing",
+    detail: "Streamable HTTP",
   },
   {
     label: "Live Writes",
-    value: "Approval Required",
-    detail: "apply=true plus approvalText APPROVER",
+    value: "Approval-Gated",
+    detail: "apply=true and APPROVER",
   },
   {
-    label: "Keyword Planner",
-    value: "Needs API Approval",
-    detail: "Requires Basic or Standard Google Ads API access",
+    label: "Google Ads API",
+    value: "v24",
+    detail: "Generic search + metadata",
   },
   {
     label: "Source Monitor",
     value: "Monthly",
-    detail: "Emails info@epfproservices.com on drift",
+    detail: "Dashboard-only check",
+  },
+  {
+    label: "Cron",
+    value: "Day 1",
+    detail: "09:00 UTC",
   },
 ];
 
 const toolGroups = [
   {
-    title: "Account & Campaign Reads",
+    title: "Google-Compatible API",
     tools: [
-      "get_customer_info",
-      "list_accessible_customers",
-      "list_campaigns",
-      "get_campaign_details",
-      "get_campaign_performance",
-      "get_account_summary",
-      "get_change_history",
-    ],
-  },
-  {
-    title: "Generic Google Ads API",
-    tools: [
-      "get_resource_metadata",
-      "search_google_ads",
-      "search_google_ads_query",
       "customers_list_accessible_customers",
       "metadata_get_resource_metadata",
       "search_search",
+      "search_google_ads_query",
       "resource://discovery-document",
       "resource://metrics",
       "resource://segments",
@@ -71,89 +50,87 @@ const toolGroups = [
     ],
   },
   {
-    title: "Ads & Creative Reads",
+    title: "Account Audit",
     tools: [
-      "list_ads",
-      "list_responsive_search_ads",
-      "get_ad_assets",
-      "get_ad_details",
-      "get_ad_performance",
+      "get_customer_info",
+      "list_campaigns",
+      "get_account_summary",
+      "get_campaign_details",
+      "audit_campaign_targeting",
+      "diagnose_ad_serving_readiness",
+      "get_change_history",
     ],
   },
   {
-    title: "Keywords & Search Terms",
+    title: "Performance & Search Terms",
     tools: [
-      "list_keywords",
+      "get_campaign_performance",
+      "get_ad_group_performance",
       "get_keyword_performance",
+      "get_ad_performance",
       "get_search_terms",
+      "get_search_term_performance",
       "analyze_search_terms",
       "find_wasted_spend",
       "suggest_negative_keywords",
       "suggest_paused_keywords",
+    ],
+  },
+  {
+    title: "Keywords & Negatives",
+    tools: [
+      "list_keywords",
       "list_negative_keywords",
       "list_negative_keyword_lists",
       "get_negative_keyword_list_keywords",
       "list_all_negative_keywords",
-    ],
-  },
-  {
-    title: "Keyword Planner",
-    tools: [
       "keyword_ideas",
       "get_keyword_volume",
       "get_keyword_forecast",
     ],
   },
   {
-    title: "Targeting & Reporting",
+    title: "Assets & Targeting",
     tools: [
+      "list_ads",
+      "list_responsive_search_ads",
+      "get_ad_assets",
+      "get_ad_details",
+      "list_assets",
       "list_campaign_locations",
       "list_campaign_languages",
       "list_ad_schedule",
       "list_device_performance",
       "list_landing_pages",
       "list_conversion_actions",
-      "list_google_ads_recommendations",
     ],
   },
   {
-    title: "Approval-Gated Writes",
+    title: "Approval-Gated Actions",
     tools: [
+      "build_epf_search_campaign_plan",
+      "generate_epf_responsive_search_ads",
       "create_paused_campaign",
       "create_paused_ad_group",
       "create_paused_responsive_search_ad",
+      "create_epf_campaign_from_plan_after_approval",
+      "add_keywords_after_approval",
+      "add_negative_keywords_after_approval",
       "rename_campaign_after_approval",
       "rename_ad_group_after_approval",
-      "add_negative_keywords_after_approval",
-      "remove_negative_keyword_after_approval",
       "update_budget_after_approval",
-      "change_bidding_strategy_after_approval",
       "set_campaign_status_after_approval",
-      "set_ad_group_status_after_approval",
-      "set_ad_status_after_approval",
-      "set_keyword_status_after_approval",
-      "add_keywords_after_approval",
-      "update_keyword_match_type_after_approval",
-      "update_keyword_bid_after_approval",
-      "update_responsive_search_ad_after_approval",
-      "update_ad_final_url_after_approval",
-      "add_location_target_after_approval",
-      "remove_location_target_after_approval",
-      "add_language_after_approval",
-      "remove_language_after_approval",
-      "add_ad_schedule_after_approval",
-      "remove_ad_schedule_after_approval",
+      "apply_recommendation_after_approval",
+      "create_label_after_approval",
     ],
   },
 ];
 
 const safetyRules = [
   "Read, reporting, analysis, and suggestion tools can run directly.",
-  "Write tools can make live changes only when called with apply=true and exact approval text.",
+  "Write tools require apply=true and exact approval text.",
   "New campaigns, ad groups, ads, and keywords must be created paused first.",
-  "Do not enable campaigns, raise budgets, or add live keywords without exact approval.",
-  "Use phrase or exact match keywords by default. Broad match requires a specific reason.",
-  "Pause poor performers instead of deleting them.",
+  "Broad match, budget, bidding, enable, pause, remove, and final URL changes need explicit approval.",
 ];
 
 const approvalText = [
@@ -164,19 +141,11 @@ const approvalText = [
 ];
 
 const promptExamples = [
-  "Show me all campaigns with budget, status, clicks, cost, conversions, CPC, and CPA for the last 30 days.",
-  "Use get_resource_metadata for campaign, then use search_google_ads to query campaign status, budget, and optimization score.",
-  "Use search_google_ads_query to read change events from the last 7 days. Do not apply anything.",
-  "Show the actual responsive search ad headlines and descriptions for every ad group.",
-  "Review the ads and tell me which RSA has weak ad strength or repeated headlines.",
-  "Find wasted spend and suggest negative keywords. Do not apply anything.",
-  "Show me the shared library negative keyword list named popcorn removal - negative core.",
-  "List all negative keywords from shared lists, campaign negatives, and ad group negatives.",
-  "Analyze search terms and group them into good intent, DIY, jobs, free, and negative candidates.",
-  "Create a paused draft campaign plan for popcorn ceiling removal in Mississauga with a $50 daily budget.",
-  "Get keyword volume and bid estimates for popcorn ceiling removal Mississauga.",
-  "Suggest budget changes based on conversions and cost per conversion, but do not apply them.",
-  "Rename this campaign after approval: use rename_campaign_after_approval with apply true and approvalText APPROVER.",
+  "Audit all active campaigns for budget, conversions, targeting, negatives, and landing pages. Do not apply changes.",
+  "Run source-check and tell me whether Google upstream added MCP tools or resources.",
+  "Use get_resource_metadata for campaign, then search_google_ads to query optimization score and search impression share.",
+  "Analyze search terms from the last 30 days and group them into good intent, negative candidates, and watch list.",
+  "Build a paused EPF campaign plan for popcorn ceiling removal in Mississauga. Show the plan before applying.",
 ];
 
 const troubleshooting = [
@@ -189,16 +158,8 @@ const troubleshooting = [
     fix: "Apply for Basic or Standard access in Google Ads API Center. Explorer access cannot use Keyword Planner API methods.",
   },
   {
-    issue: "Write tool still asks for approval",
-    fix: "That is expected. Live writes are enabled, but tools still require apply=true and exact approval text.",
-  },
-  {
-    issue: "Need production auth later",
-    fix: "Change MCP_AUTH_MODE to bearer and configure MCP_BEARER_TOKEN for direct clients.",
-  },
-  {
-    issue: "Monthly source check does not send email",
-    fix: "Set RESEND_API_KEY as a Cloudflare Worker secret. Email sends only when upstream adds something missing locally.",
+    issue: "Source monitor shows missing upstream items",
+    fix: "Review /source-check, compare against googleads/google-ads-mcp, then add only safe read/resource features.",
   },
 ];
 
@@ -227,6 +188,83 @@ function Pill({ children }) {
   );
 }
 
+function SourceMonitorPanel() {
+  const [state, setState] = useState({ loading: true, data: null, error: "" });
+
+  async function load() {
+    setState((current) => ({ ...current, loading: true, error: "" }));
+    try {
+      const res = await fetch(sourceCheckUrl, { cache: "no-store" });
+      const data = await res.json();
+      if (!res.ok || data.ok === false) throw new Error(data.error || "Source check failed.");
+      setState({ loading: false, data, error: "" });
+    } catch (error) {
+      setState({ loading: false, data: null, error: error.message || "Source check failed." });
+    }
+  }
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  const missingCount = useMemo(() => {
+    const missing = state.data?.missing || {};
+    return (missing.tools || []).length + (missing.resourceNames || []).length + (missing.resourceUris || []).length;
+  }, [state.data]);
+
+  const status = state.loading ? "Checking" : state.error ? "Error" : state.data?.ok ? "OK" : "Review";
+  const statusClass = state.loading
+    ? "bg-slate-100 text-slate-700"
+    : state.error || !state.data?.ok
+      ? "bg-amber-100 text-amber-900"
+      : "bg-emerald-100 text-emerald-900";
+
+  return (
+    <Card title="Source Monitor">
+      <div className="grid gap-3 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-center">
+        <span className={`rounded-md px-3 py-2 text-sm font-black ${statusClass}`}>{status}</span>
+        <div className="min-w-0">
+          <p className="text-sm font-bold text-slate-800">
+            {state.error || state.data?.summary || "Checking Google upstream smoke manifests."}
+          </p>
+          <p className="mt-1 text-xs font-bold text-slate-500">
+            Last check: {state.data?.checkedAt ? new Date(state.data.checkedAt).toLocaleString() : "not loaded"}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={load}
+          className="rounded-md bg-slate-950 px-3 py-2 text-sm font-black text-white disabled:opacity-60"
+          disabled={state.loading}
+        >
+          Refresh
+        </button>
+      </div>
+
+      <div className="mt-3 grid gap-2 sm:grid-cols-3">
+        <Metric label="Upstream tools" value={state.data?.upstreamCounts?.toolCount ?? "-"} />
+        <Metric label="Local tools" value={state.data?.local?.toolCount ?? "-"} />
+        <Metric label="Missing items" value={state.error ? "-" : missingCount} />
+      </div>
+
+      {missingCount > 0 && (
+        <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm font-bold text-amber-950">
+          Review missing tools/resources in the JSON endpoint before updating this live-action MCP.
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function Metric({ label, value }) {
+  return (
+    <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+      <p className="text-xs font-black uppercase text-slate-500">{label}</p>
+      <p className="mt-1 text-xl font-black text-slate-950">{value}</p>
+    </div>
+  );
+}
+
 export default function AdsManagementPage() {
   return (
     <main className="min-h-dvh bg-slate-100 px-3 py-4 text-slate-900 md:px-5">
@@ -238,7 +276,7 @@ export default function AdsManagementPage() {
             </Link>
             <h1 className="mt-1 text-2xl font-black md:text-3xl">Ads Management MCP</h1>
             <p className="mt-1 max-w-3xl text-sm font-bold text-slate-600">
-              Use this page as the operating guide for managing Google Ads through the hosted ChatGPT MCP connector.
+              Live operating panel for the EPF Google Ads MCP connector, source monitor, and approval-gated account actions.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -256,7 +294,7 @@ export default function AdsManagementPage() {
           </div>
         </header>
 
-        <section className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <section className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
           {statusCards.map((item) => (
             <div key={item.label} className="rounded-lg border border-slate-300 bg-white p-3 shadow-md shadow-slate-300/50">
               <p className="text-xs font-black uppercase text-slate-500">{item.label}</p>
@@ -267,22 +305,6 @@ export default function AdsManagementPage() {
         </section>
 
         <section className="mt-4 grid gap-3 lg:grid-cols-[1fr_1fr]">
-          <Card title="ChatGPT MCP Setup">
-            <div className="space-y-3">
-              <CopyBlock>{mcpServerUrl}</CopyBlock>
-              <ol className="space-y-2">
-                {setupSteps.map((item, index) => (
-                  <li key={item} className="grid grid-cols-[auto_minmax(0,1fr)] gap-3 rounded-md border border-slate-200 bg-slate-50 p-3">
-                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-700 text-xs font-black text-white">
-                      {index + 1}
-                    </span>
-                    <span className="text-sm font-bold text-slate-800">{item}</span>
-                  </li>
-                ))}
-              </ol>
-            </div>
-          </Card>
-
           <Card title="Live Endpoints">
             <div className="space-y-3">
               <div>
@@ -297,11 +319,10 @@ export default function AdsManagementPage() {
                 <p className="mb-1 text-xs font-black uppercase text-slate-500">Monthly source check</p>
                 <CopyBlock>{sourceCheckUrl}</CopyBlock>
               </div>
-              <p className="text-sm font-bold text-slate-700">
-                Expected ChatGPT app settings: Name EPF Google Ads, Authentication No Auth.
-              </p>
             </div>
           </Card>
+
+          <SourceMonitorPanel />
         </section>
 
         <section className="mt-4 grid gap-3 lg:grid-cols-[1fr_1fr]">
