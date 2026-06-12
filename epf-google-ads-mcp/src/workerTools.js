@@ -1909,6 +1909,15 @@ function advancedWriteTools(env) {
     writeTool("rename_ad_group_after_approval", "Rename an ad group after exact approval.", (p) => [{
       adGroupOperation: { update: { resourceName: p.resourceName || p.adGroupResourceName, name: p.newName }, updateMask: "name" },
     }]),
+    writeTool("update_ad_group_cpc_bid_after_approval", "Update an ad group's default CPC bid after exact approval.", (p) => [{
+      adGroupOperation: {
+        update: {
+          resourceName: p.resourceName || p.adGroupResourceName,
+          cpcBidMicros: String(dollarsToMicros(p.cpcBid)),
+        },
+        updateMask: "cpc_bid_micros",
+      },
+    }]),
     writeTool("create_paused_responsive_search_ad_after_approval", "Create a PAUSED responsive search ad after exact approval.", (p) => {
       validateResponsiveSearchAd(p);
       return [{ adGroupAdOperation: { create: { adGroup: p.adGroupResourceName, status: "PAUSED", ad: { finalUrls: p.finalUrls, responsiveSearchAd: { headlines: p.headlines.map((text) => ({ text })), descriptions: p.descriptions.map((text) => ({ text })), path1: p.path1 || undefined, path2: p.path2 || undefined } } } } }];

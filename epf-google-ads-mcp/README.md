@@ -193,6 +193,7 @@ Approval-gated control tools:
 - `set_ad_group_status_after_approval`
 - `set_ad_status_after_approval`
 - `set_keyword_status_after_approval`
+- `update_ad_group_cpc_bid_after_approval`
 - `update_budget_after_approval`
 - `set_search_campaign_targeting_after_approval`
 - `change_bidding_strategy_after_approval`

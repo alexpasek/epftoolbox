@@ -32,6 +32,13 @@ const CampaignUrlSuffixSchema = CampaignResourceSchema.extend({
   finalUrlSuffix: z.string().trim().min(1).max(2048),
 });
 
+const AdGroupCpcBidSchema = z.object({
+  adGroupResourceName: z.string().min(1),
+  cpcBid: z.number().positive(),
+  approvalText: z.string().optional().default(""),
+  apply: z.boolean().default(false),
+});
+
 const CreateImageAssetSchema = z.object({
   imageName: z.string().trim().min(1).max(255).default("EPF Image Asset"),
   imageDataBase64: z.string().trim().min(100),
@@ -128,6 +135,28 @@ export const controlTools = [
       if (!ensureApplyApproved(parsed.apply)) return approvalRequired("set_ad_group_status_after_approval", { ...parsed, status, operations });
       requireExactApproval(parsed.approvalText, APPROVAL_TEXT);
       return applied("set_ad_group_status_after_approval", await mutateGoogleAds(operations));
+    },
+  },
+  {
+    name: "update_ad_group_cpc_bid_after_approval",
+    description: "Update an ad group's default CPC bid only after exact approval.",
+    schema: AdGroupCpcBidSchema,
+    handler: async (input) => {
+      const parsed = AdGroupCpcBidSchema.parse(input);
+      const operations = [
+        {
+          entity: "ad_group",
+          operation: "update",
+          resource: {
+            resource_name: parsed.adGroupResourceName,
+            cpc_bid_micros: dollarsToMicros(parsed.cpcBid),
+          },
+          update_mask: ["cpc_bid_micros"],
+        },
+      ];
+      if (!ensureApplyApproved(parsed.apply)) return approvalRequired("update_ad_group_cpc_bid_after_approval", { ...parsed, operations });
+      requireExactApproval(parsed.approvalText, APPROVAL_TEXT);
+      return applied("update_ad_group_cpc_bid_after_approval", await mutateGoogleAds(operations));
     },
   },
   {
