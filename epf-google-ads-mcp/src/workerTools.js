@@ -159,6 +159,7 @@ const GenericApprovedWriteSchema = z.object({
   budgetResourceName: z.string().optional().default(""),
   campaignCriterionResourceName: z.string().optional().default(""),
   adGroupCriterionResourceName: z.string().optional().default(""),
+  sharedCriterionResourceName: z.string().optional().default(""),
   negativeKeywordResourceName: z.string().optional().default(""),
   recommendationResourceName: z.string().optional().default(""),
   labelResourceName: z.string().optional().default(""),
@@ -1942,7 +1943,7 @@ function advancedWriteTools(env) {
     writeTool("update_keyword_bid_after_approval", "Change a keyword CPC bid after exact approval.", (p) => [{
       adGroupCriterionOperation: { update: { resourceName: p.resourceName || p.keywordResourceName, cpcBidMicros: String(dollarsToMicros(p.cpcBid)) }, updateMask: "cpc_bid_micros" },
     }]),
-    writeTool("remove_negative_keyword_after_approval", "Remove a negative keyword criterion after exact approval.", (p) => [removeNegativeKeywordOperation(p)]),
+    writeTool("remove_negative_keyword_after_approval", "Remove a campaign, ad group, or shared-list negative keyword criterion after exact approval.", (p) => [removeNegativeKeywordOperation(p)]),
     writeTool("add_location_target_after_approval", "Add a campaign location target after exact approval.", (p) => [{
       campaignCriterionOperation: { create: { campaign: p.campaignResourceName, location: { geoTargetConstant: p.geoTargetConstant }, negative: false } },
     }]),
@@ -2047,11 +2048,12 @@ function adGroupFromAdGroupAdResourceName(resourceName = "") {
 export function removeNegativeKeywordOperation(input) {
   const resourceName = input.campaignCriterionResourceName
     || input.adGroupCriterionResourceName
+    || input.sharedCriterionResourceName
     || input.negativeKeywordResourceName
     || input.resourceName;
 
   if (!resourceName) {
-    throw new Error("Provide campaignCriterionResourceName, adGroupCriterionResourceName, negativeKeywordResourceName, or resourceName.");
+    throw new Error("Provide campaignCriterionResourceName, adGroupCriterionResourceName, sharedCriterionResourceName, negativeKeywordResourceName, or resourceName.");
   }
 
   if (input.campaignCriterionResourceName || resourceName.includes("/campaignCriteria/")) {
@@ -2062,7 +2064,11 @@ export function removeNegativeKeywordOperation(input) {
     return { adGroupCriterionOperation: { remove: resourceName } };
   }
 
-  throw new Error("Negative keyword resourceName must be a campaign criterion or ad group criterion resource.");
+  if (input.sharedCriterionResourceName || resourceName.includes("/sharedCriteria/")) {
+    return { sharedCriterionOperation: { remove: resourceName } };
+  }
+
+  throw new Error("Negative keyword resourceName must be a campaign criterion, ad group criterion, or shared criterion resource.");
 }
 
 function attachAssetOperation(fieldType) {

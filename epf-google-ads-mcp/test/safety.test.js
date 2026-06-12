@@ -61,3 +61,16 @@ test("negative keyword removal infers ad group criterion operation from resource
     }
   );
 });
+
+test("negative keyword removal infers shared criterion operation from resource path", () => {
+  assert.deepEqual(
+    removeNegativeKeywordOperation({
+      negativeKeywordResourceName: "customers/123/sharedCriteria/456~789",
+    }),
+    {
+      sharedCriterionOperation: {
+        remove: "customers/123/sharedCriteria/456~789",
+      },
+    }
+  );
+});
