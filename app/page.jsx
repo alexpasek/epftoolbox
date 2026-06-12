@@ -41,6 +41,13 @@ const tools = [
       "Separate Google Ads control menu for paid lead tracking, campaign workflow, keywords, negatives, and safe budget changes.",
   },
   {
+    href: "/stock-trading",
+    label: "Stock Trading",
+    badge: "ETF",
+    description:
+      "ETF swing-trading analyzer with Yahoo data, trend scores, support and resistance, risk sizing, and backtest signals.",
+  },
+  {
     href: "/invoices",
     label: "Saved Invoices",
     badge: "History",
