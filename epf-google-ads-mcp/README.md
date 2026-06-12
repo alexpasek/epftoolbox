@@ -5,6 +5,9 @@ Safe Google Ads MCP server for EPF Pro Services. It is designed for a GPT/Codex 
 The server exposes MCP tools for:
 
 - Campaign and search-term reporting
+- Generic Google Ads API search with resource metadata lookup
+- Official Google Ads API discovery, metrics, segments, and release-notes resources
+- Accessible customer discovery
 - Wasted spend analysis
 - Negative keyword suggestions
 - Creating paused campaigns, ad groups, responsive search ads, and keywords
@@ -68,6 +71,10 @@ Reports include campaign name, spend, clicks, impressions, CTR, CPC, and convers
 Read tools:
 
 - `get_customer_info`
+- `list_accessible_customers`
+- `get_resource_metadata`
+- `search_google_ads`
+- `search_google_ads_query`
 - `list_campaigns`
 - `list_ad_groups`
 - `list_keywords`
@@ -83,6 +90,58 @@ Read tools:
 - `keyword_ideas`
 - `get_keyword_volume`
 - `get_keyword_forecast`
+
+Generic Google Ads API tools:
+
+- `get_resource_metadata`: returns selectable, filterable, and sortable fields for a Google Ads resource, including compatible metrics and segments.
+- `search_google_ads`: builds a read-only GAQL query from fields, resource, conditions, ordering, and limit.
+- `search_google_ads_query`: runs a raw read-only GAQL `SELECT` query. It rejects mutation-style statements and does not expose writes.
+- Google-compatible aliases are also available: `customers_list_accessible_customers`, `metadata_get_resource_metadata`, and `search_search`.
+
+Resources:
+
+- `resource://discovery-document`: official Google Ads API REST discovery document.
+- `resource://metrics`: official Google Ads API metrics reference.
+- `resource://segments`: official Google Ads API segments reference.
+- `resource://release-notes`: official Google Ads API release notes.
+
+The Worker REST client defaults to Google Ads API `v24`, matching the upstream `googleads/google-ads-mcp` source. Set `GOOGLE_ADS_API_VERSION` if you need to pin another version.
+
+## Monthly Upstream Source Check
+
+The Cloudflare Worker has a monthly cron schedule:
+
+```toml
+crons = ["0 9 1 * *"]
+```
+
+On the first day of every month at 09:00 UTC, it compares this MCP server against the upstream `googleads/google-ads-mcp` smoke manifests:
+
+- `tests/smoke/golden_tools_list.json`
+- `tests/smoke/golden_resources_list.json`
+
+Manual check endpoint:
+
+```text
+GET /source-check
+```
+
+The check reports any upstream Google-compatible tools or resources missing locally. It does not auto-edit production code. If `SOURCE_MONITOR_WEBHOOK_URL` is set, the Worker posts drift reports there only when something is missing.
+
+Email notifications are supported through Resend. The recipient is configured in `wrangler.toml`:
+
+```toml
+SOURCE_MONITOR_NOTIFY_EMAIL = "info@epfproservices.com"
+SOURCE_MONITOR_FROM_EMAIL = "EPF Google Ads MCP <onboarding@resend.dev>"
+```
+
+Set the API key as a Cloudflare Worker secret:
+
+```bash
+npx wrangler secret put RESEND_API_KEY
+```
+
+By default, email is sent only when upstream adds a tool/resource that is missing locally. Set `SOURCE_MONITOR_NOTIFY_ON_OK = "true"` if you also want a monthly "no changes" email.
 
 Keyword Planner tools:
 

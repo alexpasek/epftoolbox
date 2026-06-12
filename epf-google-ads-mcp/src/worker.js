@@ -2,6 +2,8 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { z } from "zod";
 import { assertMcpAuthorized, authMode, writeActionsEnabled } from "./workerGoogleAdsClient.js";
+import { registerGoogleAdsResources } from "./googleAdsResources.js";
+import { checkGoogleAdsMcpSource } from "./sourceMonitor.js";
 import { workerTools } from "./workerTools.js";
 import { textResult } from "./utils/format.js";
 
@@ -30,6 +32,7 @@ function createServer(env) {
     version: "0.1.0",
     instructions: INSTRUCTIONS,
   });
+  registerGoogleAdsResources(server);
 
   for (const tool of workerTools(env)) {
     server.registerTool(
@@ -95,6 +98,10 @@ export default {
       });
     }
 
+    if (url.pathname === "/source-check") {
+      return json(await checkGoogleAdsMcpSource(env));
+    }
+
     if (url.pathname !== "/mcp") {
       return json({ ok: false, error: "Not found" }, 404);
     }
@@ -120,6 +127,15 @@ export default {
     await server.connect(transport);
     const response = await transport.handleRequest(request);
     return withCors(response);
+  },
+
+  async scheduled(_event, env, _ctx) {
+    try {
+      const result = await checkGoogleAdsMcpSource(env);
+      console.log(`Google Ads MCP source check: ${JSON.stringify(result)}`);
+    } catch (error) {
+      console.log(`Google Ads MCP source check failed: ${error?.message || String(error)}`);
+    }
   },
 };
 

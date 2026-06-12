@@ -4,7 +4,16 @@ import { approvalRequired, applied, ensureApplyApproved, requireExactApproval } 
 import { validateCampaignName, validateDailyBudget, validateKeywordIntent, validateLocalIntentName, validateNonBroadMatch, validateResponsiveSearchAd, validateServiceAndLocation, validateStatus } from "./safety/validators.js";
 import { dollarsToMicros, formatMoneyFromMicros, microsToDollars } from "./utils/money.js";
 import { textResult } from "./utils/format.js";
-import { keywordPlanningGoogleAdsRest, loadWorkerConfig, mutateGoogleAdsRest, queryGoogleAdsRest, writeActionsEnabled } from "./workerGoogleAdsClient.js";
+import {
+  keywordPlanningGoogleAdsRest,
+  listAccessibleCustomersRest,
+  loadWorkerConfig,
+  mutateGoogleAdsRest,
+  queryGoogleAdsRest,
+  queryGoogleAdsRestForCustomer,
+  searchGoogleAdsFieldsRest,
+  writeActionsEnabled,
+} from "./workerGoogleAdsClient.js";
 
 const APPROVAL_TEXT = "APPROVER";
 const NEGATIVE_APPROVAL_TEXT = "APPROVER";
@@ -13,6 +22,27 @@ const DateRangeSchema = z.object({
   startDate: z.string().default("2026-01-01"),
   endDate: z.string().default("2026-12-31"),
   limit: z.number().int().min(1).max(200).default(50),
+});
+
+const GoogleAdsSearchSchema = z.object({
+  customerId: z.string().optional().default(""),
+  customer_id: z.string().optional().default(""),
+  fields: z.array(z.string().min(1)).min(1).max(80),
+  resource: z.string().min(1),
+  conditions: z.array(z.string().min(1)).optional().default([]),
+  orderings: z.array(z.string().min(1)).optional().default([]),
+  limit: z.number().int().min(1).max(10000).optional(),
+});
+
+const GoogleAdsQuerySchema = z.object({
+  customerId: z.string().optional().default(""),
+  customer_id: z.string().optional().default(""),
+  query: z.string().min(1).max(20000),
+});
+
+const ResourceMetadataSchema = z.object({
+  resourceName: z.string().optional().default(""),
+  resource_name: z.string().optional().default(""),
 });
 
 const CreateCampaignSchema = z.object({
@@ -552,12 +582,123 @@ export function workerTools(env) {
 
 function advancedReadTools(env) {
   return [
-    simpleQueryTool(env, "list_accessible_customers", "Return all accessible Google Ads customer accounts.", z.object({}), () => `
-      SELECT customer_client.client_customer, customer_client.descriptive_name, customer_client.id,
-        customer_client.manager, customer_client.status, customer_client.currency_code, customer_client.time_zone
-      FROM customer_client
-      LIMIT 200
-    `),
+    {
+      name: "list_accessible_customers",
+      description: "Return customer IDs directly accessible to the configured Google Ads OAuth user.",
+      schema: z.object({}),
+      handler: async () => textResult({
+        ok: true,
+        mutationAllowed: false,
+        result: await listAccessibleCustomersRest(env),
+      }),
+    },
+    {
+      name: "customers_list_accessible_customers",
+      description: "Google-compatible alias for list_accessible_customers. Return customer IDs directly accessible to the configured Google Ads OAuth user.",
+      schema: z.object({}),
+      handler: async () => textResult({
+        ok: true,
+        mutationAllowed: false,
+        result: await listAccessibleCustomersRest(env),
+      }),
+    },
+    {
+      name: "search_google_ads",
+      description: "Generic read-only Google Ads API search. Builds a GAQL SELECT query from fields, resource, conditions, ordering, and limit. Use get_resource_metadata first when unsure which fields are valid.",
+      schema: GoogleAdsSearchSchema,
+      handler: async (input) => {
+        const parsed = GoogleAdsSearchSchema.parse(input);
+        const query = buildSearchQuery(parsed);
+        const rows = await queryGoogleAdsRestForCustomer(env, customerIdFromInput(parsed), query);
+        return textResult({
+          ok: true,
+          mutationAllowed: false,
+          query,
+          count: rows.length,
+          result: rows,
+        });
+      },
+    },
+    {
+      name: "search_search",
+      description: "Google-compatible alias for search_google_ads. Builds and runs a read-only GAQL SELECT query from fields, resource, conditions, ordering, and limit.",
+      schema: GoogleAdsSearchSchema,
+      handler: async (input) => {
+        const parsed = GoogleAdsSearchSchema.parse(input);
+        const query = buildSearchQuery(parsed);
+        const rows = await queryGoogleAdsRestForCustomer(env, customerIdFromInput(parsed), query);
+        return textResult({
+          ok: true,
+          mutationAllowed: false,
+          query,
+          count: rows.length,
+          result: rows,
+        });
+      },
+    },
+    {
+      name: "search_google_ads_query",
+      description: "Run a raw read-only GAQL SELECT query against Google Ads. Mutations are not supported by this tool.",
+      schema: GoogleAdsQuerySchema,
+      handler: async (input) => {
+        const parsed = GoogleAdsQuerySchema.parse(input);
+        const query = validateReadOnlyGaql(parsed.query);
+        const rows = await queryGoogleAdsRestForCustomer(env, customerIdFromInput(parsed), query);
+        return textResult({
+          ok: true,
+          mutationAllowed: false,
+          query,
+          count: rows.length,
+          result: rows,
+        });
+      },
+    },
+    {
+      name: "get_resource_metadata",
+      description: "Return selectable, filterable, and sortable Google Ads fields for a resource, including compatible metrics and segments. Use this before generic search when fields are uncertain.",
+      schema: ResourceMetadataSchema,
+      handler: async (input) => {
+        const resourceName = resourceNameFromInput(ResourceMetadataSchema.parse(input));
+        validateResourceName(resourceName);
+        const [attributes, compatible] = await Promise.all([
+          searchGoogleAdsFieldsRest(env, `
+            SELECT name, selectable, filterable, sortable
+            WHERE name LIKE '${resourceName}.%' AND category = 'ATTRIBUTE'
+          `).catch(() => searchGoogleAdsFieldsRest(env, `
+            SELECT name, selectable, filterable, sortable
+            WHERE name LIKE '${resourceName}.%'
+          `)),
+          searchGoogleAdsFieldsRest(env, `
+            SELECT name, selectable, filterable, sortable
+            WHERE selectable_with CONTAINS ANY ('${resourceName}')
+          `).catch(() => []),
+        ]);
+        return textResult(formatResourceMetadata(resourceName, [...attributes, ...compatible]));
+      },
+    },
+    {
+      name: "metadata_get_resource_metadata",
+      description: "Google-compatible alias for get_resource_metadata. Return selectable, filterable, and sortable fields for a Google Ads resource.",
+      schema: ResourceMetadataSchema,
+      handler: async (input) => {
+        const resourceName = resourceNameFromInput(ResourceMetadataSchema.parse(input));
+        validateResourceName(resourceName);
+        const [attributes, compatible] = await Promise.all([
+          searchGoogleAdsFieldsRest(env, `
+            SELECT name, selectable, filterable, sortable
+            WHERE name LIKE '${resourceName}.%' AND category = 'ATTRIBUTE'
+          `).catch(() => searchGoogleAdsFieldsRest(env, `
+            SELECT name, selectable, filterable, sortable
+            WHERE name LIKE '${resourceName}.%'
+          `)),
+          searchGoogleAdsFieldsRest(env, `
+            SELECT name, selectable, filterable, sortable
+            WHERE selectable_with CONTAINS ANY ('${resourceName}')
+          `).catch(() => []),
+        ]);
+        return textResult(formatResourceMetadata(resourceName, [...attributes, ...compatible]));
+      },
+    },
     {
       name: "get_account_summary",
       description: "Return account-level campaign counts, budget, cost, clicks, conversions, CPA, CTR, and CPC.",
@@ -1222,6 +1363,104 @@ function statusTool(env, name, operationKey) {
       requireExactApproval(parsed.approvalText, APPROVAL_TEXT);
       return applied(name, await mutateGoogleAdsRest(env, mutateOperations));
     },
+  };
+}
+
+function buildSearchQuery(input) {
+  const fields = input.fields.map(validateFieldName);
+  const resource = validateResourceName(input.resource);
+  const conditions = input.conditions.map(validateGaqlClause);
+  const orderings = input.orderings.map(validateOrdering);
+  const parts = [`SELECT ${fields.join(", ")} FROM ${resource}`];
+
+  if (conditions.length) parts.push(`WHERE ${conditions.join(" AND ")}`);
+  if (orderings.length) parts.push(`ORDER BY ${orderings.join(", ")}`);
+  if (input.limit) parts.push(`LIMIT ${input.limit}`);
+  parts.push("PARAMETERS omit_unselected_resource_names=true");
+
+  return parts.join(" ");
+}
+
+function customerIdFromInput(input) {
+  return input.customerId || input.customer_id || "";
+}
+
+function resourceNameFromInput(input) {
+  const resourceName = input.resourceName || input.resource_name || "";
+  if (!resourceName) throw new Error("Provide resourceName or resource_name.");
+  return resourceName;
+}
+
+function validateReadOnlyGaql(query) {
+  const clean = String(query || "").trim();
+  if (!/^SELECT\s/i.test(clean)) throw new Error("Only GAQL SELECT queries are allowed.");
+  rejectUnsafeGaql(clean);
+  return clean;
+}
+
+function validateFieldName(field) {
+  const clean = String(field || "").trim();
+  if (!/^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+$/.test(clean)) {
+    throw new Error(`Invalid Google Ads field name: ${field}`);
+  }
+  return clean;
+}
+
+function validateResourceName(resource) {
+  const clean = String(resource || "").trim();
+  if (!/^[a-z][a-z0-9_]*$/.test(clean)) {
+    throw new Error(`Invalid Google Ads resource name: ${resource}`);
+  }
+  return clean;
+}
+
+function validateOrdering(ordering) {
+  const clean = String(ordering || "").trim().replace(/\s+/g, " ");
+  const [field, direction = ""] = clean.split(" ");
+  validateFieldName(field);
+  if (direction && !/^(ASC|DESC)$/i.test(direction)) {
+    throw new Error(`Invalid ordering direction: ${ordering}`);
+  }
+  return direction ? `${field} ${direction.toUpperCase()}` : field;
+}
+
+function validateGaqlClause(clause) {
+  const clean = String(clause || "").trim();
+  rejectUnsafeGaql(clean);
+  if (!clean) throw new Error("Empty GAQL condition is not allowed.");
+  return clean;
+}
+
+function rejectUnsafeGaql(value) {
+  if (/[;]/.test(value) || /\/\*|\*\/|--/.test(value)) {
+    throw new Error("GAQL clauses must not include comments or semicolons.");
+  }
+  if (/\b(MUTATE|CREATE|UPDATE|DELETE|REMOVE|INSERT|ALTER|DROP|TRUNCATE)\b/i.test(value)) {
+    throw new Error("Only read-only GAQL search is allowed.");
+  }
+}
+
+function formatResourceMetadata(resourceName, rows) {
+  const selectable = new Set();
+  const filterable = new Set();
+  const sortable = new Set();
+
+  for (const row of rows) {
+    const field = row.googleAdsField || row.google_ads_field || {};
+    const name = field.name;
+    if (!name) continue;
+    if (field.selectable) selectable.add(name);
+    if (field.filterable) filterable.add(name);
+    if (field.sortable) sortable.add(name);
+  }
+
+  return {
+    ok: true,
+    mutationAllowed: false,
+    resource: resourceName,
+    selectable: [...selectable].sort(),
+    filterable: [...filterable].sort(),
+    sortable: [...sortable].sort(),
   };
 }
 

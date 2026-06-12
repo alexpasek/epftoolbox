@@ -1,6 +1,4 @@
-const GOOGLE_ADS_API_VERSION = "v23";
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
-const GOOGLE_ADS_BASE_URL = `https://googleads.googleapis.com/${GOOGLE_ADS_API_VERSION}`;
 
 function required(env, key) {
   const value = env?.[key];
@@ -21,6 +19,7 @@ export function loadWorkerConfig(env) {
     loginCustomerId: cleanCustomerId(required(env, "GOOGLE_ADS_LOGIN_CUSTOMER_ID")),
     customerId: cleanCustomerId(required(env, "GOOGLE_ADS_CUSTOMER_ID")),
     bearerToken: env?.MCP_BEARER_TOKEN || "",
+    apiVersion: env?.GOOGLE_ADS_API_VERSION || "v24",
   };
 }
 
@@ -48,17 +47,17 @@ async function getAccessToken(config) {
   return data.access_token;
 }
 
-async function googleAdsFetch(config, path, body) {
+async function googleAdsFetch(config, path, body, method = "POST") {
   const accessToken = await getAccessToken(config);
-  const res = await fetch(`${GOOGLE_ADS_BASE_URL}${path}`, {
-    method: "POST",
+  const res = await fetch(`https://googleads.googleapis.com/${config.apiVersion}${path}`, {
+    method,
     headers: {
       Authorization: `Bearer ${accessToken}`,
       "Content-Type": "application/json",
       "developer-token": config.developerToken,
       "login-customer-id": config.loginCustomerId,
     },
-    body: JSON.stringify(body),
+    body: body ? JSON.stringify(body) : undefined,
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(`Google Ads API error: ${JSON.stringify(data)}`);
@@ -67,13 +66,43 @@ async function googleAdsFetch(config, path, body) {
 
 export async function queryGoogleAdsRest(env, query) {
   const config = loadWorkerConfig(env);
+  return queryGoogleAdsRestForCustomer(env, config.customerId, query);
+}
+
+export async function queryGoogleAdsRestForCustomer(env, customerId, query) {
+  const config = loadWorkerConfig(env);
+  const cleanId = cleanCustomerId(customerId || config.customerId);
   const rows = [];
   let pageToken = "";
 
   do {
-    const data = await googleAdsFetch(config, `/customers/${config.customerId}/googleAds:search`, {
+    const data = await googleAdsFetch(config, `/customers/${cleanId}/googleAds:search`, {
       query,
       pageToken: pageToken || undefined,
+    });
+    rows.push(...(data.results || []));
+    pageToken = data.nextPageToken || "";
+  } while (pageToken);
+
+  return rows;
+}
+
+export async function listAccessibleCustomersRest(env) {
+  const config = loadWorkerConfig(env);
+  const data = await googleAdsFetch(config, "/customers:listAccessibleCustomers", null, "GET");
+  return (data.resourceNames || []).map((resourceName) => resourceName.replace(/^customers\//, ""));
+}
+
+export async function searchGoogleAdsFieldsRest(env, query) {
+  const config = loadWorkerConfig(env);
+  const rows = [];
+  let pageToken = "";
+
+  do {
+    const data = await googleAdsFetch(config, "/googleAdsFields:search", {
+      query,
+      pageToken: pageToken || undefined,
+      pageSize: 10000,
     });
     rows.push(...(data.results || []));
     pageToken = data.nextPageToken || "";

@@ -4,6 +4,7 @@ import Link from "next/link";
 
 const mcpServerUrl = "https://epf-google-ads-mcp.webtoronto22.workers.dev/mcp";
 const mcpHealthUrl = "https://epf-google-ads-mcp.webtoronto22.workers.dev/health";
+const sourceCheckUrl = "https://epf-google-ads-mcp.webtoronto22.workers.dev/source-check";
 
 const setupSteps = [
   "Open ChatGPT settings and create a custom MCP app.",
@@ -17,7 +18,7 @@ const statusCards = [
   {
     label: "MCP Endpoint",
     value: "Live",
-    detail: "Streamable HTTP at /mcp",
+    detail: "Streamable HTTP plus API resources",
   },
   {
     label: "ChatGPT Auth",
@@ -27,12 +28,17 @@ const statusCards = [
   {
     label: "Live Writes",
     value: "Approval Required",
-    detail: "CONFIRM_WRITE_ACTION=true",
+    detail: "apply=true plus approvalText APPROVER",
   },
   {
     label: "Keyword Planner",
     value: "Needs API Approval",
     detail: "Requires Basic or Standard Google Ads API access",
+  },
+  {
+    label: "Source Monitor",
+    value: "Monthly",
+    detail: "Emails info@epfproservices.com on drift",
   },
 ];
 
@@ -41,11 +47,27 @@ const toolGroups = [
     title: "Account & Campaign Reads",
     tools: [
       "get_customer_info",
+      "list_accessible_customers",
       "list_campaigns",
       "get_campaign_details",
       "get_campaign_performance",
       "get_account_summary",
       "get_change_history",
+    ],
+  },
+  {
+    title: "Generic Google Ads API",
+    tools: [
+      "get_resource_metadata",
+      "search_google_ads",
+      "search_google_ads_query",
+      "customers_list_accessible_customers",
+      "metadata_get_resource_metadata",
+      "search_search",
+      "resource://discovery-document",
+      "resource://metrics",
+      "resource://segments",
+      "resource://release-notes",
     ],
   },
   {
@@ -136,17 +158,15 @@ const safetyRules = [
 
 const approvalText = [
   {
-    label: "General write approval",
-    value: "APPROVE GOOGLE ADS CHANGE",
-  },
-  {
-    label: "Negative keyword approval",
-    value: "APPROVE ADD NEGATIVE KEYWORDS",
+    label: "Exact approval text",
+    value: "APPROVER",
   },
 ];
 
 const promptExamples = [
   "Show me all campaigns with budget, status, clicks, cost, conversions, CPC, and CPA for the last 30 days.",
+  "Use get_resource_metadata for campaign, then use search_google_ads to query campaign status, budget, and optimization score.",
+  "Use search_google_ads_query to read change events from the last 7 days. Do not apply anything.",
   "Show the actual responsive search ad headlines and descriptions for every ad group.",
   "Review the ads and tell me which RSA has weak ad strength or repeated headlines.",
   "Find wasted spend and suggest negative keywords. Do not apply anything.",
@@ -156,7 +176,7 @@ const promptExamples = [
   "Create a paused draft campaign plan for popcorn ceiling removal in Mississauga with a $50 daily budget.",
   "Get keyword volume and bid estimates for popcorn ceiling removal Mississauga.",
   "Suggest budget changes based on conversions and cost per conversion, but do not apply them.",
-  "Rename this campaign after approval: use rename_campaign_after_approval with apply true and approvalText APPROVE GOOGLE ADS CHANGE.",
+  "Rename this campaign after approval: use rename_campaign_after_approval with apply true and approvalText APPROVER.",
 ];
 
 const troubleshooting = [
@@ -175,6 +195,10 @@ const troubleshooting = [
   {
     issue: "Need production auth later",
     fix: "Change MCP_AUTH_MODE to bearer and configure MCP_BEARER_TOKEN for direct clients.",
+  },
+  {
+    issue: "Monthly source check does not send email",
+    fix: "Set RESEND_API_KEY as a Cloudflare Worker secret. Email sends only when upstream adds something missing locally.",
   },
 ];
 
@@ -268,6 +292,10 @@ export default function AdsManagementPage() {
               <div>
                 <p className="mb-1 text-xs font-black uppercase text-slate-500">Health check</p>
                 <CopyBlock>{mcpHealthUrl}</CopyBlock>
+              </div>
+              <div>
+                <p className="mb-1 text-xs font-black uppercase text-slate-500">Monthly source check</p>
+                <CopyBlock>{sourceCheckUrl}</CopyBlock>
               </div>
               <p className="text-sm font-bold text-slate-700">
                 Expected ChatGPT app settings: Name EPF Google Ads, Authentication No Auth.

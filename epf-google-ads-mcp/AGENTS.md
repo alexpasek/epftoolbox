@@ -10,6 +10,7 @@ The MCP server connects Codex or ChatGPT to the Google Ads API so the business c
 
 ## Safety Rules
 
+- Follow the detailed approval-first operating rules in `UNIVERSAL_MCP_RULES.md` for all Google Ads MCP work through Codex, ChatGPT, or other assistants.
 - Never create live enabled campaigns, ad groups, ads, or keywords by default.
 - Newly created campaign objects must default to `PAUSED`.
 - Never delete campaigns, ad groups, ads, or keywords from this server. Pause instead.
