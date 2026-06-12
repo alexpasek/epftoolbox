@@ -32,6 +32,18 @@ Not approval:
 
 If the user asks to research and apply, first show the exact proposed changes, then ask for approval.
 
+## Missing Tool Rule
+
+If the requested workflow requires a Google Ads action that the MCP does not support yet, extend the MCP first with a safe tool or workflow. The new capability must follow the same approval-first rules as existing write tools:
+
+- read or preview first
+- return the proposed mutation with `requiresApproval: true`
+- require `apply: true`
+- require exact approval text where write tools use it
+- verify after applying
+
+Do not bypass the MCP with direct Google Ads API calls, UI-only changes, shell scripts, or manual account edits unless the user explicitly approves a one-off emergency path after the risk is stated.
+
 ## Required Workflow
 
 For keyword research, negative keyword cleanup, campaign optimization, search term cleanup, ad group creation, or keyword additions:

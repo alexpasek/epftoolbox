@@ -17,6 +17,7 @@ The MCP server connects Codex or ChatGPT to the Google Ads API so the business c
 - Never increase budget without exact approval from the user.
 - Never use broad match keywords by default. Prefer phrase or exact match.
 - All Google Ads write tools must support a dry-run approval workflow.
+- If a requested Google Ads workflow needs an operation the MCP does not expose yet, add the missing MCP tool or workflow support first. Do not bypass the MCP with ad hoc API calls, direct Google Ads changes, or manual workarounds unless the user explicitly approves a one-off emergency path.
 
 ## EPF Business Rules
 
