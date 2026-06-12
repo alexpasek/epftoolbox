@@ -407,17 +407,15 @@ GOOGLE_ADS_CUSTOMER_ID
 MCP_BEARER_TOKEN
 ```
 
-For ChatGPT Developer Mode testing, `wrangler.toml` sets:
+For hosted MCP use, `wrangler.toml` sets:
 
 ```toml
 [vars]
-MCP_AUTH_MODE = "no_auth"
+MCP_AUTH_MODE = "bearer"
 CONFIRM_WRITE_ACTION = "true"
 ```
 
-`MCP_AUTH_MODE=no_auth` allows ChatGPT's custom MCP app screen to connect with **No Auth**.
-
-`MCP_AUTH_MODE=bearer` keeps production bearer-token protection for direct API/MCP clients.
+`MCP_AUTH_MODE=bearer` keeps bearer-token protection enabled for direct API/MCP clients. Do not run the hosted Google Ads MCP with `MCP_AUTH_MODE=no_auth` and `CONFIRM_WRITE_ACTION=true`, because that would expose a no-auth write-capable Ads control surface.
 
 `CONFIRM_WRITE_ACTION=true` allows live Google Ads write APIs only when the tool is called with `apply: true` and the exact approval text.
 
@@ -427,7 +425,15 @@ If you set `CONFIRM_WRITE_ACTION=false`, every write tool returns only a preview
 Preview only. Set CONFIRM_WRITE_ACTION=true to allow live Google Ads changes.
 ```
 
-Read-only tools still work in no-auth mode. With live writes enabled, keep approval prompts strict and review proposed changes before calling approval-gated tools.
+With live writes enabled, keep approval prompts strict and review proposed changes before calling approval-gated tools.
+
+Safe write workflow:
+
+1. Run the write tool with `apply: false`.
+2. Review the proposed mutations, target customer, campaign, budget, locations, keywords, ads, and status.
+3. Confirm the change is paused or otherwise intentionally scoped.
+4. Run the same write tool with `apply: true` and `approvalText: "APPROVER"`.
+5. Audit the campaign after applying to verify Search-only network settings, presence-only targeting, locations, languages, negatives, and paused/enabled status.
 
 Example:
 
