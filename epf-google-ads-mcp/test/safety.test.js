@@ -119,3 +119,31 @@ test("proximity target write tool previews microdegree payload", async () => {
     ]
   );
 });
+
+test("business profile location filter tool previews asset set listing filter update", async () => {
+  const tool = workerTools({}).find(
+    (item) => item.name === "filter_business_profile_locations_after_approval"
+  );
+  const result = await tool.handler({
+    assetSetResourceName: "customers/9466544876/assetSets/9118924916",
+    listingIdFilters: ["5223601481889907889"],
+  });
+
+  assert.equal(result.structuredContent.result.mode, "preview_only");
+  assert.deepEqual(
+    result.structuredContent.result.proposedChange.operations,
+    [
+      {
+        update: {
+          resourceName: "customers/9466544876/assetSets/9118924916",
+          locationSet: {
+            businessProfileLocationSet: {
+              listingIdFilters: ["5223601481889907889"],
+            },
+          },
+        },
+        updateMask: "location_set.business_profile_location_set.listing_id_filters",
+      },
+    ]
+  );
+});

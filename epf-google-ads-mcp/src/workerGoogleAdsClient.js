@@ -120,6 +120,16 @@ export async function mutateGoogleAdsRest(env, mutateOperations) {
   });
 }
 
+export async function mutateGoogleAdsResourceRest(env, resourceCollection, operations, customerId = "") {
+  const config = loadWorkerConfig(env);
+  const cleanId = cleanCustomerId(customerId || config.customerId);
+  return googleAdsFetch(config, `/customers/${cleanId}/${resourceCollection}:mutate`, {
+    operations,
+    partialFailure: false,
+    responseContentType: "MUTABLE_RESOURCE",
+  });
+}
+
 export async function keywordPlanningGoogleAdsRest(env, method, body) {
   const config = loadWorkerConfig(env);
   return googleAdsFetch(config, `/customers/${config.customerId}:${method}`, body);

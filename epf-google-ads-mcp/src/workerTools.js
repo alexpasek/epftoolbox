@@ -34,6 +34,7 @@ import {
     listAccessibleCustomersRest,
     loadWorkerConfig,
     mutateGoogleAdsRest,
+    mutateGoogleAdsResourceRest,
     queryGoogleAdsRest,
     queryGoogleAdsRestForCustomer,
     searchGoogleAdsFieldsRest,
@@ -271,6 +272,13 @@ const RemoveAssetSetMemberSchema = z.object({
     apply: z.boolean().default(false),
 });
 
+const BusinessProfileLocationFilterSchema = z.object({
+    assetSetResourceName: z.string().min(1),
+    listingIdFilters: z.array(z.string().min(1)).min(1),
+    approvalText: z.string().optional().default(""),
+    apply: z.boolean().default(false),
+});
+
 export function workerTools(env) {
     return [{
             name: "get_customer_info",
@@ -312,8 +320,8 @@ export function workerTools(env) {
                     rows.map((row) => ({
                         ...row,
                         dailyBudget: formatMoneyFromMicros(
-                            row.campaignBudget ? .amountMicros ||
-                            row.campaign_budget ? .amount_micros ||
+                            row.campaignBudget?.amountMicros ||
+                            row.campaign_budget?.amount_micros ||
                             0,
                         ),
                     })),
@@ -464,14 +472,14 @@ export function workerTools(env) {
                     mutationAllowed: false,
                     suggestions: rows.map((row) => {
                         const term =
-                            row.searchTermView ? .searchTerm ||
-                            row.search_term_view ? .search_term;
+                            row.searchTermView?.searchTerm ||
+                            row.search_term_view?.search_term;
                         return {
                             searchTerm: term,
-                            campaign: row.campaign ? .name,
-                            adGroup: row.adGroup ? .name || row.ad_group ? .name,
-                            clicks: row.metrics ? .clicks,
-                            costMicros: row.metrics ? .costMicros || row.metrics ? .cost_micros,
+                            campaign: row.campaign?.name,
+                            adGroup: row.adGroup?.name || row.ad_group?.name,
+                            clicks: row.metrics?.clicks,
+                            costMicros: row.metrics?.costMicros || row.metrics?.cost_micros,
                             reason: negativeFlagReason(term) || "Cost with zero conversions.",
                         };
                     }),
@@ -555,21 +563,21 @@ export function workerTools(env) {
                 return textResult({
                     mutationAllowed: false,
                     suggestions: rows.map((row) => ({
-                        campaign: row.campaign ? .name,
-                        adGroup: row.adGroup ? .name || row.ad_group ? .name,
-                        criterionResourceName: row.adGroupCriterion ? .resourceName ||
-                            row.ad_group_criterion ? .resource_name,
-                        keyword: row.adGroupCriterion ? .keyword ? .text ||
-                            row.ad_group_criterion ? .keyword ? .text,
-                        matchType: row.adGroupCriterion ? .keyword ? .matchType ||
-                            row.ad_group_criterion ? .keyword ? .match_type,
+                        campaign: row.campaign?.name,
+                        adGroup: row.adGroup?.name || row.ad_group?.name,
+                        criterionResourceName: row.adGroupCriterion?.resourceName ||
+                            row.ad_group_criterion?.resource_name,
+                        keyword: row.adGroupCriterion?.keyword?.text ||
+                            row.ad_group_criterion?.keyword?.text,
+                        matchType: row.adGroupCriterion?.keyword?.matchType ||
+                            row.ad_group_criterion?.keyword?.match_type,
                         suggestedStatus: "PAUSED",
                         reason: "Spend/click threshold met with zero conversions.",
                         spend: formatMoneyFromMicros(
-                            row.metrics ? .costMicros || row.metrics ? .cost_micros || 0,
+                            row.metrics?.costMicros || row.metrics?.cost_micros || 0,
                         ),
-                        clicks: row.metrics ? .clicks || 0,
-                        conversions: row.metrics ? .conversions || 0,
+                        clicks: row.metrics?.clicks || 0,
+                        conversions: row.metrics?.conversions || 0,
                     })),
                 });
             },
@@ -959,21 +967,21 @@ function advancedReadTools(env) {
                     );
                     const summary = rows.reduce(
                         (acc, row) => {
-                            const status = row.campaign ? .status || "";
+                            const status = row.campaign?.status || "";
                             acc.campaigns += 1;
                             if (status === "ENABLED") acc.enabledCampaigns += 1;
                             if (status === "PAUSED") acc.pausedCampaigns += 1;
                             acc.totalDailyBudgetMicros += Number(
-                                row.campaignBudget ? .amountMicros ||
-                                row.campaign_budget ? .amount_micros ||
+                                row.campaignBudget?.amountMicros ||
+                                row.campaign_budget?.amount_micros ||
                                 0,
                             );
                             acc.costMicros += Number(
-                                row.metrics ? .costMicros || row.metrics ? .cost_micros || 0,
+                                row.metrics?.costMicros || row.metrics?.cost_micros || 0,
                             );
-                            acc.clicks += Number(row.metrics ? .clicks || 0);
-                            acc.impressions += Number(row.metrics ? .impressions || 0);
-                            acc.conversions += Number(row.metrics ? .conversions || 0);
+                            acc.clicks += Number(row.metrics?.clicks || 0);
+                            acc.impressions += Number(row.metrics?.impressions || 0);
+                            acc.conversions += Number(row.metrics?.conversions || 0);
                             return acc;
                         }, {
                             campaigns: 0,
@@ -1036,8 +1044,8 @@ function advancedReadTools(env) {
         `,
                     );
                     const campaignResourceName =
-                        campaign[0] ? .campaign ? .resourceName ||
-                        campaign[0] ? .campaign ? .resource_name ||
+                        campaign[0]?.campaign?.resourceName ||
+                        campaign[0]?.campaign?.resource_name ||
                         resourceName;
                     const [criteria, assets] = await Promise.all([
                         queryGoogleAdsRest(
@@ -1106,8 +1114,8 @@ function advancedReadTools(env) {
         `,
                     );
                     const campaignResourceName =
-                        campaign[0] ? .campaign ? .resourceName ||
-                        campaign[0] ? .campaign ? .resource_name ||
+                        campaign[0]?.campaign?.resourceName ||
+                        campaign[0]?.campaign?.resource_name ||
                         resourceName;
                     const criteria = await queryGoogleAdsRest(
                         env,
@@ -1168,8 +1176,8 @@ function advancedReadTools(env) {
         `,
                     );
                     const campaignResourceName =
-                        campaign[0] ? .campaign ? .resourceName ||
-                        campaign[0] ? .campaign ? .resource_name ||
+                        campaign[0]?.campaign?.resourceName ||
+                        campaign[0]?.campaign?.resource_name ||
                         resourceName;
                     const keywordFilter = keywordText ?
                         `AND ad_group_criterion.keyword.text LIKE '%${escapeGaqlString(keywordText)}%'` :
@@ -1259,8 +1267,8 @@ function advancedReadTools(env) {
         `,
                     );
                     const adGroupResourceName =
-                        adGroup[0] ? .adGroup ? .resourceName ||
-                        adGroup[0] ? .ad_group ? .resource_name ||
+                        adGroup[0]?.adGroup?.resourceName ||
+                        adGroup[0]?.ad_group?.resource_name ||
                         resourceName;
                     const dateFilter =
                         startDate && endDate ?
@@ -1619,9 +1627,9 @@ function advancedReadTools(env) {
                     const sharedListKeywords = {};
                     for (const row of sharedLists.filter((item) => !item.error)) {
                         const resourceName =
-                            row.sharedSet ? .resourceName || row.shared_set ? .resource_name;
+                            row.sharedSet?.resourceName || row.shared_set?.resource_name;
                         const listName =
-                            row.sharedSet ? .name || row.shared_set ? .name || resourceName;
+                            row.sharedSet?.name || row.shared_set?.name || resourceName;
                         if (!resourceName) continue;
                         sharedListKeywords[listName] = await queryGoogleAdsRest(
                                 env,
@@ -3419,6 +3427,56 @@ function advancedWriteTools(env) {
       ],
       RemoveAssetSetMemberSchema,
     ),
+    {
+      name: "filter_business_profile_locations_after_approval",
+      description:
+        "Filter an existing synced Business Profile location asset set to selected listing IDs after exact approval.",
+      schema: BusinessProfileLocationFilterSchema,
+      handler: async (input) => {
+        const parsed = BusinessProfileLocationFilterSchema.parse(input);
+        const operations = [
+          {
+            update: {
+              resourceName: parsed.assetSetResourceName,
+              locationSet: {
+                businessProfileLocationSet: {
+                  listingIdFilters: parsed.listingIdFilters,
+                },
+              },
+            },
+            updateMask:
+              "location_set.business_profile_location_set.listing_id_filters",
+          },
+        ];
+        const proposedChange = scrubSensitiveWritePreview({
+          ...parsed,
+          resourceCollection: "assetSets",
+          operations,
+        });
+        const preview = previewOnlyIfWritesDisabled(
+          env,
+          "filter_business_profile_locations_after_approval",
+          proposedChange,
+        );
+        if (preview) return preview;
+        if (!ensureApplyApproved(parsed.apply)) {
+          return approvalRequired(
+            "filter_business_profile_locations_after_approval",
+            proposedChange,
+          );
+        }
+        requireExactApproval(parsed.approvalText, APPROVAL_TEXT);
+        return applied(
+          "filter_business_profile_locations_after_approval",
+          await mutateGoogleAdsResourceRest(
+            env,
+            "assetSets",
+            operations,
+            customerIdFromResourceName(parsed.assetSetResourceName),
+          ),
+        );
+      },
+    },
   ];
 }
 

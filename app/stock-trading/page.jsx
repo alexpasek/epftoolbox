@@ -54,6 +54,21 @@ const signalStyles = {
   AVOID: "bg-slate-200 text-slate-900 border-slate-300",
 };
 
+const signalGlossary = {
+  "ENTRY CONFIRMED": "Buy signal is confirmed now: latest closed candle passed all entry checks.",
+  "ENTRY WATCH": "Setup is almost ready, but do not buy yet. Wait for the exact trigger candle close.",
+  WAIT: "No trade now. Conditions are mixed or risk/reward is not strong enough.",
+  "EXIT WATCH": "Early weakness warning. Holders should watch stop/EMA levels closely for possible exit.",
+  "EXIT TRIGGER": "Exit condition is already triggered. New entry is blocked until structure improves.",
+  AVOID: "Market structure is weak for this setup. Skip until trend and momentum recover.",
+  "BUY CONFIRM": "This indicator strongly supports a long setup right now.",
+  "BUY WATCH": "This indicator is improving but still needs more confirmation.",
+  "OUT WATCH": "This indicator warns of possible weakness/exhaustion.",
+  OUT: "This indicator shows an active exit condition.",
+  "NO TRADE": "Risk quality is too low for this setup.",
+  NEUTRAL: "Indicator is not adding a strong directional edge right now.",
+};
+
 export default function StockTradingPage() {
   const [tickersText, setTickersText] = useState(defaultTickers.join(", "));
   const [accountSize, setAccountSize] = useState(10000);
@@ -199,6 +214,9 @@ export default function StockTradingPage() {
         <div className="space-y-4">
           {selected ? (
             <>
+              <SingleAnalysis item={selected} />
+              <BeginnerPlan item={selected} />
+              <TraderSetupsPanel setups={selected.traderSetups || []} />
               <div className="rounded-lg border border-slate-300 bg-white p-4 shadow-sm">
                 <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-end">
                   <div>
@@ -242,8 +260,6 @@ export default function StockTradingPage() {
                   <TimeframeButtons value={timeframe} onChange={setTimeframe} />
                 </div>
               </div>
-              <SingleAnalysis item={selected} />
-              <BeginnerPlan item={selected} />
               <ChartPanel
                 item={selected}
                 timeframe={timeframe}
@@ -643,29 +659,52 @@ function ChartToolBar({ tools, onToggleTool }) {
   ];
 
   return (
-    <div className="flex flex-wrap gap-2 rounded-lg border border-slate-200 bg-slate-50 p-2">
-      {items.map(([key, label]) => (
-        <button
-          key={key}
-          type="button"
-          onClick={() => onToggleTool(key)}
-          className={`rounded-md border px-2.5 py-1.5 text-xs font-black ${
-            tools[key] ? "border-slate-900 bg-white text-slate-950" : "border-slate-200 bg-slate-100 text-slate-500"
-          }`}
-        >
-          {label}
-        </button>
-      ))}
+    <div>
+      <div className="flex flex-wrap gap-2 rounded-lg border border-slate-200 bg-slate-50 p-2">
+        {items.map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => onToggleTool(key)}
+            className={`rounded-md border px-2.5 py-1.5 text-xs font-black ${
+              tools[key] ? "border-slate-900 bg-white text-slate-950" : "border-slate-200 bg-slate-100 text-slate-500"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      <p className="mt-2 text-xs font-semibold text-slate-500">
+        💡 <strong>Chart Controls:</strong> Hover for values · Drag to pan · Scroll to zoom · Double-click to reset view
+      </p>
     </div>
   );
 }
 
 function CandlestickChart({ rows, item, tools }) {
   const [hover, setHover] = useState(null);
+  const [panOffset, setPanOffset] = useState(0);
+  const [zoomLevel, setZoomLevel] = useState(1);
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState(0);
+  
   const width = 1180;
   const height = 620;
   const padding = { top: 24, right: 64, bottom: 36, left: 52 };
-  const priceValues = rows.flatMap((row) => [
+  
+  // Validate and filter rows with proper data
+  const validRows = rows.filter((row) =>
+    Number.isFinite(row.open) &&
+    Number.isFinite(row.high) &&
+    Number.isFinite(row.low) &&
+    Number.isFinite(row.close)
+  );
+
+  if (!validRows.length) {
+    return <div className="flex min-h-[360px] items-center justify-center rounded-lg bg-slate-50 text-sm font-bold text-slate-500">No valid chart data. Check 1D candle availability.</div>;
+  }
+
+  const priceValues = validRows.flatMap((row) => [
     row.high,
     row.low,
     row.ema20,
@@ -679,38 +718,71 @@ function CandlestickChart({ rows, item, tools }) {
     item.stop,
     item.target,
   ]).filter(Number.isFinite);
+  
   const minValue = priceValues.length ? Math.min(...priceValues) : 0;
   const maxValue = priceValues.length ? Math.max(...priceValues) : 1;
   const range = maxValue - minValue || 1;
   const plotWidth = width - padding.left - padding.right;
   const plotHeight = height - padding.top - padding.bottom;
-  const candleGap = plotWidth / Math.max(rows.length, 1);
+  
+  // Zoom affects candle spacing
+  const baseCandleGap = plotWidth / Math.max(validRows.length, 1);
+  const candleGap = baseCandleGap * zoomLevel;
   const candleWidth = Math.max(3, Math.min(14, candleGap * 0.64));
-  const x = (index) => padding.left + index * candleGap + candleGap / 2;
+  
+  const x = (index) => padding.left + panOffset + index * candleGap + candleGap / 2;
   const y = (value) => padding.top + ((maxValue - value) / range) * plotHeight;
-  const linePoints = (key) => rows
+  const linePoints = (key) => validRows
     .map((row, index) => Number.isFinite(row[key]) ? `${x(index)},${y(row[key])}` : null)
     .filter(Boolean)
     .join(" ");
 
-  if (!rows.length) {
-    return <div className="flex min-h-[360px] items-center justify-center rounded-lg bg-slate-50 text-sm font-bold text-slate-500">No chart data.</div>;
-  }
-
   function handlePointerMove(event) {
+    if (isDragging) return;
     const rect = event.currentTarget.getBoundingClientRect();
     const svgX = ((event.clientX - rect.left) / rect.width) * width;
     const svgY = ((event.clientY - rect.top) / rect.height) * height;
-    const rawIndex = Math.floor((svgX - padding.left) / candleGap);
-    const index = Math.max(0, Math.min(rows.length - 1, rawIndex));
-    const cursorPrice = maxValue - ((Math.max(padding.top, Math.min(padding.top + plotHeight, svgY)) - padding.top) / plotHeight) * range;
-    setHover({
-      index,
-      row: rows[index],
-      x: x(index),
-      y: svgY,
-      price: cursorPrice,
-    });
+    const rawIndex = Math.floor((svgX - padding.left - panOffset) / candleGap);
+    const index = Math.max(0, Math.min(validRows.length - 1, rawIndex));
+    if (index >= 0 && index < validRows.length) {
+      const cursorPrice = maxValue - ((Math.max(padding.top, Math.min(padding.top + plotHeight, svgY)) - padding.top) / plotHeight) * range;
+      setHover({
+        index,
+        row: validRows[index],
+        x: x(index),
+        y: svgY,
+        price: cursorPrice,
+      });
+    }
+  }
+
+  function handleMouseDown(event) {
+    setIsDragging(true);
+    setDragStart(event.clientX);
+  }
+
+  function handleMouseMove(event) {
+    if (!isDragging) return;
+    const delta = event.clientX - dragStart;
+    const newOffset = Math.max(-200, Math.min(200, panOffset + delta));
+    setPanOffset(newOffset);
+    setDragStart(event.clientX);
+  }
+
+  function handleMouseUp() {
+    setIsDragging(false);
+  }
+
+  function handleWheel(event) {
+    event.preventDefault();
+    const direction = event.deltaY > 0 ? 0.9 : 1.1;
+    const newZoom = Math.max(0.5, Math.min(3, zoomLevel * direction));
+    setZoomLevel(newZoom);
+  }
+
+  function handleDoubleClick() {
+    setPanOffset(0);
+    setZoomLevel(1);
   }
 
   const levels = [
@@ -723,9 +795,21 @@ function CandlestickChart({ rows, item, tools }) {
     <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
       <svg
         viewBox={`0 0 ${width} ${height}`}
-        onMouseMove={handlePointerMove}
-        onMouseLeave={() => setHover(null)}
-        className="h-[360px] w-full cursor-crosshair bg-white md:h-[500px] xl:h-[620px]"
+        onMouseMove={(e) => {
+          handlePointerMove(e);
+          if (isDragging) handleMouseMove(e);
+        }}
+        onMouseDown={handleMouseDown}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={() => {
+          setHover(null);
+          handleMouseUp();
+        }}
+        onWheel={handleWheel}
+        onDoubleClick={handleDoubleClick}
+        className={`h-[360px] w-full bg-white md:h-[500px] xl:h-[620px] ${
+          isDragging ? "cursor-grabbing" : "cursor-crosshair"
+        }`}
       >
         {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
           const yy = padding.top + ratio * plotHeight;
@@ -804,9 +888,14 @@ function CandlestickChart({ rows, item, tools }) {
           );
         })}
 
-        <text x={padding.left} y={height - 12} className="fill-slate-500 text-[12px] font-bold">{rows[0]?.date}</text>
-        <text x={width - padding.right - 78} y={height - 12} className="fill-slate-500 text-[12px] font-bold">{rows[rows.length - 1]?.date}</text>
+        <text x={padding.left} y={height - 12} className="fill-slate-500 text-[12px] font-bold">{validRows[0]?.date}</text>
+        <text x={width - padding.right - 78} y={height - 12} className="fill-slate-500 text-[12px] font-bold">{validRows[validRows.length - 1]?.date}</text>
         {tools.tooltip && hover ? <ChartHover hover={hover} width={width} height={height} padding={padding} /> : null}
+        {zoomLevel !== 1 || panOffset !== 0 ? (
+          <g pointerEvents="none">
+            <text x={width - 120} y={30} className="fill-slate-500 text-[10px] font-bold">Zoom: {zoomLevel.toFixed(1)}x | Pan offset</text>
+          </g>
+        ) : null}
       </svg>
     </div>
   );
@@ -982,7 +1071,13 @@ function BacktestPanel({ item }) {
   const backtest = item.backtest || {};
   return (
     <section className="rounded-lg border border-slate-300 bg-white p-4 shadow-sm">
-      <h2 className="text-sm font-black uppercase tracking-wide text-slate-950">Backtest & Alerts</h2>
+      <div className="flex items-center gap-2">
+        <h2 className="text-sm font-black uppercase tracking-wide text-slate-950">Backtest & Alerts</h2>
+        <HelpTip
+          label="What is Backtest Alert?"
+          text="Backtest alert means the latest model signal changed compared to the prior candle. It is a warning/confirmation marker from historical simulation, not a broker alert or live trade order."
+        />
+      </div>
       <div className="mt-4 grid gap-3 md:grid-cols-4">
         <Metric label="Trades" value={backtest.trades || 0} />
         <Metric label="Win rate" value={`${number(backtest.winRate)}%`} />
@@ -992,6 +1087,8 @@ function BacktestPanel({ item }) {
         <Metric label="Average loss" value={`${number(backtest.averageLoss)}%`} />
         <Metric label="Best trade" value={`${number(backtest.bestTrade)}%`} />
         <Metric label="Worst trade" value={`${number(backtest.worstTrade)}%`} />
+        <Metric label="Alert level" value={backtest.alert?.level || "info"} />
+        <Metric label="Alert message" value={backtest.alert?.message || "No recent signal change alert."} />
       </div>
       <div className="mt-4 overflow-x-auto">
         <table className="min-w-[560px] w-full text-left text-xs">
@@ -1019,6 +1116,47 @@ function BacktestPanel({ item }) {
         Alert v1 logs signal changes in this table. Email and Telegram are placeholders only and require no credentials.
       </p>
     </section>
+  );
+}
+
+function TraderSetupsPanel({ setups }) {
+  if (!setups?.length) return null;
+
+  return (
+    <section className="rounded-lg border border-slate-300 bg-white p-4 shadow-sm">
+      <div className="flex items-center gap-2">
+        <h2 className="text-sm font-black uppercase tracking-wide text-slate-950">Trader Setups (GitHub-Inspired)</h2>
+        <HelpTip
+          label="Setup source"
+          text="These setups are adapted from common open-source strategy patterns seen in projects like freqtrade/freqtrade-strategies and backtesting.py examples. They are educational filters, not auto-trading rules."
+        />
+      </div>
+      <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        {setups.map((setup) => (
+          <article key={setup.name} className="rounded-md border border-slate-200 bg-slate-50 p-3">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs font-black uppercase tracking-wide text-slate-700">{setup.name}</p>
+              <span className={`rounded-md border px-2 py-1 text-[10px] font-black ${setup.state === "ACTIVE" ? "border-emerald-300 bg-emerald-100 text-emerald-900" : setup.state === "WATCH" ? "border-sky-300 bg-sky-100 text-sky-900" : "border-slate-300 bg-white text-slate-700"}`}>
+                {setup.state}
+              </span>
+            </div>
+            <p className="mt-2 text-xs font-bold leading-5 text-slate-700">{setup.why}</p>
+            <p className="mt-2 text-[11px] font-semibold leading-4 text-slate-500">Rule: {setup.rule}</p>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function HelpTip({ label, text }) {
+  return (
+    <span className="group relative inline-flex cursor-help items-center" aria-label={label}>
+      <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-300 bg-slate-100 text-[11px] font-black text-slate-700">?</span>
+      <span className="pointer-events-none absolute left-6 top-0 z-10 hidden w-72 rounded-md border border-slate-200 bg-white p-2 text-[11px] font-semibold leading-5 text-slate-700 shadow-lg group-hover:block">
+        {text}
+      </span>
+    </span>
   );
 }
 
@@ -1102,7 +1240,10 @@ function chartRowsForTimeframe(rows, timeframe) {
 
 function SignalPill({ signal }) {
   return (
-    <span className={`inline-flex whitespace-nowrap rounded-md border px-2 py-1 text-[11px] font-black ${signalStyles[signal] || signalStyles.AVOID}`}>
+    <span
+      title={signalGlossary[signal] || signalGlossary.WAIT}
+      className={`inline-flex whitespace-nowrap rounded-md border px-2 py-1 text-[11px] font-black ${signalStyles[signal] || signalStyles.AVOID}`}
+    >
       {signal}
     </span>
   );
@@ -1119,7 +1260,10 @@ function RuleStatusPill({ status }) {
     "NO TRADE": "border-rose-300 bg-rose-100 text-rose-900",
   };
   return (
-    <span className={`inline-flex whitespace-nowrap rounded-md border px-2 py-1 text-[10px] font-black ${styles[status] || styles.NEUTRAL}`}>
+    <span
+      title={signalGlossary[status] || signalGlossary.NEUTRAL}
+      className={`inline-flex whitespace-nowrap rounded-md border px-2 py-1 text-[10px] font-black ${styles[status] || styles.NEUTRAL}`}
+    >
       {status}
     </span>
   );

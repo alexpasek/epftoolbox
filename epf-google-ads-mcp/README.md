@@ -237,6 +237,7 @@ Approval-gated control tools:
 - `remove_asset_link_after_approval`
 - `add_location_to_business_profile_asset_set_after_approval`
 - `remove_location_from_business_profile_asset_set_after_approval`
+- `filter_business_profile_locations_after_approval`
 - `create_call_asset_after_approval`
 - `attach_call_asset_to_campaign_after_approval`
 - `create_structured_snippet_asset_after_approval`
@@ -370,33 +371,25 @@ Ad serving readiness diagnosis example:
 
 ## Business Profile Synced Location Asset Set Management
 
-When you have a customer-level synced Business Profile location asset set with multiple locations, use the `assetSetOperation` tools to manage individual location members:
+When you have a synced Business Profile location asset set with multiple locations, filter the existing `LOCATION_SYNC` asset set by Google Business Profile listing IDs.
 
-**Add location to synced Business Profile asset set:**
+Keep only the EPF Glen Erin listing:
 
 ```json
 {
-  "assetSetResourceName": "customers/9466544876/assetSets/789",
-  "assetResourceName": "customers/9466544876/assets/location-001",
+  "assetSetResourceName": "customers/9466544876/assetSets/9118924916",
+  "listingIdFilters": ["5223601481889907889"],
   "apply": true,
   "approvalText": "APPROVER"
 }
 ```
 
-**Remove location from synced Business Profile asset set:**
+Restore all synced Business Profile locations by clearing the filter directly in Google Ads Location Manager. The MCP write tool requires at least one listing ID so it cannot accidentally broaden location eligibility.
 
-```json
-{
-  "assetSetAssetResourceName": "customers/9466544876/assetSetAssets/789~location-001",
-  "apply": true,
-  "approvalText": "APPROVER"
-}
-```
-
-These tools use `assetSetOperation` (not `assetOperation`) to manage asset set membership. To find your asset set resource names:
+To find asset set and listing IDs:
 
 1. Query all asset sets: `SELECT asset_set.resource_name, asset_set.status, asset_set.type FROM asset_set WHERE asset_set.type = 'LOCATION_SYNC'`
-2. Query asset set members: `SELECT asset_set_asset.resource_name, asset_set_asset.asset, asset_set_asset.status FROM asset_set_asset WHERE asset_set_asset.asset_set = 'customers/{customerId}/assetSets/{assetSetId}'`
+2. Query asset set members: `SELECT asset_set_asset.resource_name, asset.resource_name, asset.location_asset.business_profile_locations, asset_set_asset.status FROM asset_set_asset WHERE asset_set.resource_name = 'customers/{customerId}/assetSets/{assetSetId}'`
 
 Recommended agent workflow:
 

@@ -209,6 +209,7 @@ function buildSnapshot(rows, index, accountSize, riskPercent) {
   const signal = ruleEngine.swing.now;
   const action = buildAction(row, prev, signal, trend, facts, risk, ruleEngine.swing);
   const strategies = strategyPlans(row, prev, levels, risk, accountSize, riskPercent, signal, trend, facts, ruleEngine);
+  const traderSetups = buildTraderSetups(row, prev, levels, facts, trend);
   const reason = formatAction(action);
 
   return {
@@ -235,6 +236,7 @@ function buildSnapshot(rows, index, accountSize, riskPercent) {
     action,
     strategies,
     ruleEngine,
+    traderSetups,
     reason,
     levels,
     facts,
@@ -463,6 +465,76 @@ function indicatorRuleCards(row, prev, prev2, levels, risk, facts, trend) {
 
 function ruleCard(name, status, why, rule) {
   return { name, status, why, rule };
+}
+
+function buildTraderSetups(row, prev, levels, facts, trend) {
+  const smaAdxEntry = prev.SMA20 <= prev.SMA50 && row.SMA20 > row.SMA50 && row.ADX >= 25;
+  const smaAdxWatch = row.SMA20 > row.SMA50 && row.ADX >= 20;
+
+  const bbRsiEntry = row.RSI < 35 && row.Close <= row.BBLower * 1.01 && row.Close > row.Open;
+  const bbRsiWatch = row.RSI < 40 && row.Close <= row.BBLower * 1.02;
+
+  const macdTrendEntry = row.MACD > 0 && row.MACD > row.MACDSignal && row.Close > row.EMA20;
+  const macdTrendWatch = row.MACD > row.MACDSignal && row.Close > row.EMA20;
+
+  const emaPullbackEntry = trend === "Bullish" && facts.pullbackArea && facts.macdImproving && facts.volumeOkay && row.Close > prev.High;
+  const emaPullbackWatch = trend === "Bullish" && facts.pullbackArea && facts.macdImproving;
+
+  const breakoutEntry = row.Close > levels.swingHigh20 && row.Volume >= row.VolumeSMA20 * 1.2 && row.ADX >= 20;
+  const breakoutWatch = row.Close >= levels.swingHigh20 * 0.99 && row.ADX >= 18;
+
+  return [
+    {
+      name: "ADX + SMA Cross",
+      state: smaAdxEntry ? "ACTIVE" : smaAdxWatch ? "WATCH" : "OFF",
+      why: smaAdxEntry
+        ? "SMA20 crossed above SMA50 with ADX strength confirmation."
+        : smaAdxWatch
+          ? "Trend is positive, waiting for a cleaner crossover impulse."
+          : "No bullish crossover strength yet.",
+      rule: "Inspired by AdxSmas/FAdxSma patterns: moving-average crossover plus ADX filter.",
+    },
+    {
+      name: "Bollinger RSI Bounce",
+      state: bbRsiEntry ? "ACTIVE" : bbRsiWatch ? "WATCH" : "OFF",
+      why: bbRsiEntry
+        ? "Price is at lower Bollinger area with oversold RSI and bullish close."
+        : bbRsiWatch
+          ? "Near lower band with weak RSI; waiting for stronger recovery candle."
+          : "No oversold bounce setup currently.",
+      rule: "Inspired by BbandRsi/Bandtastic style mean-reversion entries.",
+    },
+    {
+      name: "MACD Trend Continuation",
+      state: macdTrendEntry ? "ACTIVE" : macdTrendWatch ? "WATCH" : "OFF",
+      why: macdTrendEntry
+        ? "MACD is positive and above signal while price holds above EMA20."
+        : macdTrendWatch
+          ? "MACD improved but full trend alignment is not complete."
+          : "MACD trend continuation not active.",
+      rule: "Inspired by MACD momentum entries used in multiple open-source strategies.",
+    },
+    {
+      name: "EMA Pullback Continuation",
+      state: emaPullbackEntry ? "ACTIVE" : emaPullbackWatch ? "WATCH" : "OFF",
+      why: emaPullbackEntry
+        ? "Bull trend pullback is confirmed by momentum and breakout close."
+        : emaPullbackWatch
+          ? "Bull trend pullback is forming; waiting for breakout candle close."
+          : "No valid pullback continuation structure right now.",
+      rule: "Inspired by trend pullback patterns similar to TrendRider-style EMA setups.",
+    },
+    {
+      name: "20-Day Breakout + Volume",
+      state: breakoutEntry ? "ACTIVE" : breakoutWatch ? "WATCH" : "OFF",
+      why: breakoutEntry
+        ? "Price broke 20-day high with volume and ADX confirmation."
+        : breakoutWatch
+          ? "Price is close to 20-day breakout level but confirmation is incomplete."
+          : "No breakout pressure currently.",
+      rule: "Inspired by breakout + volume confirmation patterns seen across open-source systems.",
+    },
+  ];
 }
 
 function swingDecision(row, prev, levels, risk, trend, facts) {
@@ -853,6 +925,47 @@ function runBacktest(rows) {
   const wins = trades.filter((trade) => trade.returnPct > 0);
   const losses = trades.filter((trade) => trade.returnPct <= 0);
   const totalReturn = trades.reduce((sum, trade) => sum + trade.returnPct, 0);
+  const lastSignals = signals.slice(-10);
+  const latestSignal = lastSignals[lastSignals.length - 1] || null;
+  const previousSignal = lastSignals[lastSignals.length - 2] || null;
+  const changed = latestSignal && previousSignal && latestSignal.signal !== previousSignal.signal;
+
+  let alert = {
+    level: "info",
+    message: "No major recent signal transition in backtest history.",
+    latestSignal: latestSignal?.signal || null,
+    previousSignal: previousSignal?.signal || null,
+    changed: Boolean(changed),
+  };
+
+  if (changed) {
+    if (latestSignal.signal === "ENTRY CONFIRMED") {
+      alert = {
+        level: "success",
+        message: `Backtest transition: ${previousSignal.signal} -> ENTRY CONFIRMED on ${latestSignal.date}.`,
+        latestSignal: latestSignal.signal,
+        previousSignal: previousSignal.signal,
+        changed: true,
+      };
+    } else if (latestSignal.signal === "EXIT TRIGGER") {
+      alert = {
+        level: "danger",
+        message: `Backtest transition: ${previousSignal.signal} -> EXIT TRIGGER on ${latestSignal.date}.`,
+        latestSignal: latestSignal.signal,
+        previousSignal: previousSignal.signal,
+        changed: true,
+      };
+    } else {
+      alert = {
+        level: "warning",
+        message: `Backtest transition: ${previousSignal.signal} -> ${latestSignal.signal} on ${latestSignal.date}.`,
+        latestSignal: latestSignal.signal,
+        previousSignal: previousSignal.signal,
+        changed: true,
+      };
+    }
+  }
+
   return {
     trades: trades.length,
     winRate: trades.length ? round((wins.length / trades.length) * 100, 1) : 0,
@@ -862,7 +975,8 @@ function runBacktest(rows) {
     maxDrawdown: round(maxDrawdown(rows.map((row) => row.Close)), 2),
     bestTrade: trades.length ? max(trades.map((trade) => trade.returnPct)) : 0,
     worstTrade: trades.length ? min(trades.map((trade) => trade.returnPct)) : 0,
-    lastSignals: signals.slice(-10),
+    lastSignals,
+    alert,
   };
 }
 

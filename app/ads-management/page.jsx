@@ -147,6 +147,7 @@ const toolGroups = [
       "attach_image_to_campaign_after_approval",
       "attach_asset_after_approval",
       "remove_asset_link_after_approval",
+      "filter_business_profile_locations_after_approval",
       "apply_recommendation_after_approval",
       "create_label_after_approval",
     ],
