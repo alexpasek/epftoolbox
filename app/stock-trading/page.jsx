@@ -17,6 +17,31 @@ const defaultTickers = [
   "QQQ",
 ];
 
+const timeframes = [
+  { label: "1D", sessions: 1 },
+  { label: "5D", sessions: 5 },
+  { label: "1M", sessions: 22 },
+  { label: "3M", sessions: 66 },
+  { label: "6M", sessions: 126 },
+  { label: "1Y", sessions: 252 },
+  { label: "2Y", sessions: 504 },
+  { label: "5Y", sessions: 1260 },
+];
+
+const defaultChartTools = {
+  ema20: true,
+  ema50: true,
+  ema200: true,
+  sma50: true,
+  bollinger: true,
+  stopTarget: true,
+  volume: true,
+  macd: true,
+  dmi: true,
+  rsi: true,
+  williamsR: true,
+};
+
 const signalStyles = {
   "ENTRY CONFIRMED": "bg-emerald-100 text-emerald-900 border-emerald-300",
   "ENTRY WATCH": "bg-sky-100 text-sky-900 border-sky-300",
@@ -31,6 +56,8 @@ export default function StockTradingPage() {
   const [accountSize, setAccountSize] = useState(10000);
   const [riskPercent, setRiskPercent] = useState(1);
   const [selectedTicker, setSelectedTicker] = useState(defaultTickers[0]);
+  const [timeframe, setTimeframe] = useState("6M");
+  const [chartTools, setChartTools] = useState(defaultChartTools);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -53,6 +80,7 @@ export default function StockTradingPage() {
         tickers: tickersText,
         accountSize: String(accountSize),
         riskPercent: String(riskPercent),
+        period: "5y",
       });
       const response = await fetch(`/api/stock-trading/analyze?${params.toString()}`);
       const payload = await response.json();
@@ -88,7 +116,7 @@ export default function StockTradingPage() {
         </div>
       </header>
 
-      <section className="mx-auto grid max-w-7xl gap-4 px-4 py-5 lg:grid-cols-[320px_1fr]">
+      <section className="mx-auto grid max-w-[1720px] gap-4 px-4 py-5 xl:grid-cols-[300px_1fr]">
         <aside className="space-y-4">
           <section className="rounded-lg border border-slate-300 bg-white p-4 shadow-sm">
             <h2 className="text-sm font-black uppercase tracking-wide text-slate-950">Controls</h2>
@@ -157,17 +185,39 @@ export default function StockTradingPage() {
         </aside>
 
         <div className="space-y-4">
-          <OverviewTable
-            rows={data?.results || []}
-            selectedTicker={selectedTicker}
-            onSelect={setSelectedTicker}
-            loading={loading}
-          />
-
           {selected ? (
             <>
+              <div className="rounded-lg border border-slate-300 bg-white p-4 shadow-sm">
+                <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+                  <div>
+                    <h2 className="text-sm font-black uppercase tracking-wide text-slate-500">Analyze ETF</h2>
+                    <select
+                      value={selectedTicker}
+                      onChange={(event) => setSelectedTicker(event.target.value)}
+                      className="mt-2 w-full max-w-xs rounded-md border border-slate-300 bg-white px-3 py-2 text-lg font-black text-slate-950"
+                    >
+                      {(data?.results || []).filter((row) => row.ok).map((row) => (
+                        <option key={row.ticker} value={row.ticker}>{row.ticker}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <TimeframeButtons value={timeframe} onChange={setTimeframe} />
+                </div>
+              </div>
               <SingleAnalysis item={selected} />
-              <ChartPanel item={selected} />
+              <BeginnerPlan item={selected} />
+              <ChartPanel
+                item={selected}
+                timeframe={timeframe}
+                tools={chartTools}
+                onToggleTool={(tool) => setChartTools((current) => ({ ...current, [tool]: !current[tool] }))}
+              />
+              <OverviewTable
+                rows={data?.results || []}
+                selectedTicker={selectedTicker}
+                onSelect={setSelectedTicker}
+                loading={loading}
+              />
               <BacktestPanel item={selected} />
             </>
           ) : (
@@ -181,20 +231,41 @@ export default function StockTradingPage() {
   );
 }
 
+function TimeframeButtons({ value, onChange }) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {timeframes.map((item) => (
+        <button
+          key={item.label}
+          type="button"
+          onClick={() => onChange(item.label)}
+          className={`rounded-md border px-3 py-2 text-sm font-black ${
+            value === item.label
+              ? "border-slate-950 bg-slate-950 text-white"
+              : "border-slate-300 bg-white text-slate-700 hover:border-slate-500"
+          }`}
+        >
+          {item.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function OverviewTable({ rows, selectedTicker, onSelect, loading }) {
   const goodRows = rows.filter((row) => row.ok);
   const badRows = rows.filter((row) => !row.ok);
   return (
     <section className="rounded-lg border border-slate-300 bg-white shadow-sm">
       <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
-        <h2 className="text-sm font-black uppercase tracking-wide text-slate-950">Watchlist Overview</h2>
+        <h2 className="text-sm font-black uppercase tracking-wide text-slate-950">Watchlist Scan</h2>
         <span className="text-xs font-semibold text-slate-500">{loading ? "Refreshing" : `${goodRows.length} loaded`}</span>
       </div>
-      <div className="overflow-x-auto">
-        <table className="min-w-[1120px] w-full text-left text-xs">
+      <div className="max-h-[420px] overflow-auto">
+        <table className="min-w-[980px] w-full text-left text-xs">
           <thead className="bg-slate-50 text-slate-600">
             <tr>
-              {["Ticker", "Price", "Signal", "Score", "Trend", "RSI", "MACD", "ADX", "Support", "Resistance", "Stop", "Target", "R/R", "Last signal", "Reason"].map((heading) => (
+              {["Ticker", "Price", "Signal", "Score", "Trend", "RSI", "W%R", "MACD", "ADX", "Support", "Resistance", "Stop", "Target", "R/R"].map((heading) => (
                 <th key={heading} className="px-3 py-2 font-black">{heading}</th>
               ))}
             </tr>
@@ -212,6 +283,7 @@ function OverviewTable({ rows, selectedTicker, onSelect, loading }) {
                 <td className="px-3 py-2 font-bold">{row.score}/100</td>
                 <td className="px-3 py-2">{row.trend}</td>
                 <td className="px-3 py-2">{number(row.rsi)}</td>
+                <td className="px-3 py-2">{number(row.williamsR)}</td>
                 <td className="px-3 py-2">{row.macdStatus}</td>
                 <td className="px-3 py-2">{number(row.adx)}</td>
                 <td className="px-3 py-2">{money(row.support)}</td>
@@ -219,14 +291,12 @@ function OverviewTable({ rows, selectedTicker, onSelect, loading }) {
                 <td className="px-3 py-2">{money(row.stop)}</td>
                 <td className="px-3 py-2">{money(row.target)}</td>
                 <td className="px-3 py-2">{number(row.riskReward)}:1</td>
-                <td className="px-3 py-2">{row.lastSignalDate}</td>
-                <td className="max-w-[360px] whitespace-pre-line px-3 py-2 text-slate-600">{row.reason}</td>
               </tr>
             ))}
             {badRows.map((row) => (
               <tr key={row.ticker} className="border-t border-slate-100 bg-rose-50">
                 <td className="px-3 py-2 font-black">{row.ticker}</td>
-                <td className="px-3 py-2 text-rose-700" colSpan={14}>{row.error}</td>
+                <td className="px-3 py-2 text-rose-700" colSpan={13}>{row.error}</td>
               </tr>
             ))}
           </tbody>
@@ -260,6 +330,52 @@ function SingleAnalysis({ item }) {
         </div>
       </div>
     </section>
+  );
+}
+
+function BeginnerPlan({ item }) {
+  const action = item.action || {};
+  const entryText = action.enterOnlyIf
+    ? withPeriod(capitalizeSentence(action.enterOnlyIf))
+    : "Wait for the entry rule to appear.";
+  const warning = action.whatCanGoWrong || "If the rule fails, do not force the trade.";
+
+  return (
+    <section className="rounded-lg border border-slate-300 bg-white p-4 shadow-sm">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <div>
+          <h2 className="text-sm font-black uppercase tracking-wide text-slate-500">Beginner Trade Plan</h2>
+          <div className="mt-2 flex flex-wrap items-center gap-3">
+            <span className="text-3xl font-black text-slate-950">{money(item.price)}</span>
+            <SignalPill signal={item.signal} />
+            <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-black text-slate-700">Rule-based signal, not financial advice</span>
+          </div>
+          <div className="mt-4 grid gap-3 md:grid-cols-3">
+            <PlanStep label="1. What now" value={action.now || item.signal} detail={action.why || "Use the exact rule below before acting."} />
+            <PlanStep label="2. Entry rule" value={entryText} detail="Do not enter before this candle/price condition is true." />
+            <PlanStep label="3. Failure rule" value={warning} detail="This is the main reason to stand aside or exit." />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <Metric label="Current price" value={money(item.price)} />
+          <Metric label="Entry trigger" value={action.enterOnlyIf ? action.enterOnlyIf.replace(/^daily candle closes above /i, "Above ") : "-"} />
+          <Metric label="Stop area" value={money(action.stopArea ?? item.stop)} />
+          <Metric label="Target area" value={money(action.targetArea ?? item.target)} />
+          <Metric label="Risk / reward" value={`${number(action.riskReward ?? item.riskReward)}:1`} />
+          <Metric label="Position size" value={`${item.shares || 0} shares`} />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function PlanStep({ label, value, detail }) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+      <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">{label}</p>
+      <p className="mt-2 text-base font-black text-slate-950">{value}</p>
+      <p className="mt-2 text-xs font-semibold leading-5 text-slate-600">{detail}</p>
+    </div>
   );
 }
 
@@ -297,34 +413,309 @@ function ActionBlock({ item }) {
   );
 }
 
-function ChartPanel({ item }) {
+function ChartPanel({ item, timeframe, tools, onToggleTool }) {
+  const rows = useMemo(() => chartRowsForTimeframe(item.chart || [], timeframe), [item.chart, timeframe]);
+  const latest = rows[rows.length - 1] || {};
+  const timeframeLabel = timeframe === "1D" ? "latest daily candle" : `${timeframe} daily candles`;
+  const indicatorCards = [
+    tools.volume ? <VolumeChart key="volume" rows={rows} /> : null,
+    tools.macd ? <SparkChart key="macd" title="MACD" rows={rows} keys={[["macd", "#0284c7"], ["macdSignal", "#f97316"], ["macdHist", "#64748b"]]} height={170} /> : null,
+    tools.dmi ? <SparkChart key="dmi" title="DMI / ADX" rows={rows} keys={[["plusDI", "#16a34a"], ["minusDI", "#dc2626"], ["adx", "#0369a1"]]} height={170} fixedMin={0} fixedMax={60} /> : null,
+    tools.rsi ? <SparkChart key="rsi" title="RSI 14" rows={rows} keys={[["rsi", "#7c3aed"]]} height={170} fixedMin={0} fixedMax={100} /> : null,
+    tools.williamsR ? <SparkChart key="williamsR" title="Williams %R" rows={rows} keys={[["williamsR", "#be123c"]]} height={170} fixedMin={-100} fixedMax={0} levels={[-20, -80]} note={williamsStatus(latest.williamsR)} /> : null,
+  ].filter(Boolean);
+
   return (
     <section className="rounded-lg border border-slate-300 bg-white p-4 shadow-sm">
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="text-sm font-black uppercase tracking-wide text-slate-950">Chart & Indicators</h2>
-        <span className="text-xs font-semibold text-slate-500">Daily candles, latest 180 sessions</span>
-      </div>
-      <div className="mt-4 grid gap-4 xl:grid-cols-[1.4fr_1fr]">
-        <SparkChart
-          title="Price with EMA20 / EMA50 / EMA200"
-          rows={item.chart}
-          keys={[
-            ["close", "#0f172a"],
-            ["ema20", "#0284c7"],
-            ["ema50", "#16a34a"],
-            ["ema200", "#dc2626"],
-            ["bbUpper", "#94a3b8"],
-            ["bbLower", "#94a3b8"],
-          ]}
-          height={300}
-        />
-        <div className="grid gap-4">
-          <SparkChart title="RSI 14" rows={item.chart} keys={[["rsi", "#7c3aed"]]} height={130} fixedMin={0} fixedMax={100} />
-          <SparkChart title="MACD Histogram" rows={item.chart} keys={[["macdHist", "#ea580c"]]} height={130} />
-          <SparkChart title="ADX" rows={item.chart} keys={[["adx", "#0369a1"]]} height={130} fixedMin={0} fixedMax={60} />
+      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h2 className="text-sm font-black uppercase tracking-wide text-slate-950">Big Candlestick Chart</h2>
+          <p className="mt-1 text-xs font-bold text-slate-500">
+            {timeframeLabel}. Using daily candle data. Entry confirmation is based on daily candle close.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2 text-xs font-bold text-slate-600">
+          <Legend color="#16a34a" label="Up candle" />
+          <Legend color="#dc2626" label="Down candle" />
+          <Legend color="#0284c7" label="EMA20" />
+          <Legend color="#7c3aed" label="SMA50" />
+          <Legend color="#94a3b8" label="Bollinger" />
         </div>
       </div>
+      <div className="mt-4">
+        <ChartToolBar tools={tools} onToggleTool={onToggleTool} />
+      </div>
+      <div className="mt-4">
+        <CandlestickChart rows={rows} item={item} tools={tools} />
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <Metric label="Open" value={money(latest.open)} />
+        <Metric label="High" value={money(latest.high)} />
+        <Metric label="Low" value={money(latest.low)} />
+        <Metric label="Close" value={money(latest.close)} />
+      </div>
+      <div className="mt-4 grid gap-4 xl:grid-cols-2">
+        {indicatorCards}
+      </div>
     </section>
+  );
+}
+
+function ChartToolBar({ tools, onToggleTool }) {
+  const items = [
+    ["ema20", "EMA20"],
+    ["ema50", "EMA50"],
+    ["ema200", "EMA200"],
+    ["sma50", "SMA50"],
+    ["bollinger", "Bollinger"],
+    ["stopTarget", "Stop/Target"],
+    ["volume", "Volume"],
+    ["macd", "MACD"],
+    ["dmi", "DMI/ADX"],
+    ["rsi", "RSI"],
+    ["williamsR", "Williams %R"],
+  ];
+
+  return (
+    <div className="flex flex-wrap gap-2 rounded-lg border border-slate-200 bg-slate-50 p-2">
+      {items.map(([key, label]) => (
+        <button
+          key={key}
+          type="button"
+          onClick={() => onToggleTool(key)}
+          className={`rounded-md border px-2.5 py-1.5 text-xs font-black ${
+            tools[key] ? "border-slate-900 bg-white text-slate-950" : "border-slate-200 bg-slate-100 text-slate-500"
+          }`}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function CandlestickChart({ rows, item, tools }) {
+  const [hover, setHover] = useState(null);
+  const width = 1180;
+  const height = 620;
+  const padding = { top: 24, right: 64, bottom: 36, left: 52 };
+  const priceValues = rows.flatMap((row) => [
+    row.high,
+    row.low,
+    row.ema20,
+    row.ema50,
+    row.ema200,
+    row.sma50,
+    row.bbUpper,
+    row.bbLower,
+    item.stop,
+    item.target,
+  ]).filter(Number.isFinite);
+  const minValue = priceValues.length ? Math.min(...priceValues) : 0;
+  const maxValue = priceValues.length ? Math.max(...priceValues) : 1;
+  const range = maxValue - minValue || 1;
+  const plotWidth = width - padding.left - padding.right;
+  const plotHeight = height - padding.top - padding.bottom;
+  const candleGap = plotWidth / Math.max(rows.length, 1);
+  const candleWidth = Math.max(3, Math.min(14, candleGap * 0.64));
+  const x = (index) => padding.left + index * candleGap + candleGap / 2;
+  const y = (value) => padding.top + ((maxValue - value) / range) * plotHeight;
+  const linePoints = (key) => rows
+    .map((row, index) => Number.isFinite(row[key]) ? `${x(index)},${y(row[key])}` : null)
+    .filter(Boolean)
+    .join(" ");
+
+  if (!rows.length) {
+    return <div className="flex min-h-[360px] items-center justify-center rounded-lg bg-slate-50 text-sm font-bold text-slate-500">No chart data.</div>;
+  }
+
+  function handlePointerMove(event) {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const svgX = ((event.clientX - rect.left) / rect.width) * width;
+    const svgY = ((event.clientY - rect.top) / rect.height) * height;
+    const rawIndex = Math.floor((svgX - padding.left) / candleGap);
+    const index = Math.max(0, Math.min(rows.length - 1, rawIndex));
+    const cursorPrice = maxValue - ((Math.max(padding.top, Math.min(padding.top + plotHeight, svgY)) - padding.top) / plotHeight) * range;
+    setHover({
+      index,
+      row: rows[index],
+      x: x(index),
+      y: svgY,
+      price: cursorPrice,
+    });
+  }
+
+  const levels = [
+    ["Stop", item.stop, "#dc2626"],
+    ["Target", item.target, "#16a34a"],
+  ].filter(([, value]) => Number.isFinite(value));
+
+  return (
+    <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        onMouseMove={handlePointerMove}
+        onMouseLeave={() => setHover(null)}
+        className="h-[360px] w-full cursor-crosshair bg-white md:h-[500px] xl:h-[620px]"
+      >
+        {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
+          const yy = padding.top + ratio * plotHeight;
+          const value = maxValue - ratio * range;
+          return (
+            <g key={ratio}>
+              <line x1={padding.left} x2={width - padding.right} y1={yy} y2={yy} stroke="#e2e8f0" />
+              <text x={width - padding.right + 10} y={yy + 4} className="fill-slate-500 text-[12px] font-bold">
+                {money(value)}
+              </text>
+            </g>
+          );
+        })}
+
+        {tools.bollinger ? (
+          <>
+            <polyline fill="none" stroke="#94a3b8" strokeWidth="1.5" points={linePoints("bbUpper")} />
+            <polyline fill="none" stroke="#94a3b8" strokeWidth="1.5" points={linePoints("bbLower")} />
+          </>
+        ) : null}
+        {tools.ema20 ? <polyline fill="none" stroke="#0284c7" strokeWidth="2.2" points={linePoints("ema20")} /> : null}
+        {tools.ema50 ? <polyline fill="none" stroke="#0f172a" strokeWidth="1.8" points={linePoints("ema50")} /> : null}
+        {tools.sma50 ? <polyline fill="none" stroke="#7c3aed" strokeWidth="1.8" points={linePoints("sma50")} /> : null}
+        {tools.ema200 ? <polyline fill="none" stroke="#dc2626" strokeWidth="1.8" points={linePoints("ema200")} /> : null}
+
+        {tools.stopTarget ? levels.map(([label, value, color]) => (
+          <g key={label}>
+            <line x1={padding.left} x2={width - padding.right} y1={y(value)} y2={y(value)} stroke={color} strokeDasharray="7 7" strokeWidth="1.5" />
+            <text x={padding.left + 8} y={y(value) - 6} fill={color} className="text-[12px] font-black">
+              {label} {money(value)}
+            </text>
+          </g>
+        )) : null}
+
+        {rows.map((row, index) => {
+          const rising = row.close >= row.open;
+          const color = rising ? "#16a34a" : "#dc2626";
+          const top = y(Math.max(row.open, row.close));
+          const bodyHeight = Math.max(2, Math.abs(y(row.open) - y(row.close)));
+          return (
+            <g key={row.date}>
+              <line x1={x(index)} x2={x(index)} y1={y(row.high)} y2={y(row.low)} stroke={color} strokeWidth="1.4" />
+              <rect
+                x={x(index) - candleWidth / 2}
+                y={top}
+                width={candleWidth}
+                height={bodyHeight}
+                fill={rising ? "#dcfce7" : "#fee2e2"}
+                stroke={color}
+                strokeWidth="1.4"
+              >
+                <title>{`${row.date}\nOpen ${money(row.open)}\nHigh ${money(row.high)}\nLow ${money(row.low)}\nClose ${money(row.close)}\nVolume ${number(row.volume)}`}</title>
+              </rect>
+            </g>
+          );
+        })}
+
+        <text x={padding.left} y={height - 12} className="fill-slate-500 text-[12px] font-bold">{rows[0]?.date}</text>
+        <text x={width - padding.right - 78} y={height - 12} className="fill-slate-500 text-[12px] font-bold">{rows[rows.length - 1]?.date}</text>
+        {hover ? <ChartHover hover={hover} width={width} height={height} padding={padding} /> : null}
+      </svg>
+    </div>
+  );
+}
+
+function ChartHover({ hover, width, height, padding }) {
+  const row = hover.row || {};
+  const boxWidth = 230;
+  const boxHeight = 230;
+  const boxX = hover.x > width - padding.right - boxWidth - 20 ? hover.x - boxWidth - 14 : hover.x + 14;
+  const boxY = Math.max(padding.top + 6, Math.min(height - padding.bottom - boxHeight - 6, hover.y - 80));
+  const yPrice = Math.max(padding.top, Math.min(height - padding.bottom, hover.y));
+  const lines = [
+    ["Date", row.date],
+    ["Cursor", money(hover.price)],
+    ["Open", money(row.open)],
+    ["High", money(row.high)],
+    ["Low", money(row.low)],
+    ["Close", money(row.close)],
+    ["Volume", number(row.volume)],
+    ["RSI", number(row.rsi)],
+    ["Williams %R", number(row.williamsR)],
+    ["MACD", number(row.macd)],
+    ["ADX", number(row.adx)],
+  ];
+
+  return (
+    <g pointerEvents="none">
+      <line x1={hover.x} x2={hover.x} y1={padding.top} y2={height - padding.bottom} stroke="#334155" strokeDasharray="5 5" opacity="0.65" />
+      <line x1={padding.left} x2={width - padding.right} y1={yPrice} y2={yPrice} stroke="#334155" strokeDasharray="5 5" opacity="0.65" />
+      <rect x={width - padding.right + 4} y={yPrice - 13} width="58" height="24" rx="4" fill="#0f172a" opacity="0.95" />
+      <text x={width - padding.right + 33} y={yPrice + 4} textAnchor="middle" className="fill-white text-[11px] font-black">
+        {money(hover.price)}
+      </text>
+      <rect x={boxX} y={boxY} width={boxWidth} height={boxHeight} rx="8" fill="#0f172a" opacity="0.94" />
+      {lines.map(([label, value], index) => (
+        <g key={label}>
+          <text x={boxX + 12} y={boxY + 24 + index * 18} className="fill-slate-300 text-[11px] font-bold">{label}</text>
+          <text x={boxX + boxWidth - 12} y={boxY + 24 + index * 18} textAnchor="end" className="fill-white text-[11px] font-black">{value}</text>
+        </g>
+      ))}
+    </g>
+  );
+}
+
+function VolumeChart({ rows }) {
+  const volumeStatus = (() => {
+    const latest = rows[rows.length - 1];
+    if (!latest?.volumeSma20) return "Volume data";
+    if (latest.volume > latest.volumeSma20 * 1.2) return "Strong volume";
+    if (latest.volume < latest.volumeSma20 * 0.8) return "Weak volume";
+    return "Normal volume";
+  })();
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+      <div className="mb-2 flex items-center justify-between">
+        <h3 className="text-xs font-black uppercase tracking-wide text-slate-700">Volume</h3>
+        <span className="text-xs font-black text-slate-500">{volumeStatus}</span>
+      </div>
+      <SparkBars rows={rows} />
+    </div>
+  );
+}
+
+function SparkBars({ rows }) {
+  const width = 760;
+  const height = 170;
+  const padding = 18;
+  const maxValue = Math.max(...rows.map((row) => row.volume || 0), 1);
+  const barWidth = Math.max(2, (width - padding * 2) / Math.max(rows.length, 1) - 1);
+  return (
+    <svg viewBox={`0 0 ${width} ${height}`} className="h-auto w-full">
+      <line x1={padding} x2={width - padding} y1={height - padding} y2={height - padding} stroke="#cbd5e1" />
+      {rows.map((row, index) => {
+        const barHeight = ((row.volume || 0) / maxValue) * (height - padding * 2);
+        const xPos = padding + index * ((width - padding * 2) / Math.max(rows.length, 1));
+        return (
+          <rect
+            key={row.date}
+            x={xPos}
+            y={height - padding - barHeight}
+            width={barWidth}
+            height={barHeight}
+            fill={row.close >= row.open ? "#16a34a" : "#dc2626"}
+            opacity="0.75"
+          />
+        );
+      })}
+    </svg>
+  );
+}
+
+function Legend({ color, label }) {
+  return (
+    <span className="inline-flex items-center gap-1">
+      <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} />
+      {label}
+    </span>
   );
 }
 
@@ -372,10 +763,26 @@ function BacktestPanel({ item }) {
   );
 }
 
-function SparkChart({ title, rows, keys, height = 180, fixedMin, fixedMax }) {
+function SparkChart({ title, rows, keys, height = 180, fixedMin, fixedMax, levels = [], note = "" }) {
   const width = 760;
   const padding = 18;
+  if (!rows?.length) {
+    return (
+      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+        <h3 className="text-xs font-black uppercase tracking-wide text-slate-700">{title}</h3>
+        <div className="mt-2 flex h-32 items-center justify-center text-xs font-bold text-slate-500">No data.</div>
+      </div>
+    );
+  }
   const values = rows.flatMap((row) => keys.map(([key]) => row[key]).filter((value) => Number.isFinite(value)));
+  if (!values.length) {
+    return (
+      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+        <h3 className="text-xs font-black uppercase tracking-wide text-slate-700">{title}</h3>
+        <div className="mt-2 flex h-32 items-center justify-center text-xs font-bold text-slate-500">Not enough data for this indicator.</div>
+      </div>
+    );
+  }
   const minValue = Number.isFinite(fixedMin) ? fixedMin : Math.min(...values);
   const maxValue = Number.isFinite(fixedMax) ? fixedMax : Math.max(...values);
   const range = maxValue - minValue || 1;
@@ -385,7 +792,10 @@ function SparkChart({ title, rows, keys, height = 180, fixedMin, fixedMax }) {
   return (
     <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
       <div className="mb-2 flex items-center justify-between">
-        <h3 className="text-xs font-black uppercase tracking-wide text-slate-700">{title}</h3>
+        <div>
+          <h3 className="text-xs font-black uppercase tracking-wide text-slate-700">{title}</h3>
+          {note ? <p className="mt-1 text-[11px] font-bold text-slate-500">{note}</p> : null}
+        </div>
         <div className="flex flex-wrap gap-2">
           {keys.map(([key, color]) => (
             <span key={key} className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-600">
@@ -398,6 +808,12 @@ function SparkChart({ title, rows, keys, height = 180, fixedMin, fixedMax }) {
       <svg viewBox={`0 0 ${width} ${height}`} className="h-auto w-full overflow-visible">
         <line x1={padding} x2={width - padding} y1={height - padding} y2={height - padding} stroke="#cbd5e1" />
         <line x1={padding} x2={padding} y1={padding} y2={height - padding} stroke="#cbd5e1" />
+        {levels.map((level) => (
+          <g key={level}>
+            <line x1={padding} x2={width - padding} y1={y(level)} y2={y(level)} stroke="#94a3b8" strokeDasharray="5 5" />
+            <text x={width - padding - 4} y={y(level) - 4} textAnchor="end" className="fill-slate-500 text-[10px] font-bold">{level}</text>
+          </g>
+        ))}
         {keys.map(([key, color]) => {
           const points = rows
             .map((row, index) => Number.isFinite(row[key]) ? `${x(index)},${y(row[key])}` : null)
@@ -408,6 +824,21 @@ function SparkChart({ title, rows, keys, height = 180, fixedMin, fixedMax }) {
       </svg>
     </div>
   );
+}
+
+function williamsStatus(value) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "";
+  if (value > -20) return "Overbought: take-profit watch.";
+  if (value < -80) return "Oversold: bounce watch.";
+  return "Neutral momentum zone.";
+}
+
+function chartRowsForTimeframe(rows, timeframe) {
+  const sessions = timeframes.find((item) => item.label === timeframe)?.sessions || 126;
+  const cleanRows = (rows || []).filter((row) =>
+    [row.open, row.high, row.low, row.close].every((value) => Number.isFinite(Number(value)))
+  );
+  return cleanRows.slice(-sessions);
 }
 
 function SignalPill({ signal }) {
@@ -437,13 +868,13 @@ function ScoreLine({ label, value }) {
 }
 
 function money(value) {
-  if (!Number.isFinite(Number(value))) return "-";
-  return `$${Number(value).toFixed(2)}`;
+  if (typeof value !== "number" || !Number.isFinite(value)) return "-";
+  return `$${value.toFixed(2)}`;
 }
 
 function number(value) {
-  if (!Number.isFinite(Number(value))) return "-";
-  return Number(value).toFixed(2).replace(/\.00$/, "");
+  if (typeof value !== "number" || !Number.isFinite(value)) return "-";
+  return value.toFixed(2).replace(/\.00$/, "");
 }
 
 function capitalizeSentence(value) {

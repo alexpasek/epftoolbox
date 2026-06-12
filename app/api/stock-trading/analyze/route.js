@@ -20,7 +20,7 @@ export const dynamic = "force-dynamic";
 export async function GET(request) {
   const url = new URL(request.url);
   const tickers = parseTickers(url.searchParams.get("tickers"));
-  const period = url.searchParams.get("period") || "3y";
+  const period = url.searchParams.get("period") || "5y";
   const interval = url.searchParams.get("interval") || "1d";
   const accountSize = cleanNumber(url.searchParams.get("accountSize"), 10000);
   const riskPercent = cleanNumber(url.searchParams.get("riskPercent"), 1);
@@ -64,7 +64,7 @@ function cleanNumber(value, fallback) {
   return Number.isFinite(number) && number > 0 ? number : fallback;
 }
 
-async function loadYahooCandles(ticker, range = "3y", interval = "1d") {
+async function loadYahooCandles(ticker, range = "5y", interval = "1d") {
   const endpoint = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?range=${encodeURIComponent(range)}&interval=${encodeURIComponent(interval)}&events=history`;
   const response = await fetch(endpoint, {
     headers: {
@@ -117,18 +117,31 @@ function analyzeTicker(ticker, candles, accountSize, riskPercent) {
   const rows = addIndicators(candles);
   const latest = buildSnapshot(rows, rows.length - 1, accountSize, riskPercent);
   const backtest = runBacktest(rows);
-  const chart = rows.slice(-180).map((row) => ({
+  const chart = rows.slice(-1300).map((row) => ({
     date: row.Date,
+    open: round(row.Open),
+    high: round(row.High),
+    low: round(row.Low),
     close: round(row.Close),
+    sma20: round(row.SMA20),
+    sma50: round(row.SMA50),
+    sma200: round(row.SMA200),
     ema20: round(row.EMA20),
     ema50: round(row.EMA50),
     ema200: round(row.EMA200),
     bbUpper: round(row.BBUpper),
+    bbMiddle: round(row.BBMiddle),
     bbLower: round(row.BBLower),
     rsi: round(row.RSI),
+    williamsR: round(row.WilliamsR),
+    macd: round(row.MACD, 4),
+    macdSignal: round(row.MACDSignal, 4),
     macdHist: round(row.MACDHist, 4),
     adx: round(row.ADX),
+    plusDI: round(row.PlusDI),
+    minusDI: round(row.MinusDI),
     volume: Math.round(row.Volume || 0),
+    volumeSma20: Math.round(row.VolumeSMA20 || 0),
   }));
 
   return {
@@ -148,20 +161,28 @@ function addIndicators(candles) {
   const ema20 = ema(closes, 20);
   const ema50 = ema(closes, 50);
   const ema200 = ema(closes, 200);
+  const sma20 = sma(closes, 20);
+  const sma50 = sma(closes, 50);
+  const sma200 = sma(closes, 200);
   const volumeSma20 = sma(volumes, 20);
   const rsi14 = rsi(closes, 14);
   const macdData = macd(closes);
   const bb = bollinger(closes, 20, 2);
   const atr14 = atr(highs, lows, closes, 14);
   const dmi = adx(highs, lows, closes, 14);
+  const williamsR14 = williamsR(highs, lows, closes, 14);
 
   return candles.map((row, index) => ({
     ...row,
     EMA20: ema20[index],
     EMA50: ema50[index],
     EMA200: ema200[index],
+    SMA20: sma20[index],
+    SMA50: sma50[index],
+    SMA200: sma200[index],
     VolumeSMA20: volumeSma20[index],
     RSI: rsi14[index],
+    WilliamsR: williamsR14[index],
     MACD: macdData.line[index],
     MACDSignal: macdData.signal[index],
     MACDHist: macdData.histogram[index],
@@ -194,6 +215,7 @@ function buildSnapshot(rows, index, accountSize, riskPercent) {
     score,
     trend,
     rsi: round(row.RSI),
+    williamsR: round(row.WilliamsR),
     macdStatus: facts.macdImproving ? "Improving" : row.MACDHist < 0 ? "Bearish" : "Weakening",
     adx: round(row.ADX),
     plusDI: round(row.PlusDI),
@@ -551,6 +573,16 @@ function bollinger(values, period, deviations) {
   return { upper, middle, lower };
 }
 
+function williamsR(highs, lows, closes, period) {
+  return closes.map((close, index) => {
+    if (index < period - 1) return null;
+    const high = max(highs.slice(index - period + 1, index + 1));
+    const low = min(lows.slice(index - period + 1, index + 1));
+    if (!Number.isFinite(high) || !Number.isFinite(low) || high === low) return null;
+    return ((high - close) / (high - low)) * -100;
+  });
+}
+
 function atr(highs, lows, closes, period) {
   const tr = highs.map((high, index) => {
     if (index === 0) return high - lows[index];
@@ -628,7 +660,7 @@ function daysBetween(start, end) {
 }
 
 function money(value) {
-  return Number.isFinite(Number(value)) ? `$${Number(value).toFixed(2)}` : "$0.00";
+  return typeof value === "number" && Number.isFinite(value) ? `$${value.toFixed(2)}` : "$0.00";
 }
 
 function capitalizeSentence(value) {
@@ -637,5 +669,5 @@ function capitalizeSentence(value) {
 }
 
 function round(value, digits = 2) {
-  return Number.isFinite(Number(value)) ? Number(Number(value).toFixed(digits)) : null;
+  return typeof value === "number" && Number.isFinite(value) ? Number(value.toFixed(digits)) : null;
 }
