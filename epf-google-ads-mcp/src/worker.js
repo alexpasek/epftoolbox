@@ -10,6 +10,7 @@ import { textResult } from "./utils/format.js";
 const INSTRUCTIONS =
   "EPF Google Ads MCP controls a live Google Ads account. Read and suggest tools may run directly. Mutations require a dry-run proposal first, then apply=true and exact approvalText. Never delete resources. New campaigns, ad groups, and ads are PAUSED.";
 const GENERIC_OUTPUT_SCHEMA = { result: z.any() };
+const NO_AUTH_SECURITY = [{ type: "noauth" }];
 
 function corsHeaders() {
   return {
@@ -38,9 +39,14 @@ function createServer(env) {
     server.registerTool(
       tool.name,
       {
+        title: tool.name,
         description: tool.description,
         inputSchema: tool.schema.shape,
         outputSchema: GENERIC_OUTPUT_SCHEMA,
+        securitySchemes: NO_AUTH_SECURITY,
+        _meta: {
+          securitySchemes: NO_AUTH_SECURITY,
+        },
         annotations: toolAnnotations(tool, env),
       },
       async (input) => {

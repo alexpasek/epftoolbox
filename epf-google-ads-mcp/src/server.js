@@ -15,6 +15,7 @@ const server = new McpServer({
     "EPF Google Ads MCP controls a live Google Ads account. Read and suggest tools may run directly. Any mutation must first return a dry-run proposal, then only apply when apply=true and approvalText exactly matches the tool requirement. Never delete resources. New campaigns, ad groups, ads, and keywords default to PAUSED.",
 });
 const GENERIC_OUTPUT_SCHEMA = { result: z.any() };
+const NO_AUTH_SECURITY = [{ type: "noauth" }];
 registerGoogleAdsResources(server);
 
 const tools = workerTools(process.env);
@@ -23,9 +24,14 @@ for (const tool of tools) {
   server.registerTool(
     tool.name,
     {
+      title: tool.name,
       description: tool.description,
       inputSchema: tool.schema.shape,
       outputSchema: GENERIC_OUTPUT_SCHEMA,
+      securitySchemes: NO_AUTH_SECURITY,
+      _meta: {
+        securitySchemes: NO_AUTH_SECURITY,
+      },
       annotations: toolAnnotations(tool.name),
     },
     async (input) => {
