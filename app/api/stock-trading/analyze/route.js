@@ -14,6 +14,7 @@ const DEFAULT_TICKERS = [
 
 const MAX_TICKERS = 20;
 
+export const runtime = "edge";
 export const dynamic = "force-dynamic";
 
 export async function GET(request) {
@@ -70,7 +71,6 @@ async function loadYahooCandles(ticker, range = "3y", interval = "1d") {
       "User-Agent": "EPF-Toolbox-Stock-Trading/1.0",
       Accept: "application/json",
     },
-    next: { revalidate: 900 },
   });
 
   if (!response.ok) {
