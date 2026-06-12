@@ -99,7 +99,11 @@ export default {
     }
 
     if (url.pathname === "/source-check") {
-      return json(await checkGoogleAdsMcpSource(env));
+      try {
+        return json(await checkGoogleAdsMcpSource(env));
+      } catch (error) {
+        return json({ ok: false, error: error?.message || String(error) }, 500);
+      }
     }
 
     if (url.pathname !== "/mcp") {

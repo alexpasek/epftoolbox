@@ -126,22 +126,7 @@ Manual check endpoint:
 GET /source-check
 ```
 
-The check reports any upstream Google-compatible tools or resources missing locally. It does not auto-edit production code. If `SOURCE_MONITOR_WEBHOOK_URL` is set, the Worker posts drift reports there only when something is missing.
-
-Email notifications are supported through Resend. The recipient is configured in `wrangler.toml`:
-
-```toml
-SOURCE_MONITOR_NOTIFY_EMAIL = "info@epfproservices.com"
-SOURCE_MONITOR_FROM_EMAIL = "EPF Google Ads MCP <onboarding@resend.dev>"
-```
-
-Set the API key as a Cloudflare Worker secret:
-
-```bash
-npx wrangler secret put RESEND_API_KEY
-```
-
-By default, email is sent only when upstream adds a tool/resource that is missing locally. Set `SOURCE_MONITOR_NOTIFY_ON_OK = "true"` if you also want a monthly "no changes" email.
+The check reports any upstream Google-compatible tools or resources missing locally. It does not auto-edit production code and does not send notifications. Use the dashboard or `GET /source-check` to review status.
 
 Keyword Planner tools:
 

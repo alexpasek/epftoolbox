@@ -6,8 +6,6 @@ compatibility_flags = ["nodejs_compat"]
 [vars]
 MCP_AUTH_MODE = "no_auth"
 CONFIRM_WRITE_ACTION = "true"
-SOURCE_MONITOR_NOTIFY_EMAIL = "info@epfproservices.com"
-SOURCE_MONITOR_FROM_EMAIL = "EPF Google Ads MCP <onboarding@resend.dev>"
 
 [observability]
 enabled = true
