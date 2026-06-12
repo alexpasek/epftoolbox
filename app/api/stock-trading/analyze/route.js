@@ -206,6 +206,7 @@ function buildSnapshot(rows, index, accountSize, riskPercent) {
   const score = scoreSetup(facts);
   const signal = signalFor(row, prev, trend, facts, score, risk);
   const action = buildAction(row, prev, signal, trend, facts, risk);
+  const strategies = strategyPlans(row, prev, levels, risk, accountSize, riskPercent, signal, trend, facts);
   const reason = formatAction(action);
 
   return {
@@ -230,6 +231,7 @@ function buildSnapshot(rows, index, accountSize, riskPercent) {
     riskPerShare: round(risk.riskPerShare, 2),
     lastSignalDate: row.Date,
     action,
+    strategies,
     reason,
     levels,
     facts,
@@ -372,6 +374,105 @@ function riskPlan(row, levels, accountSize, riskPercent) {
     maxRiskDollars,
     shares,
     riskReward: reward / riskPerShare,
+  };
+}
+
+function strategyPlans(row, prev, levels, risk, accountSize, riskPercent, signal, trend, facts) {
+  const maxRiskDollars = accountSize * (riskPercent / 100);
+  const nextHigh = Math.max(row.High, prev.High);
+  const dayEntry = nextHigh;
+  const dayStop = Math.min(row.Low, row.Close - row.ATR * 0.6);
+  const dayRisk = Math.max(dayEntry - dayStop, 0.01);
+  const swingEntry = signal === "ENTRY CONFIRMED" ? row.Close : nextHigh;
+  const swingStop = risk.suggestedStop;
+  const swingRisk = Math.max(swingEntry - swingStop, 0.01);
+  const positionEntry = row.Close;
+  const positionStop = Math.min(levels.swingLow50, row.EMA50 || levels.swingLow50);
+  const positionRisk = Math.max(positionEntry - positionStop, 0.01);
+
+  return [
+    makeStrategyPlan({
+      label: "Day trade",
+      horizon: "Same day to 2 days",
+      now: facts.closeAboveEma20 && facts.macdImproving ? "ENTRY WATCH" : "WAIT",
+      why: facts.closeAboveEma20 && facts.macdImproving
+        ? "Price is above SMA20/EMA20 and intraday momentum can be watched."
+        : "Daily trend is not strong enough for a fast entry yet.",
+      entryCondition: `Only if price breaks above ${money(dayEntry)} and stays above SMA20/EMA20 with volume stronger than normal.`,
+      entry: dayEntry,
+      stop: dayStop,
+      target: dayEntry + dayRisk * 1.5,
+      accountSize,
+      maxRiskDollars,
+      warning: `If price falls back under ${money(row.EMA20)}, do not chase the move.`,
+    }),
+    makeStrategyPlan({
+      label: "Swing trade",
+      horizon: "Several days to weeks",
+      now: signal,
+      why: signal === "ENTRY CONFIRMED"
+        ? "The latest daily candle already confirmed the swing entry rule."
+        : "Wait for a daily candle to confirm above resistance before buying.",
+      entryCondition: signal === "ENTRY CONFIRMED"
+        ? `Entry is already confirmed near ${money(swingEntry)}; avoid chasing far above that price.`
+        : `Enter only if a daily candle closes above ${money(swingEntry)}.`,
+      entry: swingEntry,
+      stop: swingStop,
+      target: Math.max(risk.target, swingEntry + swingRisk * 2),
+      accountSize,
+      maxRiskDollars,
+      warning: `If daily close is below ${money(row.EMA20)}, the swing setup becomes weak.`,
+    }),
+    makeStrategyPlan({
+      label: "Position trade",
+      horizon: "Weeks to months",
+      now: trend === "Bullish" && row.Close > row.SMA200 ? "ENTRY WATCH" : "WAIT",
+      why: trend === "Bullish" && row.Close > row.SMA200
+        ? "Longer trend is above the 200-day average."
+        : "Longer trend needs price back above SMA200 before the risk is cleaner.",
+      entryCondition: `Use only after price closes above SMA20 and remains above SMA200 at ${money(row.SMA200)}.`,
+      entry: positionEntry,
+      stop: positionStop,
+      target: positionEntry + positionRisk * 3,
+      accountSize,
+      maxRiskDollars,
+      warning: `If price closes below SMA200 at ${money(row.SMA200)}, the long-term setup is weak.`,
+    }),
+  ];
+}
+
+function makeStrategyPlan({ label, horizon, now, why, entryCondition, entry, stop, target, accountSize, maxRiskDollars, warning }) {
+  const cleanEntry = Number.isFinite(entry) ? entry : 0;
+  const cleanStop = Number.isFinite(stop) && stop < cleanEntry ? stop : cleanEntry * 0.97;
+  const riskPerShare = Math.max(cleanEntry - cleanStop, 0.01);
+  const cleanTarget = Number.isFinite(target) && target > cleanEntry ? target : cleanEntry + riskPerShare * 2;
+  const rewardPerShare = Math.max(cleanTarget - cleanEntry, 0);
+  const riskShares = Math.floor(maxRiskDollars / riskPerShare);
+  const accountShares = cleanEntry > 0 ? Math.floor(accountSize / cleanEntry) : 0;
+  const shares = Math.max(0, Math.min(riskShares, accountShares));
+  const spend = shares * cleanEntry;
+  const maxLoss = shares * riskPerShare;
+  const potentialProfit = shares * rewardPerShare;
+
+  return {
+    label,
+    horizon,
+    now,
+    why,
+    entryCondition,
+    entry: round(cleanEntry),
+    stop: round(cleanStop),
+    target: round(cleanTarget),
+    shares,
+    spend: round(spend, 2),
+    maxLoss: round(maxLoss, 2),
+    potentialProfit: round(potentialProfit, 2),
+    riskPerShare: round(riskPerShare, 2),
+    rewardPerShare: round(rewardPerShare, 2),
+    targetReturnPct: round((rewardPerShare / cleanEntry) * 100, 2),
+    riskReward: round(rewardPerShare / riskPerShare, 2),
+    calculation: `${money(maxRiskDollars)} account risk / ${money(riskPerShare)} risk per share = ${shares} shares`,
+    warning,
   };
 }
 

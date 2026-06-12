@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 const defaultTickers = [
   "ZBAL.TO",
@@ -32,7 +32,9 @@ const defaultChartTools = {
   ema20: true,
   ema50: true,
   ema200: true,
+  sma20: true,
   sma50: true,
+  sma200: true,
   bollinger: true,
   stopTarget: true,
   volume: true,
@@ -40,6 +42,7 @@ const defaultChartTools = {
   dmi: true,
   rsi: true,
   williamsR: true,
+  tooltip: true,
 };
 
 const signalStyles = {
@@ -58,6 +61,7 @@ export default function StockTradingPage() {
   const [selectedTicker, setSelectedTicker] = useState(defaultTickers[0]);
   const [timeframe, setTimeframe] = useState("6M");
   const [chartTools, setChartTools] = useState(defaultChartTools);
+  const [autoRefreshMinutes, setAutoRefreshMinutes] = useState("off");
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -67,12 +71,7 @@ export default function StockTradingPage() {
     [data, selectedTicker]
   );
 
-  useEffect(() => {
-    loadSignals();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  async function loadSignals() {
+  const loadSignals = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
@@ -95,7 +94,20 @@ export default function StockTradingPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [accountSize, riskPercent, selectedTicker, tickersText]);
+
+  useEffect(() => {
+    loadSignals();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (autoRefreshMinutes === "off") return undefined;
+    const interval = window.setInterval(() => {
+      loadSignals();
+    }, Number(autoRefreshMinutes) * 60000);
+    return () => window.clearInterval(interval);
+  }, [autoRefreshMinutes, loadSignals]);
 
   return (
     <main className="min-h-screen bg-slate-100">
@@ -188,18 +200,44 @@ export default function StockTradingPage() {
           {selected ? (
             <>
               <div className="rounded-lg border border-slate-300 bg-white p-4 shadow-sm">
-                <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+                <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-end">
                   <div>
-                    <h2 className="text-sm font-black uppercase tracking-wide text-slate-500">Analyze ETF</h2>
-                    <select
-                      value={selectedTicker}
-                      onChange={(event) => setSelectedTicker(event.target.value)}
-                      className="mt-2 w-full max-w-xs rounded-md border border-slate-300 bg-white px-3 py-2 text-lg font-black text-slate-950"
-                    >
-                      {(data?.results || []).filter((row) => row.ok).map((row) => (
-                        <option key={row.ticker} value={row.ticker}>{row.ticker}</option>
-                      ))}
-                    </select>
+                    <h2 className="text-sm font-black uppercase tracking-wide text-slate-500">Live Price & Chart Controls</h2>
+                    <div className="mt-2 flex flex-wrap items-center gap-3">
+                      <select
+                        value={selectedTicker}
+                        onChange={(event) => setSelectedTicker(event.target.value)}
+                        className="w-full max-w-xs rounded-md border border-slate-300 bg-white px-3 py-2 text-lg font-black text-slate-950"
+                      >
+                        {(data?.results || []).filter((row) => row.ok).map((row) => (
+                          <option key={row.ticker} value={row.ticker}>{row.ticker}</option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={loadSignals}
+                        disabled={loading}
+                        className="rounded-md bg-sky-600 px-4 py-2 text-sm font-black text-white disabled:cursor-wait disabled:bg-slate-400"
+                      >
+                        {loading ? "Refreshing..." : "Refresh Price & Charts"}
+                      </button>
+                      <label className="flex items-center gap-2 text-xs font-black uppercase tracking-wide text-slate-500">
+                        Auto
+                        <select
+                          value={autoRefreshMinutes}
+                          onChange={(event) => setAutoRefreshMinutes(event.target.value)}
+                          className="rounded-md border border-slate-300 bg-white px-2 py-2 text-sm font-bold normal-case tracking-normal text-slate-900"
+                        >
+                          <option value="off">Off</option>
+                          <option value="1">1 min</option>
+                          <option value="5">5 min</option>
+                          <option value="15">15 min</option>
+                        </select>
+                      </label>
+                    </div>
+                    <p className="mt-2 text-xs font-semibold text-slate-500">
+                      Last loaded: {data?.generatedAt ? new Date(data.generatedAt).toLocaleString() : "not loaded yet"}.
+                    </p>
                   </div>
                   <TimeframeButtons value={timeframe} onChange={setTimeframe} />
                 </div>
@@ -335,6 +373,7 @@ function SingleAnalysis({ item }) {
 
 function BeginnerPlan({ item }) {
   const action = item.action || {};
+  const strategies = item.strategies || [];
   const entryText = action.enterOnlyIf
     ? withPeriod(capitalizeSentence(action.enterOnlyIf))
     : "Wait for the entry rule to appear.";
@@ -365,7 +404,56 @@ function BeginnerPlan({ item }) {
           <Metric label="Position size" value={`${item.shares || 0} shares`} />
         </div>
       </div>
+      {strategies.length ? (
+        <div className="mt-5">
+          <div className="flex flex-col gap-1 md:flex-row md:items-end md:justify-between">
+            <div>
+              <h3 className="text-sm font-black uppercase tracking-wide text-slate-950">Buy / Sell Plans With Money Calculation</h3>
+              <p className="mt-1 text-xs font-semibold text-slate-500">
+                Shares are calculated from your account size and risk %. Example: account risk dollars divided by risk per share.
+              </p>
+            </div>
+            <p className="text-xs font-bold text-slate-500">Use the plan that matches your holding time. Do not mix day-trade stops with swing targets.</p>
+          </div>
+          <div className="mt-3 grid gap-3 xl:grid-cols-3">
+            {strategies.map((plan) => (
+              <StrategyCard key={plan.label} plan={plan} />
+            ))}
+          </div>
+        </div>
+      ) : null}
     </section>
+  );
+}
+
+function StrategyCard({ plan }) {
+  return (
+    <article className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h4 className="text-base font-black text-slate-950">{plan.label}</h4>
+          <p className="text-xs font-bold text-slate-500">{plan.horizon}</p>
+        </div>
+        <SignalPill signal={plan.now} />
+      </div>
+      <p className="mt-3 text-sm font-bold leading-5 text-slate-700">{plan.why}</p>
+      <div className="mt-3 rounded-md border border-sky-200 bg-white p-3 text-sm font-bold leading-5 text-slate-800">
+        <span className="font-black text-slate-950">Entry rule: </span>{plan.entryCondition}
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <Metric label="Entry" value={money(plan.entry)} />
+        <Metric label="Stop" value={money(plan.stop)} />
+        <Metric label="Target" value={money(plan.target)} />
+        <Metric label="R/R" value={`${number(plan.riskReward)}:1`} />
+        <Metric label="Buy shares" value={plan.shares || 0} />
+        <Metric label="Spend about" value={money(plan.spend)} />
+        <Metric label="Max loss" value={money(plan.maxLoss)} />
+        <Metric label="Possible profit" value={money(plan.potentialProfit)} />
+        <Metric label="Target return" value={`${number(plan.targetReturnPct)}%`} />
+      </div>
+      <p className="mt-3 text-xs font-bold text-slate-500">{plan.calculation}</p>
+      <p className="mt-2 text-xs font-bold text-rose-700">Warning: {plan.warning}</p>
+    </article>
   );
 }
 
@@ -419,10 +507,10 @@ function ChartPanel({ item, timeframe, tools, onToggleTool }) {
   const timeframeLabel = timeframe === "1D" ? "latest daily candle" : `${timeframe} daily candles`;
   const indicatorCards = [
     tools.volume ? <VolumeChart key="volume" rows={rows} /> : null,
-    tools.macd ? <SparkChart key="macd" title="MACD" rows={rows} keys={[["macd", "#0284c7"], ["macdSignal", "#f97316"], ["macdHist", "#64748b"]]} height={170} /> : null,
-    tools.dmi ? <SparkChart key="dmi" title="DMI / ADX" rows={rows} keys={[["plusDI", "#16a34a"], ["minusDI", "#dc2626"], ["adx", "#0369a1"]]} height={170} fixedMin={0} fixedMax={60} /> : null,
-    tools.rsi ? <SparkChart key="rsi" title="RSI 14" rows={rows} keys={[["rsi", "#7c3aed"]]} height={170} fixedMin={0} fixedMax={100} /> : null,
-    tools.williamsR ? <SparkChart key="williamsR" title="Williams %R" rows={rows} keys={[["williamsR", "#be123c"]]} height={170} fixedMin={-100} fixedMax={0} levels={[-20, -80]} note={williamsStatus(latest.williamsR)} /> : null,
+    tools.macd ? <MacdChart key="macd" rows={rows} /> : null,
+    tools.rsi ? <SparkChart key="rsi" title="RSI 14" rows={rows} keys={[["rsi", "#c4d600"]]} height={150} fixedMin={0} fixedMax={100} levels={[70, 30]} note="Above 70 is stretched. Below 30 is oversold." /> : null,
+    tools.williamsR ? <SparkChart key="williamsR" title="Williams %R" rows={rows} keys={[["williamsR", "#a855f7"]]} height={150} fixedMin={-100} fixedMax={0} levels={[-20, -80]} note={williamsStatus(latest.williamsR)} /> : null,
+    tools.dmi ? <SparkChart key="dmi" title="DMI 14" rows={rows} keys={[["plusDI", "#0ea5e9"], ["minusDI", "#c4d600"], ["adx", "#2dd4bf"]]} height={150} fixedMin={0} fixedMax={60} note="+DI over -DI favors buyers. ADX shows trend strength." /> : null,
   ].filter(Boolean);
 
   return (
@@ -438,7 +526,9 @@ function ChartPanel({ item, timeframe, tools, onToggleTool }) {
           <Legend color="#16a34a" label="Up candle" />
           <Legend color="#dc2626" label="Down candle" />
           <Legend color="#0284c7" label="EMA20" />
+          <Legend color="#f97316" label="SMA20" />
           <Legend color="#7c3aed" label="SMA50" />
+          <Legend color="#be123c" label="SMA200" />
           <Legend color="#94a3b8" label="Bollinger" />
         </div>
       </div>
@@ -454,7 +544,7 @@ function ChartPanel({ item, timeframe, tools, onToggleTool }) {
         <Metric label="Low" value={money(latest.low)} />
         <Metric label="Close" value={money(latest.close)} />
       </div>
-      <div className="mt-4 grid gap-4 xl:grid-cols-2">
+      <div className="mt-4 grid gap-4">
         {indicatorCards}
       </div>
     </section>
@@ -466,7 +556,9 @@ function ChartToolBar({ tools, onToggleTool }) {
     ["ema20", "EMA20"],
     ["ema50", "EMA50"],
     ["ema200", "EMA200"],
+    ["sma20", "SMA20"],
     ["sma50", "SMA50"],
+    ["sma200", "SMA200"],
     ["bollinger", "Bollinger"],
     ["stopTarget", "Stop/Target"],
     ["volume", "Volume"],
@@ -474,6 +566,7 @@ function ChartToolBar({ tools, onToggleTool }) {
     ["dmi", "DMI/ADX"],
     ["rsi", "RSI"],
     ["williamsR", "Williams %R"],
+    ["tooltip", "Cursor tooltip"],
   ];
 
   return (
@@ -505,7 +598,9 @@ function CandlestickChart({ rows, item, tools }) {
     row.ema20,
     row.ema50,
     row.ema200,
+    row.sma20,
     row.sma50,
+    row.sma200,
     row.bbUpper,
     row.bbLower,
     item.stop,
@@ -579,8 +674,10 @@ function CandlestickChart({ rows, item, tools }) {
         ) : null}
         {tools.ema20 ? <polyline fill="none" stroke="#0284c7" strokeWidth="2.2" points={linePoints("ema20")} /> : null}
         {tools.ema50 ? <polyline fill="none" stroke="#0f172a" strokeWidth="1.8" points={linePoints("ema50")} /> : null}
-        {tools.sma50 ? <polyline fill="none" stroke="#7c3aed" strokeWidth="1.8" points={linePoints("sma50")} /> : null}
         {tools.ema200 ? <polyline fill="none" stroke="#dc2626" strokeWidth="1.8" points={linePoints("ema200")} /> : null}
+        {tools.sma20 ? <polyline fill="none" stroke="#f97316" strokeWidth="1.8" points={linePoints("sma20")} /> : null}
+        {tools.sma50 ? <polyline fill="none" stroke="#7c3aed" strokeWidth="1.8" points={linePoints("sma50")} /> : null}
+        {tools.sma200 ? <polyline fill="none" stroke="#be123c" strokeWidth="2" points={linePoints("sma200")} /> : null}
 
         {tools.stopTarget ? levels.map(([label, value, color]) => (
           <g key={label}>
@@ -607,16 +704,14 @@ function CandlestickChart({ rows, item, tools }) {
                 fill={rising ? "#dcfce7" : "#fee2e2"}
                 stroke={color}
                 strokeWidth="1.4"
-              >
-                <title>{`${row.date}\nOpen ${money(row.open)}\nHigh ${money(row.high)}\nLow ${money(row.low)}\nClose ${money(row.close)}\nVolume ${number(row.volume)}`}</title>
-              </rect>
+              />
             </g>
           );
         })}
 
         <text x={padding.left} y={height - 12} className="fill-slate-500 text-[12px] font-bold">{rows[0]?.date}</text>
         <text x={width - padding.right - 78} y={height - 12} className="fill-slate-500 text-[12px] font-bold">{rows[rows.length - 1]?.date}</text>
-        {hover ? <ChartHover hover={hover} width={width} height={height} padding={padding} /> : null}
+        {tools.tooltip && hover ? <ChartHover hover={hover} width={width} height={height} padding={padding} /> : null}
       </svg>
     </div>
   );
@@ -645,20 +740,89 @@ function ChartHover({ hover, width, height, padding }) {
 
   return (
     <g pointerEvents="none">
-      <line x1={hover.x} x2={hover.x} y1={padding.top} y2={height - padding.bottom} stroke="#334155" strokeDasharray="5 5" opacity="0.65" />
-      <line x1={padding.left} x2={width - padding.right} y1={yPrice} y2={yPrice} stroke="#334155" strokeDasharray="5 5" opacity="0.65" />
-      <rect x={width - padding.right + 4} y={yPrice - 13} width="58" height="24" rx="4" fill="#0f172a" opacity="0.95" />
-      <text x={width - padding.right + 33} y={yPrice + 4} textAnchor="middle" className="fill-white text-[11px] font-black">
+      <line x1={hover.x} x2={hover.x} y1={padding.top} y2={height - padding.bottom} stroke="#475569" strokeDasharray="5 5" opacity="0.65" />
+      <line x1={padding.left} x2={width - padding.right} y1={yPrice} y2={yPrice} stroke="#475569" strokeDasharray="5 5" opacity="0.65" />
+      <rect x={width - padding.right + 4} y={yPrice - 13} width="58" height="24" rx="4" fill="#ffffff" stroke="#cbd5e1" />
+      <text x={width - padding.right + 33} y={yPrice + 4} textAnchor="middle" className="fill-slate-950 text-[11px] font-black">
         {money(hover.price)}
       </text>
-      <rect x={boxX} y={boxY} width={boxWidth} height={boxHeight} rx="8" fill="#0f172a" opacity="0.94" />
+      <rect x={boxX} y={boxY} width={boxWidth} height={boxHeight} rx="8" fill="#ffffff" stroke="#cbd5e1" />
       {lines.map(([label, value], index) => (
         <g key={label}>
-          <text x={boxX + 12} y={boxY + 24 + index * 18} className="fill-slate-300 text-[11px] font-bold">{label}</text>
-          <text x={boxX + boxWidth - 12} y={boxY + 24 + index * 18} textAnchor="end" className="fill-white text-[11px] font-black">{value}</text>
+          <text x={boxX + 12} y={boxY + 24 + index * 18} className="fill-slate-500 text-[11px] font-bold">{label}</text>
+          <text x={boxX + boxWidth - 12} y={boxY + 24 + index * 18} textAnchor="end" className="fill-slate-950 text-[11px] font-black">{value}</text>
         </g>
       ))}
     </g>
+  );
+}
+
+function MacdChart({ rows }) {
+  const width = 760;
+  const height = 170;
+  const padding = 18;
+  const keys = [["macd", "#22c55e"], ["macdSignal", "#a855f7"]];
+  const values = rows.flatMap((row) => [row.macd, row.macdSignal, row.macdHist].filter(Number.isFinite));
+  if (!rows?.length || !values.length) {
+    return (
+      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+        <h3 className="text-xs font-black uppercase tracking-wide text-slate-700">MACD (12, 26, 9)</h3>
+        <div className="mt-2 flex h-32 items-center justify-center text-xs font-bold text-slate-500">Not enough data for MACD.</div>
+      </div>
+    );
+  }
+
+  const minValue = Math.min(...values, 0);
+  const maxValue = Math.max(...values, 0);
+  const range = maxValue - minValue || 1;
+  const x = (index) => padding + (index / Math.max(rows.length - 1, 1)) * (width - padding * 2);
+  const y = (value) => height - padding - ((value - minValue) / range) * (height - padding * 2);
+  const zeroY = y(0);
+  const step = (width - padding * 2) / Math.max(rows.length, 1);
+  const barWidth = Math.max(2, Math.min(8, step * 0.7));
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+      <div className="mb-2 flex items-center justify-between">
+        <div>
+          <h3 className="text-xs font-black uppercase tracking-wide text-slate-700">MACD (12, 26, 9)</h3>
+          <p className="mt-1 text-[11px] font-bold text-slate-500">Histogram bars show momentum. Lines crossing up/down are confirmation clues.</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Legend color="#22c55e" label="MACD" />
+          <Legend color="#a855f7" label="Signal" />
+          <Legend color="#16a34a" label="Positive bars" />
+          <Legend color="#dc2626" label="Negative bars" />
+        </div>
+      </div>
+      <svg viewBox={`0 0 ${width} ${height}`} className="h-auto w-full overflow-visible">
+        <line x1={padding} x2={width - padding} y1={zeroY} y2={zeroY} stroke="#94a3b8" />
+        <line x1={padding} x2={padding} y1={padding} y2={height - padding} stroke="#cbd5e1" />
+        {rows.map((row, index) => {
+          if (!Number.isFinite(row.macdHist)) return null;
+          const top = row.macdHist >= 0 ? y(row.macdHist) : zeroY;
+          const barHeight = Math.max(1, Math.abs(y(row.macdHist) - zeroY));
+          return (
+            <rect
+              key={row.date}
+              x={x(index) - barWidth / 2}
+              y={top}
+              width={barWidth}
+              height={barHeight}
+              fill={row.macdHist >= 0 ? "#16a34a" : "#dc2626"}
+              opacity="0.85"
+            />
+          );
+        })}
+        {keys.map(([key, color]) => {
+          const points = rows
+            .map((row, index) => Number.isFinite(row[key]) ? `${x(index)},${y(row[key])}` : null)
+            .filter(Boolean)
+            .join(" ");
+          return <polyline key={key} fill="none" stroke={color} strokeWidth="2" points={points} />;
+        })}
+      </svg>
+    </div>
   );
 }
 
