@@ -18,13 +18,12 @@ const defaultTickers = [
 ];
 
 const signalStyles = {
-  "BUY CONFIRM": "bg-emerald-100 text-emerald-900 border-emerald-300",
-  "BUY WATCH": "bg-sky-100 text-sky-900 border-sky-300",
+  "ENTRY CONFIRMED": "bg-emerald-100 text-emerald-900 border-emerald-300",
+  "ENTRY WATCH": "bg-sky-100 text-sky-900 border-sky-300",
   WAIT: "bg-amber-100 text-amber-900 border-amber-300",
-  "SELL WATCH": "bg-orange-100 text-orange-900 border-orange-300",
-  EXIT: "bg-rose-100 text-rose-900 border-rose-300",
+  "EXIT WATCH": "bg-orange-100 text-orange-900 border-orange-300",
+  "EXIT TRIGGER": "bg-rose-100 text-rose-900 border-rose-300",
   AVOID: "bg-slate-200 text-slate-900 border-slate-300",
-  "WEAK / AVOID": "bg-slate-200 text-slate-900 border-slate-300",
 };
 
 export default function StockTradingPage() {
@@ -148,11 +147,11 @@ export default function StockTradingPage() {
           <section className="rounded-lg border border-slate-300 bg-white p-4 shadow-sm">
             <h2 className="text-sm font-black uppercase tracking-wide text-slate-950">Signal Meaning</h2>
             <div className="mt-3 space-y-2 text-xs text-slate-700">
-              <p><strong>BUY CONFIRM:</strong> setup plus candle confirmation and 2:1 risk/reward.</p>
-              <p><strong>BUY WATCH:</strong> good setup forming, but confirmation is missing.</p>
-              <p><strong>WAIT:</strong> long-term trend may be fine, entry is not ready.</p>
-              <p><strong>SELL WATCH:</strong> price is near target, weakening, or below short trend.</p>
-              <p><strong>EXIT / AVOID:</strong> trend, momentum, or risk rules are poor.</p>
+              <p><strong>ENTRY CONFIRMED:</strong> latest closed candle confirms the entry rule.</p>
+              <p><strong>ENTRY WATCH:</strong> setup is forming, but entry needs a candle close above the trigger.</p>
+              <p><strong>WAIT:</strong> do not enter until the exact price condition appears.</p>
+              <p><strong>EXIT WATCH:</strong> weakness is starting; watch the exit level closely.</p>
+              <p><strong>EXIT TRIGGER:</strong> the rule says the setup has failed or should be exited.</p>
             </div>
           </section>
         </aside>
@@ -221,7 +220,7 @@ function OverviewTable({ rows, selectedTicker, onSelect, loading }) {
                 <td className="px-3 py-2">{money(row.target)}</td>
                 <td className="px-3 py-2">{number(row.riskReward)}:1</td>
                 <td className="px-3 py-2">{row.lastSignalDate}</td>
-                <td className="max-w-[320px] px-3 py-2 text-slate-600">{row.reason}</td>
+                <td className="max-w-[360px] whitespace-pre-line px-3 py-2 text-slate-600">{row.reason}</td>
               </tr>
             ))}
             {badRows.map((row) => (
@@ -249,7 +248,7 @@ function SingleAnalysis({ item }) {
               Score {item.score}/100
             </span>
           </div>
-          <p className="mt-3 max-w-4xl text-sm leading-6 text-slate-700">{item.reason}</p>
+          <ActionBlock item={item} />
         </div>
         <div className="grid grid-cols-2 gap-2 text-xs md:min-w-[320px]">
           <Metric label="Price" value={money(item.price)} />
@@ -261,6 +260,40 @@ function SingleAnalysis({ item }) {
         </div>
       </div>
     </section>
+  );
+}
+
+function ActionBlock({ item }) {
+  const action = item.action;
+  const rows = action
+    ? [
+        ["NOW", action.now],
+        ["WHY", action.why],
+        ["ENTER ONLY IF", withPeriod(capitalizeSentence(action.enterOnlyIf))],
+        ["STOP AREA", withPeriod(money(action.stopArea))],
+        ["TARGET AREA", withPeriod(money(action.targetArea))],
+        ["RISK/REWARD", withPeriod(`${number(action.riskReward)}:1`)],
+        ["WHAT CAN GO WRONG", action.whatCanGoWrong],
+      ]
+    : String(item.reason || "")
+        .split("\n")
+        .map((line) => {
+          const [label, ...rest] = line.split(":");
+          return [label, rest.join(":").trim()];
+        });
+
+  return (
+    <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
+      <h3 className="text-xs font-black uppercase tracking-wide text-slate-500">Action:</h3>
+      <dl className="mt-3 grid gap-2 text-sm">
+        {rows.map(([label, value]) => (
+          <div key={label} className="grid gap-1 sm:grid-cols-[150px_1fr]">
+            <dt className="font-black text-slate-950">{label}:</dt>
+            <dd className="font-semibold text-slate-700">{value}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
   );
 }
 
@@ -411,4 +444,14 @@ function money(value) {
 function number(value) {
   if (!Number.isFinite(Number(value))) return "-";
   return Number(value).toFixed(2).replace(/\.00$/, "");
+}
+
+function capitalizeSentence(value) {
+  const text = String(value || "");
+  return text ? text.charAt(0).toUpperCase() + text.slice(1) : text;
+}
+
+function withPeriod(value) {
+  const text = String(value || "");
+  return text.endsWith(".") ? text : `${text}.`;
 }

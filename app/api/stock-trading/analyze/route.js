@@ -184,7 +184,8 @@ function buildSnapshot(rows, index, accountSize, riskPercent) {
   const facts = conditionFacts(row, prev, levels, risk);
   const score = scoreSetup(facts);
   const signal = signalFor(row, prev, trend, facts, score, risk);
-  const reason = explain(row, prev, signal, trend, facts, risk);
+  const action = buildAction(row, prev, signal, trend, facts, risk);
+  const reason = formatAction(action);
 
   return {
     date: row.Date,
@@ -206,6 +207,7 @@ function buildSnapshot(rows, index, accountSize, riskPercent) {
     maxRiskDollars: round(risk.maxRiskDollars, 2),
     riskPerShare: round(risk.riskPerShare, 2),
     lastSignalDate: row.Date,
+    action,
     reason,
     levels,
     facts,
@@ -266,7 +268,7 @@ function signalFor(row, prev, trend, facts, score, risk) {
     facts.atrStopHit ||
     (facts.macdBearish && row.RSI < prev.RSI) ||
     trend !== "Bullish" && prev.Close > prev.EMA200;
-  if (hardExit) return "EXIT";
+  if (hardExit) return "EXIT TRIGGER";
 
   const avoid =
     facts.closeBelowEma200 ||
@@ -274,14 +276,14 @@ function signalFor(row, prev, trend, facts, score, risk) {
     (facts.weakTrend && facts.macdBearish) ||
     facts.rsiFallingUnder40 ||
     risk.riskReward < 1.3;
-  if (avoid) return "AVOID";
+  if (avoid) return "WAIT";
 
   const sellWatch =
     facts.nearResistance ||
     (row.RSI > 68 && row.RSI < prev.RSI) ||
     (row.MACDHist < prev.MACDHist && row.MACDHist > 0) ||
     facts.closeBelowEma20;
-  if (sellWatch && score < 85) return "SELL WATCH";
+  if (sellWatch && score < 85) return "EXIT WATCH";
 
   if (
     score >= 85 &&
@@ -290,12 +292,11 @@ function signalFor(row, prev, trend, facts, score, risk) {
     facts.closeAboveEma20 &&
     facts.macdImproving
   ) {
-    return "BUY CONFIRM";
+    return "ENTRY CONFIRMED";
   }
-  if (score >= 70) return "BUY WATCH";
+  if (score >= 70) return "ENTRY WATCH";
   if (score >= 55) return "WAIT";
-  if (score >= 40) return "WEAK / AVOID";
-  return "AVOID";
+  return "WAIT";
 }
 
 function trendStatus(row) {
@@ -352,15 +353,63 @@ function riskPlan(row, levels, accountSize, riskPercent) {
   };
 }
 
-function explain(row, prev, signal, trend, facts, risk) {
-  const lines = [];
-  lines.push(`${signal}. Trend is ${trend.toLowerCase()} because price is ${row.Close > row.EMA200 ? "above" : "below"} EMA200 and EMA50 is ${row.EMA50 > row.EMA200 ? "above" : "below"} EMA200.`);
-  if (facts.rsiRecoveryZone && facts.rsiImproving) lines.push(`RSI is ${round(row.RSI)} and improving from the pullback.`);
-  if (facts.macdImproving) lines.push("MACD histogram is improving versus the previous daily candle.");
-  if (!facts.candleConfirm) lines.push("Candle confirmation is still missing because price has not closed above the previous high.");
-  if (risk.riskReward < 2) lines.push(`Risk/reward is only ${round(risk.riskReward, 2)}:1, below the 2:1 target.`);
-  if (facts.nearResistance) lines.push("Price is close to resistance, so chasing is risky.");
-  return lines.join(" ");
+function buildAction(row, prev, signal, trend, facts, risk) {
+  const trigger = round(prev.High);
+  const stop = round(risk.suggestedStop);
+  const target = round(risk.target);
+  const riskReward = round(risk.riskReward, 2);
+  const ema20 = round(row.EMA20);
+
+  const whyBySignal = {
+    "ENTRY WATCH": facts.macdImproving
+      ? "Trend is positive and momentum is improving."
+      : "Trend is positive but candle confirmation is still missing.",
+    "ENTRY CONFIRMED": "The latest daily candle confirmed the entry rule.",
+    WAIT: facts.nearResistance
+      ? "Price is too close to resistance for a clean entry."
+      : "The setup is not confirmed yet.",
+    "EXIT WATCH": "Momentum is weakening or price is near resistance.",
+    "EXIT TRIGGER": "The exit rule has been triggered by trend or stop weakness.",
+  };
+
+  const enterOnlyIfBySignal = {
+    "ENTRY CONFIRMED": `latest daily candle closed above the previous high of ${money(trigger)}`,
+    "EXIT TRIGGER": `do not enter; reconsider only if daily candle closes above ${money(trigger)}`,
+    "EXIT WATCH": `do not enter; reconsider only if daily candle closes above ${money(trigger)}`,
+    WAIT: `daily candle closes above ${money(trigger)}`,
+    "ENTRY WATCH": `daily candle closes above ${money(trigger)}`,
+  };
+
+  const warningBySignal = {
+    "ENTRY WATCH": `If price closes below EMA20 at ${money(ema20)}, setup becomes weak.`,
+    "ENTRY CONFIRMED": `If price closes below the stop area at ${money(stop)}, the signal fails.`,
+    WAIT: `If risk/reward stays below 2:1, the trade is not worth chasing.`,
+    "EXIT WATCH": `If price closes below EMA20 at ${money(ema20)}, exit risk increases.`,
+    "EXIT TRIGGER": `If already holding, waiting can increase the loss.`,
+  };
+
+  return {
+    now: signal,
+    why: whyBySignal[signal] || whyBySignal.WAIT,
+    enterOnlyIf: enterOnlyIfBySignal[signal] || enterOnlyIfBySignal.WAIT,
+    stopArea: stop,
+    targetArea: target,
+    riskReward,
+    whatCanGoWrong: warningBySignal[signal] || warningBySignal.WAIT,
+    trend,
+  };
+}
+
+function formatAction(action) {
+  return [
+    `NOW: ${action.now}`,
+    `WHY: ${action.why}`,
+    `ENTER ONLY IF: ${capitalizeSentence(action.enterOnlyIf)}.`,
+    `STOP AREA: ${money(action.stopArea)}.`,
+    `TARGET AREA: ${money(action.targetArea)}.`,
+    `RISK/REWARD: ${action.riskReward}:1.`,
+    `WHAT CAN GO WRONG: ${action.whatCanGoWrong}`,
+  ].join("\n");
 }
 
 function runBacktest(rows) {
@@ -370,7 +419,7 @@ function runBacktest(rows) {
 
   for (let i = 220; i < rows.length; i += 1) {
     const snapshot = buildSnapshot(rows, i, 10000, 1);
-    if (["BUY CONFIRM", "BUY WATCH", "SELL WATCH", "EXIT", "AVOID"].includes(snapshot.signal)) {
+    if (["ENTRY CONFIRMED", "ENTRY WATCH", "EXIT WATCH", "EXIT TRIGGER", "WAIT"].includes(snapshot.signal)) {
       signals.push({
         date: snapshot.date,
         signal: snapshot.signal,
@@ -379,7 +428,7 @@ function runBacktest(rows) {
       });
     }
 
-    if (!position && snapshot.signal === "BUY CONFIRM") {
+    if (!position && snapshot.signal === "ENTRY CONFIRMED") {
       position = {
         entryDate: snapshot.date,
         entry: rows[i].Close,
@@ -390,7 +439,7 @@ function runBacktest(rows) {
     }
 
     if (position) {
-      const exitByRule = ["EXIT", "SELL WATCH", "AVOID"].includes(snapshot.signal);
+      const exitByRule = ["EXIT TRIGGER", "EXIT WATCH", "WAIT"].includes(snapshot.signal);
       const exitByStop = rows[i].Close <= position.stop;
       const exitByTarget = rows[i].Close >= position.target;
       const heldTooLong = daysBetween(position.entryDate, snapshot.date) >= 60;
@@ -576,6 +625,15 @@ function maxDrawdown(values) {
 
 function daysBetween(start, end) {
   return (new Date(end).getTime() - new Date(start).getTime()) / 86400000;
+}
+
+function money(value) {
+  return Number.isFinite(Number(value)) ? `$${Number(value).toFixed(2)}` : "$0.00";
+}
+
+function capitalizeSentence(value) {
+  const text = String(value || "");
+  return text ? text.charAt(0).toUpperCase() + text.slice(1) : text;
 }
 
 function round(value, digits = 2) {
