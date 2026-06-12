@@ -375,6 +375,7 @@ cwd = "/Users/alex/epf-toolbox/epf-google-ads-mcp"
 startup_timeout_sec = 20
 tool_timeout_sec = 120
 default_tools_approval_mode = "prompt"
+env = { CONFIRM_WRITE_ACTION = "true" }
 ```
 
 For ChatGPT outside Codex, use a hosted MCP/App bridge rather than this local stdio config. Keep the same tool safety model and never expose `.env` secrets to the client UI.

@@ -5,6 +5,7 @@ cwd = "/Users/alex/epf-toolbox/epf-google-ads-mcp"
 startup_timeout_sec = 20
 tool_timeout_sec = 120
 default_tools_approval_mode = "prompt"
+env = { CONFIRM_WRITE_ACTION = "true" }
 
 [mcp_servers.epf_google_ads.tools.create_paused_campaign]
 approval_mode = "prompt"
