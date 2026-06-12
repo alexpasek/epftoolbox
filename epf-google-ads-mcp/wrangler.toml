@@ -4,7 +4,7 @@ compatibility_date = "2026-06-09"
 compatibility_flags = ["nodejs_compat"]
 
 [vars]
-MCP_AUTH_MODE = "bearer"
+MCP_AUTH_MODE = "no_auth"
 CONFIRM_WRITE_ACTION = "true"
 
 [observability]

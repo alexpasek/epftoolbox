@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { requireExactApproval } from "../src/safety/approval.js";
 import { validateKeywordIntent, validateStatus } from "../src/safety/validators.js";
-import { removeNegativeKeywordOperation } from "../src/workerTools.js";
+import { removeNegativeKeywordOperation, workerTools } from "../src/workerTools.js";
 
 test("core popcorn removal service keywords are not blocked as low intent", () => {
   const keywords = [
@@ -72,5 +72,50 @@ test("negative keyword removal infers shared criterion operation from resource p
         remove: "customers/123/sharedCriteria/456~789",
       },
     }
+  );
+});
+
+test("proximity target write tool requires coordinates and radius", async () => {
+  const tool = workerTools({}).find((item) => item.name === "add_proximity_target_after_approval");
+
+  await assert.rejects(
+    () => tool.handler({ campaignResourceName: "customers/123/campaigns/456" }),
+    /latitude/
+  );
+});
+
+test("proximity target write tool previews microdegree payload", async () => {
+  const tool = workerTools({}).find((item) => item.name === "add_proximity_target_after_approval");
+  const result = await tool.handler({
+    campaignResourceName: "customers/123/campaigns/456",
+    latitude: 43.589,
+    longitude: -79.644,
+    radius: 12,
+    radiusUnits: "KILOMETERS",
+    bidModifier: 1.1,
+  });
+
+  assert.equal(result.structuredContent.result.mode, "preview_only");
+  assert.deepEqual(
+    result.structuredContent.result.proposedChange.mutateOperations,
+    [
+      {
+        campaignCriterionOperation: {
+          create: {
+            campaign: "customers/123/campaigns/456",
+            proximity: {
+              geoPoint: {
+                latitudeInMicroDegrees: 43589000,
+                longitudeInMicroDegrees: -79644000,
+              },
+              radius: 12,
+              radiusUnits: "KILOMETERS",
+            },
+            negative: false,
+            bidModifier: 1.1,
+          },
+        },
+      },
+    ]
   );
 });

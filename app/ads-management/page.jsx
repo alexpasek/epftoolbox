@@ -65,6 +65,8 @@ const toolGroups = [
     title: "Performance & Search Terms",
     tools: [
       "get_campaign_performance",
+      "get_location_performance",
+      "get_device_performance",
       "get_ad_group_performance",
       "get_keyword_performance",
       "get_ad_performance",
@@ -98,6 +100,7 @@ const toolGroups = [
       "get_ad_details",
       "list_assets",
       "list_campaign_locations",
+      "list_campaign_proximities",
       "list_campaign_languages",
       "list_ad_schedule",
       "list_device_performance",
@@ -127,6 +130,7 @@ const toolGroups = [
       "update_keyword_bid_after_approval",
       "set_campaign_status_after_approval",
       "add_location_target_after_approval",
+      "add_proximity_target_after_approval",
       "remove_location_target_after_approval",
       "set_location_bid_modifier_after_approval",
       "add_language_after_approval",
@@ -156,6 +160,13 @@ const safetyRules = [
   "Broad match, budget, bidding, enable, pause, remove, and final URL changes need explicit approval.",
 ];
 
+const mapsMobileChecklist = [
+  "Link the Google Business Profile or owned Google Maps location as a Google Ads location asset.",
+  "Use Search-only settings with presence-only geo targeting, then add Mississauga/Hamilton/Burlington location or radius targets.",
+  "Attach call, sitelink, callout, image, and business-name assets so mobile searchers can call, visit, or request directions.",
+  "Review location and device performance before increasing mobile or nearby-location bid modifiers.",
+];
+
 const approvalText = [
   {
     label: "Exact approval text",
@@ -165,6 +176,7 @@ const approvalText = [
 
 const promptExamples = [
   "Audit all active campaigns for budget, conversions, targeting, negatives, and landing pages. Do not apply changes.",
+  "Audit my campaign for Google Maps and mobile local-ad readiness: location assets, call assets, presence targeting, radius targets, and mobile performance.",
   "Run source-check and tell me whether Google upstream added MCP tools or resources.",
   "Use get_resource_metadata for campaign, then search_google_ads to query optimization score and search impression share.",
   "Analyze search terms from the last 30 days and group them into good intent, negative candidates, and watch list.",
@@ -374,6 +386,24 @@ export default function AdsManagementPage() {
                 Live writes are enabled, but the MCP still requires apply=true and exact approval text for write tools.
               </p>
             </div>
+          </Card>
+        </section>
+
+        <section className="mt-4">
+          <Card title="Maps & Mobile Local Ads">
+            <div className="grid gap-2 md:grid-cols-2">
+              {mapsMobileChecklist.map((item, index) => (
+                <div key={item} className="grid grid-cols-[auto_minmax(0,1fr)] gap-3 rounded-md border border-slate-200 bg-slate-50 p-3">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-700 text-xs font-black text-white">
+                    {index + 1}
+                  </span>
+                  <p className="text-sm font-bold text-slate-800">{item}</p>
+                </div>
+              ))}
+            </div>
+            <p className="mt-3 text-sm font-bold text-slate-700">
+              The MCP can audit and safely propose campaign targeting, radius, assets, and mobile bid changes. Google Business Profile or Google Maps location linking is still done in Google Ads Location Manager.
+            </p>
           </Card>
         </section>
 

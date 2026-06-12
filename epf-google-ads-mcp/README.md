@@ -87,6 +87,8 @@ Read tools:
 - `list_all_negative_keywords`
 - `get_campaign_performance`
 - `get_search_terms`
+- `list_campaign_locations`
+- `list_campaign_proximities`
 - `keyword_ideas`
 - `get_keyword_volume`
 - `get_keyword_forecast`
@@ -106,6 +108,17 @@ Resources:
 - `resource://release-notes`: official Google Ads API release notes.
 
 The Worker REST client defaults to Google Ads API `v24`, matching the upstream `googleads/google-ads-mcp` source. Set `GOOGLE_ADS_API_VERSION` if you need to pin another version.
+
+## Google Maps and Mobile Local Ad Readiness
+
+To become eligible for map-style local ads like sponsored Google Maps results, campaigns need more than radius targeting:
+
+- Link the Google Business Profile or owned Google Maps location as a Google Ads location asset in Location Manager.
+- Keep Search campaigns on Google Search, use presence-only geo targeting, and add location or proximity targets for the service area.
+- Attach call, sitelink, callout, image, and business-name assets where appropriate for mobile searchers.
+- Use `get_location_performance`, `get_device_performance`, `list_campaign_locations`, `list_campaign_proximities`, and `list_assets` before applying mobile or nearby-location bid changes.
+
+The MCP can audit and safely propose campaign targeting, radius, asset, and bid changes. Google Business Profile or Google Maps location linking is still completed in Google Ads Location Manager.
 
 ## Monthly Upstream Source Check
 
@@ -204,6 +217,7 @@ Approval-gated control tools:
 - `update_ad_final_url_after_approval`
 - `update_campaign_final_url_suffix_after_approval`
 - `add_location_target_after_approval`
+- `add_proximity_target_after_approval`
 - `remove_location_target_after_approval`
 - `set_location_bid_modifier_after_approval`
 - `add_language_after_approval`
@@ -221,6 +235,8 @@ Approval-gated control tools:
 - `update_asset_from_json_after_approval`
 - `attach_asset_after_approval`
 - `remove_asset_link_after_approval`
+- `add_location_to_business_profile_asset_set_after_approval`
+- `remove_location_from_business_profile_asset_set_after_approval`
 - `create_call_asset_after_approval`
 - `attach_call_asset_to_campaign_after_approval`
 - `create_structured_snippet_asset_after_approval`
@@ -351,6 +367,36 @@ Ad serving readiness diagnosis example:
   "limit": 100
 }
 ```
+
+## Business Profile Synced Location Asset Set Management
+
+When you have a customer-level synced Business Profile location asset set with multiple locations, use the `assetSetOperation` tools to manage individual location members:
+
+**Add location to synced Business Profile asset set:**
+
+```json
+{
+  "assetSetResourceName": "customers/9466544876/assetSets/789",
+  "assetResourceName": "customers/9466544876/assets/location-001",
+  "apply": true,
+  "approvalText": "APPROVER"
+}
+```
+
+**Remove location from synced Business Profile asset set:**
+
+```json
+{
+  "assetSetAssetResourceName": "customers/9466544876/assetSetAssets/789~location-001",
+  "apply": true,
+  "approvalText": "APPROVER"
+}
+```
+
+These tools use `assetSetOperation` (not `assetOperation`) to manage asset set membership. To find your asset set resource names:
+
+1. Query all asset sets: `SELECT asset_set.resource_name, asset_set.status, asset_set.type FROM asset_set WHERE asset_set.type = 'LOCATION_SYNC'`
+2. Query asset set members: `SELECT asset_set_asset.resource_name, asset_set_asset.asset, asset_set_asset.status FROM asset_set_asset WHERE asset_set_asset.asset_set = 'customers/{customerId}/assetSets/{assetSetId}'`
 
 Recommended agent workflow:
 
