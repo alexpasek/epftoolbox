@@ -47,6 +47,31 @@ const defaultChartTools = {
   signalMarkers: true,
 };
 
+const chartColors = {
+  up: "#16853a",
+  upFill: "#e6f4ed",
+  down: "#b9292f",
+  downFill: "#f9e4e6",
+  ema20: "#1f7ae0",
+  ema50: "#0b3557",
+  ema200: "#b9292f",
+  sma20: "#ff8a2a",
+  sma50: "#8f43c7",
+  sma200: "#8f43c7",
+  bollinger: "#9b4bc7",
+  rsi: "#c6d800",
+  williamsR: "#9b4bc7",
+  plusDI: "#119cf2",
+  minusDI: "#c6d800",
+  adx: "#22c7b8",
+  macd: "#6f2da8",
+  macdSignal: "#35d8c4",
+  grid: "#d7dde5",
+  axis: "#c8d0da",
+  projectionFill: "#dbeafe",
+  cursor: "#475569",
+};
+
 const signalStyles = {
   "ENTRY CONFIRMED": "bg-emerald-100 text-emerald-900 border-emerald-300",
   "ENTRY WATCH": "bg-sky-100 text-sky-900 border-sky-300",
@@ -617,9 +642,9 @@ function ChartPanel({ item, timeframe, tools, onToggleTool }) {
   const indicatorCards = [
     tools.volume ? <VolumeChart key="volume" rows={rows} /> : null,
     tools.macd ? <MacdChart key="macd" rows={rows} /> : null,
-    tools.rsi ? <SparkChart key="rsi" title="RSI 14" rows={rows} keys={[["rsi", "#c4d600"]]} height={150} fixedMin={0} fixedMax={100} levels={[70, 30]} note="Above 70 is stretched. Below 30 is oversold." /> : null,
-    tools.williamsR ? <SparkChart key="williamsR" title="Williams %R" rows={rows} keys={[["williamsR", "#a855f7"]]} height={150} fixedMin={-100} fixedMax={0} levels={[-20, -80]} note={williamsStatus(latest.williamsR)} /> : null,
-    tools.dmi ? <SparkChart key="dmi" title="DMI 14" rows={rows} keys={[["plusDI", "#0ea5e9"], ["minusDI", "#c4d600"], ["adx", "#2dd4bf"]]} height={150} fixedMin={0} fixedMax={60} note="+DI over -DI favors buyers. ADX shows trend strength." /> : null,
+    tools.rsi ? <SparkChart key="rsi" title="RSI 14" rows={rows} keys={[["rsi", chartColors.rsi]]} height={150} fixedMin={0} fixedMax={100} levels={[70, 30]} note="Above 70 is stretched. Below 30 is oversold." /> : null,
+    tools.williamsR ? <SparkChart key="williamsR" title="Williams %R" rows={rows} keys={[["williamsR", chartColors.williamsR]]} height={150} fixedMin={-100} fixedMax={0} levels={[-20, -80]} note={williamsStatus(latest.williamsR)} /> : null,
+    tools.dmi ? <SparkChart key="dmi" title="DMI 14" rows={rows} keys={[["plusDI", chartColors.plusDI], ["minusDI", chartColors.minusDI], ["adx", chartColors.adx]]} height={150} fixedMin={0} fixedMax={60} note="+DI over -DI favors buyers. ADX shows trend strength." /> : null,
   ].filter(Boolean);
 
   return (
@@ -632,13 +657,13 @@ function ChartPanel({ item, timeframe, tools, onToggleTool }) {
           </p>
         </div>
         <div className="flex flex-wrap gap-2 text-xs font-bold text-slate-600">
-          <Legend color="#16a34a" label="Up candle" />
-          <Legend color="#dc2626" label="Down candle" />
-          <Legend color="#0284c7" label="EMA20" />
-          <Legend color="#f97316" label="SMA20" />
-          <Legend color="#7c3aed" label="SMA50" />
-          <Legend color="#be123c" label="SMA200" />
-          <Legend color="#94a3b8" label="Bollinger" />
+          <Legend color={chartColors.up} label="Up candle" />
+          <Legend color={chartColors.down} label="Down candle" />
+          <Legend color={chartColors.bollinger} label="Bollinger" />
+          <Legend color={chartColors.ema20} label="EMA20" />
+          <Legend color={chartColors.sma20} label="SMA20" />
+          <Legend color={chartColors.sma50} label="SMA50" />
+          <Legend color={chartColors.sma200} label="SMA200" />
         </div>
       </div>
       <div className="mt-4">
@@ -646,7 +671,13 @@ function ChartPanel({ item, timeframe, tools, onToggleTool }) {
       </div>
       <ChartRuleOverlay item={item} />
       <div className="mt-4">
-        <CandlestickChart rows={rows} item={item} tools={tools} timeframe={timeframe} />
+        <CandlestickChart
+          key={`${item.ticker}-${timeframe}-${rows.length}`}
+          rows={rows}
+          item={item}
+          tools={tools}
+          timeframe={timeframe}
+        />
       </div>
       <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <Metric label="Open" value={money(latest.open)} />
@@ -723,7 +754,7 @@ function ChartToolBar({ tools, onToggleTool }) {
         ))}
       </div>
       <p className="mt-2 text-xs font-semibold text-slate-500">
-        <strong>Chart Controls:</strong> Hover for values and score details · Drag to pan · Scroll to zoom · Double-click to reset view
+        <strong>Chart Controls:</strong> Hover for values and score details · Use + / - to zoom · Use arrows or drag after zoom to pan · Double-click to reset view
       </p>
     </div>
   );
@@ -781,6 +812,11 @@ function CandlestickChart({ rows, item, tools, timeframe }) {
   const baseCandleGap = plotWidth / Math.max(validRows.length, 1);
   const candleGap = baseCandleGap * zoomLevel;
   const candleWidth = Math.max(3, Math.min(14, candleGap * 0.64));
+  const clampPan = (value, zoom = zoomLevel) => {
+    const totalWidth = validRows.length * baseCandleGap * zoom;
+    const minPan = Math.min(0, plotWidth - totalWidth);
+    return Math.max(minPan, Math.min(0, value));
+  };
   
   const x = (index) => padding.left + panOffset + index * candleGap + candleGap / 2;
   const y = (value) => padding.top + ((maxValue - value) / range) * plotHeight;
@@ -810,6 +846,7 @@ function CandlestickChart({ rows, item, tools, timeframe }) {
   }
 
   function handleMouseDown(event) {
+    if (event.button !== 0 || zoomLevel <= 1) return;
     setIsDragging(true);
     setDragStart(event.clientX);
   }
@@ -817,8 +854,7 @@ function CandlestickChart({ rows, item, tools, timeframe }) {
   function handleMouseMove(event) {
     if (!isDragging) return;
     const delta = event.clientX - dragStart;
-    const newOffset = Math.max(-200, Math.min(200, panOffset + delta));
-    setPanOffset(newOffset);
+    setPanOffset(clampPan(panOffset + delta));
     setDragStart(event.clientX);
   }
 
@@ -826,11 +862,15 @@ function CandlestickChart({ rows, item, tools, timeframe }) {
     setIsDragging(false);
   }
 
-  function handleWheel(event) {
-    event.preventDefault();
-    const direction = event.deltaY > 0 ? 0.9 : 1.1;
-    const newZoom = Math.max(0.5, Math.min(3, zoomLevel * direction));
+  function updateZoom(multiplier) {
+    const newZoom = Math.max(1, Math.min(4, zoomLevel * multiplier));
     setZoomLevel(newZoom);
+    setPanOffset((current) => clampPan(current, newZoom));
+  }
+
+  function panBy(amount) {
+    if (zoomLevel <= 1) return;
+    setPanOffset((current) => clampPan(current + amount));
   }
 
   function handleDoubleClick() {
@@ -839,13 +879,22 @@ function CandlestickChart({ rows, item, tools, timeframe }) {
   }
 
   const levels = [
-    ["Stop", item.stop, "#dc2626"],
-    ["Target", item.target, "#16a34a"],
+    ["Stop", item.stop, chartColors.down],
+    ["Target", item.target, chartColors.up],
   ].filter(([, value]) => Number.isFinite(value));
   const chartNotes = item.ruleEngine?.chartNotes || [];
 
   return (
-    <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+    <div className="relative overflow-hidden rounded-lg border border-slate-200 bg-white">
+      <ChartZoomControls
+        zoomLevel={zoomLevel}
+        canPan={zoomLevel > 1}
+        onZoomIn={() => updateZoom(1.2)}
+        onZoomOut={() => updateZoom(1 / 1.2)}
+        onPanLeft={() => panBy(90)}
+        onPanRight={() => panBy(-90)}
+        onReset={handleDoubleClick}
+      />
       <svg
         viewBox={`0 0 ${width} ${height}`}
         onMouseMove={(e) => {
@@ -858,10 +907,9 @@ function CandlestickChart({ rows, item, tools, timeframe }) {
           setHover(null);
           handleMouseUp();
         }}
-        onWheel={handleWheel}
         onDoubleClick={handleDoubleClick}
         className={`h-[360px] w-full bg-white md:h-[500px] xl:h-[620px] ${
-          isDragging ? "cursor-grabbing" : "cursor-crosshair"
+          isDragging ? "cursor-grabbing" : zoomLevel > 1 ? "cursor-grab" : "cursor-crosshair"
         }`}
       >
         {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
@@ -869,7 +917,7 @@ function CandlestickChart({ rows, item, tools, timeframe }) {
           const value = maxValue - ratio * range;
           return (
             <g key={ratio}>
-              <line x1={padding.left} x2={width - padding.right} y1={yy} y2={yy} stroke="#e2e8f0" />
+              <line x1={padding.left} x2={width - padding.right} y1={yy} y2={yy} stroke={chartColors.grid} />
               <text x={width - padding.right + 10} y={yy + 4} className="fill-slate-500 text-[12px] font-bold">
                 {money(value)}
               </text>
@@ -879,7 +927,7 @@ function CandlestickChart({ rows, item, tools, timeframe }) {
 
         {chartNotes.length ? (
           <g>
-            <rect x={padding.left + 8} y={padding.top + 8} width="390" height="116" rx="8" fill="#ffffff" stroke="#cbd5e1" opacity="0.96" />
+            <rect x={padding.left + 8} y={padding.top + 8} width="390" height="116" rx="8" fill="white" stroke={chartColors.axis} opacity="0.96" />
             <text x={padding.left + 22} y={padding.top + 32} className="fill-slate-500 text-[11px] font-black">
               RULE POSITION
             </text>
@@ -905,11 +953,11 @@ function CandlestickChart({ rows, item, tools, timeframe }) {
               y={y(projection.weeklyHigh)}
               width={plotWidth}
               height={Math.max(1, y(projection.weeklyLow) - y(projection.weeklyHigh))}
-              fill="#dbeafe"
+              fill={chartColors.projectionFill}
               opacity="0.22"
             />
-            <line x1={padding.left} x2={width - padding.right} y1={y(projection.weeklyHigh)} y2={y(projection.weeklyHigh)} stroke="#2563eb" strokeDasharray="4 5" />
-            <line x1={padding.left} x2={width - padding.right} y1={y(projection.weeklyLow)} y2={y(projection.weeklyLow)} stroke="#2563eb" strokeDasharray="4 5" />
+            <line x1={padding.left} x2={width - padding.right} y1={y(projection.weeklyHigh)} y2={y(projection.weeklyHigh)} stroke={chartColors.ema20} strokeDasharray="4 5" />
+            <line x1={padding.left} x2={width - padding.right} y1={y(projection.weeklyLow)} y2={y(projection.weeklyLow)} stroke={chartColors.ema20} strokeDasharray="4 5" />
             <text x={width - padding.right - 8} y={y(projection.weeklyHigh) - 6} textAnchor="end" className="fill-blue-700 text-[11px] font-black">
               Weekly high {money(projection.weeklyHigh)}
             </text>
@@ -921,16 +969,16 @@ function CandlestickChart({ rows, item, tools, timeframe }) {
 
         {tools.bollinger ? (
           <>
-            <polyline fill="none" stroke="#94a3b8" strokeWidth="1.5" points={linePoints("bbUpper")} />
-            <polyline fill="none" stroke="#94a3b8" strokeWidth="1.5" points={linePoints("bbLower")} />
+            <polyline fill="none" stroke={chartColors.bollinger} strokeWidth="2.1" points={linePoints("bbUpper")} />
+            <polyline fill="none" stroke={chartColors.bollinger} strokeWidth="2.1" points={linePoints("bbLower")} />
           </>
         ) : null}
-        {tools.ema20 ? <polyline fill="none" stroke="#0284c7" strokeWidth="2.2" points={linePoints("ema20")} /> : null}
-        {tools.ema50 ? <polyline fill="none" stroke="#0f172a" strokeWidth="1.8" points={linePoints("ema50")} /> : null}
-        {tools.ema200 ? <polyline fill="none" stroke="#dc2626" strokeWidth="1.8" points={linePoints("ema200")} /> : null}
-        {tools.sma20 ? <polyline fill="none" stroke="#f97316" strokeWidth="1.8" points={linePoints("sma20")} /> : null}
-        {tools.sma50 ? <polyline fill="none" stroke="#7c3aed" strokeWidth="1.8" points={linePoints("sma50")} /> : null}
-        {tools.sma200 ? <polyline fill="none" stroke="#be123c" strokeWidth="2" points={linePoints("sma200")} /> : null}
+        {tools.ema20 ? <polyline fill="none" stroke={chartColors.ema20} strokeWidth="2.2" points={linePoints("ema20")} /> : null}
+        {tools.ema50 ? <polyline fill="none" stroke={chartColors.ema50} strokeWidth="1.8" points={linePoints("ema50")} /> : null}
+        {tools.ema200 ? <polyline fill="none" stroke={chartColors.ema200} strokeWidth="1.8" points={linePoints("ema200")} /> : null}
+        {tools.sma20 ? <polyline fill="none" stroke={chartColors.sma20} strokeWidth="2" strokeDasharray="2 3" points={linePoints("sma20")} /> : null}
+        {tools.sma50 ? <polyline fill="none" stroke={chartColors.sma50} strokeWidth="2" points={linePoints("sma50")} /> : null}
+        {tools.sma200 ? <polyline fill="none" stroke={chartColors.sma200} strokeWidth="2.2" strokeDasharray="4 4" points={linePoints("sma200")} /> : null}
 
         {tools.stopTarget ? levels.map(([label, value, color]) => (
           <g key={label}>
@@ -948,11 +996,11 @@ function CandlestickChart({ rows, item, tools, timeframe }) {
               x2={width - padding.right}
               y1={y(validRows[validRows.length - 1]?.close)}
               y2={y(projection.projectedPrice)}
-              stroke={projection.direction === "Bearish" ? "#dc2626" : "#16a34a"}
+              stroke={projection.direction === "Bearish" ? chartColors.down : chartColors.up}
               strokeWidth="2.4"
               strokeDasharray="8 6"
             />
-            <circle cx={width - padding.right} cy={y(projection.projectedPrice)} r="4" fill={projection.direction === "Bearish" ? "#dc2626" : "#16a34a"} />
+            <circle cx={width - padding.right} cy={y(projection.projectedPrice)} r="4" fill={projection.direction === "Bearish" ? chartColors.down : chartColors.up} />
             <text x={width - padding.right - 8} y={y(projection.projectedPrice) - 9} textAnchor="end" className="fill-slate-950 text-[12px] font-black">
               Projected {money(projection.projectedPrice)}
             </text>
@@ -961,7 +1009,7 @@ function CandlestickChart({ rows, item, tools, timeframe }) {
 
         {validRows.map((row, index) => {
           const rising = row.close >= row.open;
-          const color = rising ? "#16a34a" : "#dc2626";
+          const color = rising ? chartColors.up : chartColors.down;
           const top = y(Math.max(row.open, row.close));
           const bodyHeight = Math.max(2, Math.abs(y(row.open) - y(row.close)));
           return (
@@ -972,7 +1020,7 @@ function CandlestickChart({ rows, item, tools, timeframe }) {
                 y={top}
                 width={candleWidth}
                 height={bodyHeight}
-                fill={rising ? "#dcfce7" : "#fee2e2"}
+                fill={rising ? chartColors.upFill : chartColors.downFill}
                 stroke={color}
                 strokeWidth="1.4"
               />
@@ -986,14 +1034,14 @@ function CandlestickChart({ rows, item, tools, timeframe }) {
 
         {timeTicks.map((tick) => (
           <g key={`${tick.index}-${tick.label}`}>
-            <line x1={x(tick.index)} x2={x(tick.index)} y1={padding.top} y2={height - padding.bottom} stroke="#e2e8f0" strokeDasharray="2 4" />
+            <line x1={x(tick.index)} x2={x(tick.index)} y1={padding.top} y2={height - padding.bottom} stroke={chartColors.grid} strokeDasharray="2 4" />
             <text x={x(tick.index)} y={height - 12} textAnchor="middle" className="fill-slate-500 text-[11px] font-bold">{tick.label}</text>
           </g>
         ))}
         {tools.tooltip && hover ? <ChartHover hover={hover} width={width} height={height} padding={padding} item={item} /> : null}
         {zoomLevel !== 1 || panOffset !== 0 ? (
           <g pointerEvents="none">
-            <text x={width - 120} y={30} className="fill-slate-500 text-[10px] font-bold">Zoom: {zoomLevel.toFixed(1)}x | Pan offset</text>
+            <text x={width - 150} y={30} className="fill-slate-500 text-[10px] font-bold">Zoom: {zoomLevel.toFixed(1)}x | drag to pan</text>
           </g>
         ) : null}
       </svg>
@@ -1007,7 +1055,7 @@ function SignalMarkers({ rows, item, x, y, padding, height }) {
   const signal = item.signal || "WAIT";
   const isEntry = signal.includes("ENTRY");
   const isExit = signal.includes("EXIT");
-  const color = isEntry ? "#16a34a" : isExit ? "#dc2626" : "#f59e0b";
+  const color = isEntry ? chartColors.up : isExit ? chartColors.down : chartColors.sma20;
   const label = isEntry ? "BUY" : isExit ? "OUT" : "WAIT";
   const index = rows.length - 1;
   const markerY = isEntry ? y(latest.low) + 18 : y(latest.high) - 18;
@@ -1018,11 +1066,46 @@ function SignalMarkers({ rows, item, x, y, padding, height }) {
   return (
     <g pointerEvents="none">
       <polygon points={points} fill={color} opacity="0.95" />
-      <rect x={Math.max(padding.left + 4, x(index) - 34)} y={Math.max(padding.top + 4, Math.min(height - padding.bottom - 26, markerY + 12))} width="68" height="22" rx="4" fill="#ffffff" stroke={color} />
+      <rect x={Math.max(padding.left + 4, x(index) - 34)} y={Math.max(padding.top + 4, Math.min(height - padding.bottom - 26, markerY + 12))} width="68" height="22" rx="4" fill="white" stroke={color} />
       <text x={x(index)} y={Math.max(padding.top + 20, Math.min(height - padding.bottom - 10, markerY + 28))} textAnchor="middle" className="fill-slate-950 text-[10px] font-black">
         {label} {item.score}/100
       </text>
     </g>
+  );
+}
+
+function ChartZoomControls({ zoomLevel, canPan, onZoomIn, onZoomOut, onPanLeft, onPanRight, onReset }) {
+  return (
+    <div className="absolute bottom-3 right-3 z-10 flex items-center gap-1 rounded-md border border-slate-200 bg-white/95 px-2 py-1 shadow-sm">
+      <ChartControlButton label="+" title="Zoom in" onClick={onZoomIn} />
+      <ChartControlButton label="-" title="Zoom out" onClick={onZoomOut} disabled={zoomLevel <= 1} />
+      <span className="mx-1 h-5 w-px bg-slate-200" />
+      <ChartControlButton label="<" title="Pan left" onClick={onPanLeft} disabled={!canPan} />
+      <ChartControlButton label=">" title="Pan right" onClick={onPanRight} disabled={!canPan} />
+      <button
+        type="button"
+        onClick={onReset}
+        className="ml-1 rounded px-2 py-1 text-[11px] font-black text-sky-700 hover:bg-sky-50"
+      >
+        Reset
+      </button>
+      <span className="ml-1 min-w-9 text-right text-[10px] font-black text-slate-500">{zoomLevel.toFixed(1)}x</span>
+    </div>
+  );
+}
+
+function ChartControlButton({ label, title, onClick, disabled = false }) {
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-label={title}
+      onClick={onClick}
+      disabled={disabled}
+      className="inline-flex h-7 w-7 items-center justify-center rounded border border-slate-200 bg-white text-sm font-black text-slate-900 hover:border-sky-300 hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-40"
+    >
+      {label}
+    </button>
   );
 }
 
@@ -1053,13 +1136,13 @@ function ChartHover({ hover, width, height, padding, item }) {
 
   return (
     <g pointerEvents="none">
-      <line x1={hover.x} x2={hover.x} y1={padding.top} y2={height - padding.bottom} stroke="#475569" strokeDasharray="5 5" opacity="0.65" />
-      <line x1={padding.left} x2={width - padding.right} y1={yPrice} y2={yPrice} stroke="#475569" strokeDasharray="5 5" opacity="0.65" />
-      <rect x={width - padding.right + 4} y={yPrice - 13} width="58" height="24" rx="4" fill="#ffffff" stroke="#cbd5e1" />
+      <line x1={hover.x} x2={hover.x} y1={padding.top} y2={height - padding.bottom} stroke={chartColors.cursor} strokeDasharray="5 5" opacity="0.65" />
+      <line x1={padding.left} x2={width - padding.right} y1={yPrice} y2={yPrice} stroke={chartColors.cursor} strokeDasharray="5 5" opacity="0.65" />
+      <rect x={width - padding.right + 4} y={yPrice - 13} width="58" height="24" rx="4" fill="white" stroke={chartColors.axis} />
       <text x={width - padding.right + 33} y={yPrice + 4} textAnchor="middle" className="fill-slate-950 text-[11px] font-black">
         {money(hover.price)}
       </text>
-      <rect x={boxX} y={boxY} width={boxWidth} height={boxHeight} rx="8" fill="#ffffff" stroke="#cbd5e1" />
+      <rect x={boxX} y={boxY} width={boxWidth} height={boxHeight} rx="8" fill="white" stroke={chartColors.axis} />
       {lines.map(([label, value], index) => (
         <g key={label}>
           <text x={boxX + 12} y={boxY + 24 + index * 18} className="fill-slate-500 text-[11px] font-bold">{label}</text>
@@ -1089,7 +1172,7 @@ function MacdChart({ rows }) {
   const width = 760;
   const height = 170;
   const padding = 18;
-  const keys = [["macd", "#22c55e"], ["macdSignal", "#a855f7"]];
+  const keys = [["macd", chartColors.macd], ["macdSignal", chartColors.macdSignal]];
   const values = rows.flatMap((row) => [row.macd, row.macdSignal, row.macdHist].filter(Number.isFinite));
   if (!rows?.length || !values.length) {
     return (
@@ -1117,15 +1200,15 @@ function MacdChart({ rows }) {
           <p className="mt-1 text-[11px] font-bold text-slate-500">Histogram bars show momentum. Lines crossing up/down are confirmation clues.</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Legend color="#22c55e" label="MACD" />
-          <Legend color="#a855f7" label="Signal" />
-          <Legend color="#16a34a" label="Positive bars" />
-          <Legend color="#dc2626" label="Negative bars" />
+          <Legend color={chartColors.macd} label="MACD" />
+          <Legend color={chartColors.macdSignal} label="Signal" />
+          <Legend color={chartColors.up} label="Positive bars" />
+          <Legend color={chartColors.down} label="Negative bars" />
         </div>
       </div>
       <svg viewBox={`0 0 ${width} ${height}`} className="h-auto w-full overflow-visible">
-        <line x1={padding} x2={width - padding} y1={zeroY} y2={zeroY} stroke="#94a3b8" />
-        <line x1={padding} x2={padding} y1={padding} y2={height - padding} stroke="#cbd5e1" />
+        <line x1={padding} x2={width - padding} y1={zeroY} y2={zeroY} stroke={chartColors.axis} />
+        <line x1={padding} x2={padding} y1={padding} y2={height - padding} stroke={chartColors.axis} />
         {rows.map((row, index) => {
           if (!Number.isFinite(row.macdHist)) return null;
           const top = row.macdHist >= 0 ? y(row.macdHist) : zeroY;
@@ -1137,7 +1220,7 @@ function MacdChart({ rows }) {
               y={top}
               width={barWidth}
               height={barHeight}
-              fill={row.macdHist >= 0 ? "#16a34a" : "#dc2626"}
+              fill={row.macdHist >= 0 ? chartColors.up : chartColors.down}
               opacity="0.85"
             />
           );
@@ -1182,7 +1265,7 @@ function SparkBars({ rows }) {
   const barWidth = Math.max(2, (width - padding * 2) / Math.max(rows.length, 1) - 1);
   return (
     <svg viewBox={`0 0 ${width} ${height}`} className="h-auto w-full">
-      <line x1={padding} x2={width - padding} y1={height - padding} y2={height - padding} stroke="#cbd5e1" />
+      <line x1={padding} x2={width - padding} y1={height - padding} y2={height - padding} stroke={chartColors.axis} />
       {rows.map((row, index) => {
         const barHeight = ((row.volume || 0) / maxValue) * (height - padding * 2);
         const xPos = padding + index * ((width - padding * 2) / Math.max(rows.length, 1));
@@ -1193,7 +1276,7 @@ function SparkBars({ rows }) {
             y={height - padding - barHeight}
             width={barWidth}
             height={barHeight}
-            fill={row.close >= row.open ? "#16a34a" : "#dc2626"}
+            fill={row.close >= row.open ? chartColors.up : chartColors.down}
             opacity="0.75"
           />
         );
@@ -1352,11 +1435,11 @@ function SparkChart({ title, rows, keys, height = 180, fixedMin, fixedMax, level
         </div>
       </div>
       <svg viewBox={`0 0 ${width} ${height}`} className="h-auto w-full overflow-visible">
-        <line x1={padding} x2={width - padding} y1={height - padding} y2={height - padding} stroke="#cbd5e1" />
-        <line x1={padding} x2={padding} y1={padding} y2={height - padding} stroke="#cbd5e1" />
+        <line x1={padding} x2={width - padding} y1={height - padding} y2={height - padding} stroke={chartColors.axis} />
+        <line x1={padding} x2={padding} y1={padding} y2={height - padding} stroke={chartColors.axis} />
         {levels.map((level) => (
           <g key={level}>
-            <line x1={padding} x2={width - padding} y1={y(level)} y2={y(level)} stroke="#94a3b8" strokeDasharray="5 5" />
+            <line x1={padding} x2={width - padding} y1={y(level)} y2={y(level)} stroke={chartColors.axis} strokeDasharray="5 5" />
             <text x={width - padding - 4} y={y(level) - 4} textAnchor="end" className="fill-slate-500 text-[10px] font-bold">{level}</text>
           </g>
         ))}
