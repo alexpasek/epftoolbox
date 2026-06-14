@@ -28,8 +28,9 @@ export async function GET(request) {
   const results = await Promise.all(
     tickers.map(async (ticker) => {
       try {
-        const candles = await loadYahooCandles(ticker, period, interval);
-        return analyzeTicker(ticker, candles, accountSize, riskPercent);
+        const candles = await loadYahooCandles(ticker, period, interval, { minCandles: 220 });
+        const intradayCandles = await loadYahooCandles(ticker, "1d", "5m", { minCandles: 10 }).catch(() => []);
+        return analyzeTicker(ticker, candles, accountSize, riskPercent, intradayCandles);
       } catch (error) {
         return {
           ticker,
@@ -64,7 +65,8 @@ function cleanNumber(value, fallback) {
   return Number.isFinite(number) && number > 0 ? number : fallback;
 }
 
-async function loadYahooCandles(ticker, range = "5y", interval = "1d") {
+async function loadYahooCandles(ticker, range = "5y", interval = "1d", options = {}) {
+  const minCandles = options.minCandles ?? 220;
   const endpoint = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?range=${encodeURIComponent(range)}&interval=${encodeURIComponent(interval)}&events=history`;
   const response = await fetch(endpoint, {
     headers: {
@@ -85,17 +87,20 @@ async function loadYahooCandles(ticker, range = "5y", interval = "1d") {
 
   const quote = result.indicators?.quote?.[0] || {};
   const adjClose = result.indicators?.adjclose?.[0]?.adjclose || [];
+  const timezone = result.meta?.exchangeTimezoneName || "America/Toronto";
+  const isIntraday = interval.includes("m") || interval.includes("h");
   const candles = result.timestamp
     .map((timestamp, index) => ({
-      Date: new Date(timestamp * 1000).toISOString().slice(0, 10),
+      Date: formatYahooTimestamp(timestamp, timezone, isIntraday),
+      Timestamp: timestamp * 1000,
       Open: quote.open?.[index],
       High: quote.high?.[index],
       Low: quote.low?.[index],
-      Close: adjClose[index] ?? quote.close?.[index],
+      Close: quote.close?.[index] ?? adjClose[index],
       Volume: quote.volume?.[index],
     }))
     .filter((row) =>
-      [row.Open, row.High, row.Low, row.Close].every((item) => Number.isFinite(Number(item)))
+      [row.Open, row.High, row.Low, row.Close].every((item) => Number.isFinite(Number(item)) && Number(item) > 0)
     )
     .map((row) => ({
       ...row,
@@ -106,19 +111,34 @@ async function loadYahooCandles(ticker, range = "5y", interval = "1d") {
       Volume: Number(row.Volume || 0),
     }));
 
-  if (candles.length < 220) {
-    throw new Error("At least 220 daily candles are required for EMA200 analysis");
+  if (candles.length < minCandles) {
+    throw new Error(`At least ${minCandles} candles are required`);
   }
 
   return candles;
 }
 
-function analyzeTicker(ticker, candles, accountSize, riskPercent) {
+function analyzeTicker(ticker, candles, accountSize, riskPercent, intradayCandles = []) {
   const rows = addIndicators(candles);
   const latest = buildSnapshot(rows, rows.length - 1, accountSize, riskPercent);
   const backtest = runBacktest(rows);
-  const chart = rows.slice(-1300).map((row) => ({
+  const chart = chartRows(rows.slice(-1300));
+  const intradayChart = intradayCandles.length ? chartRows(addIndicators(intradayCandles)) : [];
+
+  return {
+    ok: true,
+    ticker,
+    ...latest,
+    chart,
+    intradayChart,
+    backtest,
+  };
+}
+
+function chartRows(rows) {
+  return rows.map((row) => ({
     date: row.Date,
+    timestamp: row.Timestamp || null,
     open: round(row.Open),
     high: round(row.High),
     low: round(row.Low),
@@ -143,14 +163,6 @@ function analyzeTicker(ticker, candles, accountSize, riskPercent) {
     volume: Math.round(row.Volume || 0),
     volumeSma20: Math.round(row.VolumeSMA20 || 0),
   }));
-
-  return {
-    ok: true,
-    ticker,
-    ...latest,
-    chart,
-    backtest,
-  };
 }
 
 function addIndicators(candles) {
@@ -205,7 +217,9 @@ function buildSnapshot(rows, index, accountSize, riskPercent) {
   const trend = trendStatus(row);
   const facts = conditionFacts(row, prev, prev2, levels, risk);
   const score = scoreSetup(facts);
-  const ruleEngine = buildRuleEngine(row, prev, prev2, levels, risk, trend, facts, accountSize, riskPercent);
+  const scoreDetails = scoreBreakdown(facts);
+  const swingProjection = buildSwingProjection(rows, index);
+  const ruleEngine = buildRuleEngine(row, prev, prev2, levels, risk, trend, facts, accountSize, riskPercent, swingProjection);
   const signal = ruleEngine.swing.now;
   const action = buildAction(row, prev, signal, trend, facts, risk, ruleEngine.swing);
   const strategies = strategyPlans(row, prev, levels, risk, accountSize, riskPercent, signal, trend, facts, ruleEngine);
@@ -217,6 +231,8 @@ function buildSnapshot(rows, index, accountSize, riskPercent) {
     price: round(row.Close),
     signal,
     score,
+    scoreDetails,
+    swingProjection,
     trend,
     rsi: round(row.RSI),
     williamsR: round(row.WilliamsR),
@@ -332,11 +348,61 @@ function scoreSetup(facts) {
   return Math.max(0, Math.min(100, Math.round(score)));
 }
 
+function scoreBreakdown(facts) {
+  const rows = [
+    {
+      label: "Trend",
+      points: points([facts.priceAboveEma200, facts.ema50AboveEma200], 25),
+      max: 25,
+      detail: facts.priceAboveEma200 && facts.ema50AboveEma200
+        ? "Price is above EMA200 and EMA50 is above EMA200."
+        : "Long-trend alignment is incomplete.",
+    },
+    {
+      label: "Momentum",
+      points: points([facts.rsiRecoveryZone, facts.rsiImproving, facts.macdImproving], 20),
+      max: 20,
+      detail: facts.rsiRecoveryZone && facts.rsiImproving && facts.macdImproving
+        ? "RSI is in the recovery zone and MACD histogram is improving."
+        : "RSI/MACD momentum is mixed.",
+    },
+    {
+      label: "Volume",
+      points: facts.volumeOkay ? 10 : 0,
+      max: 10,
+      detail: facts.volumeOkay ? "Volume is at least 80% of the 20-candle average." : "Volume is weak versus the 20-candle average.",
+    },
+    {
+      label: "DMI / ADX",
+      points: points([facts.dmiPositive, facts.adxTrend], 15),
+      max: 15,
+      detail: facts.dmiPositive && facts.adxTrend ? "+DI leads -DI and ADX is tradable." : "Direction or trend strength is not fully confirmed.",
+    },
+    {
+      label: "Candle",
+      points: facts.candleConfirm ? 15 : facts.closeAboveEma20 ? 8 : 0,
+      max: 15,
+      detail: facts.candleConfirm ? "Close is above the previous high." : facts.closeAboveEma20 ? "Price is above EMA20, but breakout candle is missing." : "Candle confirmation is missing.",
+    },
+    {
+      label: "Risk / Reward",
+      points: facts.riskRewardOkay ? 15 : 0,
+      max: 15,
+      detail: facts.riskRewardOkay ? "Current target and stop give at least 2:1." : "Current stop/target does not reach 2:1.",
+    },
+  ];
+  return {
+    total: Math.round(rows.reduce((sum, row) => sum + row.points, 0)),
+    max: 100,
+    rows: rows.map((row) => ({ ...row, points: Math.round(row.points) })),
+  };
+}
+
 function points(items, max) {
   return (items.filter(Boolean).length / items.length) * max;
 }
 
-function buildRuleEngine(row, prev, prev2, levels, risk, trend, facts, accountSize, riskPercent) {
+function buildRuleEngine(row, prev, prev2, levels, risk, trend, facts, accountSize, riskPercent, swingProjection) {
   const swing = swingDecision(row, prev, levels, risk, trend, facts);
   const position = positionDecision(row, prev, levels, risk, trend, facts);
   const day = {
@@ -366,6 +432,7 @@ function buildRuleEngine(row, prev, prev2, levels, risk, trend, facts, accountSi
       { label: "ENTRY RULE", value: swing.enterOnlyIf, tone: "success" },
       { label: "STOP", value: money(swing.stopArea), tone: "danger" },
       { label: "TARGET", value: money(swing.targetArea), tone: "success" },
+      { label: "5-DAY SWING", value: swingProjection.summary, tone: swingProjection.direction === "Bullish" ? "success" : swingProjection.direction === "Bearish" ? "danger" : "neutral" },
     ],
   };
 }
@@ -685,6 +752,91 @@ function supportResistance(rows, index) {
   };
 }
 
+function buildSwingProjection(rows, index) {
+  const lookback = rows.slice(Math.max(0, index - 180), index + 1);
+  const current = lookback[lookback.length - 1];
+  if (lookback.length < 20 || !current) {
+    return {
+      direction: "Neutral",
+      durationDays: 0,
+      expectedDays: 5,
+      remainingDays: 0,
+      averageBullMovePct: 0,
+      averageBearMovePct: 0,
+      projectedPrice: round(current?.Close),
+      weeklyHigh: null,
+      weeklyLow: null,
+      summary: "Not enough history for swing projection.",
+    };
+  }
+
+  const swings = [];
+  let direction = lookback[1].Close >= lookback[0].Close ? "Bullish" : "Bearish";
+  let startIndex = 0;
+  for (let i = 2; i < lookback.length; i += 1) {
+    const nextDirection = lookback[i].Close >= lookback[i - 1].Close ? "Bullish" : "Bearish";
+    if (nextDirection !== direction) {
+      swings.push(makeSwing(lookback, startIndex, i - 1, direction));
+      startIndex = i - 1;
+      direction = nextDirection;
+    }
+  }
+  swings.push(makeSwing(lookback, startIndex, lookback.length - 1, direction));
+
+  const completed = swings.slice(0, -1).filter((swing) => swing.duration >= 2);
+  const bullish = completed.filter((swing) => swing.direction === "Bullish");
+  const bearish = completed.filter((swing) => swing.direction === "Bearish");
+  const currentSwing = swings[swings.length - 1];
+  const sameDirection = currentSwing.direction === "Bullish" ? bullish : bearish;
+  const oppositeDirection = currentSwing.direction === "Bullish" ? bearish : bullish;
+  const expectedDays = Math.max(3, Math.round(avg(sameDirection.map((swing) => swing.duration)) || 5));
+  const averageBullMovePct = avg(bullish.map((swing) => swing.movePct));
+  const averageBearMovePct = avg(bearish.map((swing) => swing.movePct));
+  const measuredMovePct = currentSwing.direction === "Bullish"
+    ? (averageBullMovePct || 0.03)
+    : (averageBearMovePct || -0.03);
+  const weeklyRows = lookback.slice(-5);
+  const weeklyHigh = max(weeklyRows.map((row) => row.High));
+  const weeklyLow = min(weeklyRows.map((row) => row.Low));
+  const rawProjection = current.Close * (1 + measuredMovePct);
+  const projectedPrice = currentSwing.direction === "Bullish"
+    ? Math.min(rawProjection, weeklyHigh)
+    : Math.max(rawProjection, weeklyLow);
+  const remainingDays = Math.max(0, expectedDays - currentSwing.duration);
+  const reversalWatchDays = Math.max(3, Math.round(avg(oppositeDirection.map((swing) => swing.duration)) || 5));
+
+  return {
+    direction: currentSwing.direction,
+    durationDays: currentSwing.duration,
+    expectedDays,
+    remainingDays,
+    reversalWatchDays,
+    averageBullMovePct: round(averageBullMovePct * 100, 2),
+    averageBearMovePct: round(averageBearMovePct * 100, 2),
+    projectedPrice: round(projectedPrice),
+    measuredMovePct: round(measuredMovePct * 100, 2),
+    weeklyHigh: round(weeklyHigh),
+    weeklyLow: round(weeklyLow),
+    summary: `${currentSwing.direction} swing day ${currentSwing.duration} of ~${expectedDays}; projected measured move ${money(projectedPrice)} inside weekly ${money(weeklyLow)}-${money(weeklyHigh)}.`,
+  };
+}
+
+function makeSwing(rows, startIndex, endIndex, direction) {
+  const start = rows[startIndex];
+  const end = rows[endIndex];
+  const duration = Math.max(1, endIndex - startIndex + 1);
+  const movePct = start?.Close ? (end.Close - start.Close) / start.Close : 0;
+  return {
+    direction,
+    startIndex,
+    endIndex,
+    duration,
+    startPrice: start?.Close || 0,
+    endPrice: end?.Close || 0,
+    movePct,
+  };
+}
+
 function riskPlan(row, levels, accountSize, riskPercent) {
   const atrStop = row.Close - 1.5 * row.ATR;
   const structureStop = levels.swingLow20;
@@ -910,12 +1062,15 @@ function runBacktest(rows) {
       if (exitByRule || exitByStop || exitByTarget || heldTooLong) {
         const exit = rows[i].Close;
         const returnPct = ((exit - position.entry) / position.entry) * 100;
+        const exitReason = exitByTarget ? "Target" : exitByStop ? "Stop" : heldTooLong ? "Time" : "Rule";
         trades.push({
           entryDate: position.entryDate,
           exitDate: snapshot.date,
           entry: round(position.entry),
           exit: round(exit),
           returnPct: round(returnPct, 2),
+          holdDays: Math.round(daysBetween(position.entryDate, snapshot.date)),
+          exitReason,
         });
         position = null;
       }
@@ -925,6 +1080,9 @@ function runBacktest(rows) {
   const wins = trades.filter((trade) => trade.returnPct > 0);
   const losses = trades.filter((trade) => trade.returnPct <= 0);
   const totalReturn = trades.reduce((sum, trade) => sum + trade.returnPct, 0);
+  const grossProfit = wins.reduce((sum, trade) => sum + trade.returnPct, 0);
+  const grossLoss = Math.abs(losses.reduce((sum, trade) => sum + trade.returnPct, 0));
+  const targetHits = trades.filter((trade) => trade.exitReason === "Target");
   const lastSignals = signals.slice(-10);
   const latestSignal = lastSignals[lastSignals.length - 1] || null;
   const previousSignal = lastSignals[lastSignals.length - 2] || null;
@@ -971,6 +1129,11 @@ function runBacktest(rows) {
     winRate: trades.length ? round((wins.length / trades.length) * 100, 1) : 0,
     averageWin: round(avg(wins.map((trade) => trade.returnPct)), 2),
     averageLoss: round(avg(losses.map((trade) => trade.returnPct)), 2),
+    averageTrade: round(avg(trades.map((trade) => trade.returnPct)), 2),
+    averageHoldDays: round(avg(trades.map((trade) => trade.holdDays)), 1),
+    expectancy: round((wins.length / Math.max(trades.length, 1)) * avg(wins.map((trade) => trade.returnPct)) + (losses.length / Math.max(trades.length, 1)) * avg(losses.map((trade) => trade.returnPct)), 2),
+    profitFactor: grossLoss ? round(grossProfit / grossLoss, 2) : grossProfit ? 99 : 0,
+    targetHitRate: trades.length ? round((targetHits.length / trades.length) * 100, 1) : 0,
     totalReturn: round(totalReturn, 2),
     maxDrawdown: round(maxDrawdown(rows.map((row) => row.Close)), 2),
     bestTrade: trades.length ? max(trades.map((trade) => trade.returnPct)) : 0,
@@ -978,6 +1141,25 @@ function runBacktest(rows) {
     lastSignals,
     alert,
   };
+}
+
+function formatYahooTimestamp(timestamp, timezone, includeTime) {
+  const date = new Date(timestamp * 1000);
+  if (!includeTime) return date.toISOString().slice(0, 10);
+  try {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: timezone,
+      month: "2-digit",
+      day: "2-digit",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    }).formatToParts(date);
+    const value = (type) => parts.find((part) => part.type === type)?.value || "";
+    return `${value("month")}/${value("day")} ${value("hour")}:${value("minute")} ${value("dayPeriod")}`.trim();
+  } catch {
+    return date.toISOString();
+  }
 }
 
 function ema(values, period) {

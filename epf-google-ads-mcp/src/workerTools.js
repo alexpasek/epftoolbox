@@ -364,9 +364,11 @@ export function workerTools(env) {
                     env,
                     `
           SELECT campaign.name, ad_group.name, ad_group_criterion.resource_name,
-            ad_group_criterion.status, ad_group_criterion.keyword.text,
+            ad_group_criterion.status, ad_group_criterion.negative,
+            ad_group_criterion.keyword.text,
             ad_group_criterion.keyword.match_type
           FROM keyword_view
+          WHERE ad_group_criterion.negative = FALSE
           ORDER BY campaign.name, ad_group.name
           LIMIT ${limit}
         `,
@@ -549,10 +551,12 @@ export function workerTools(env) {
                     `
           SELECT campaign.name, ad_group.name, ad_group_criterion.resource_name,
             ad_group_criterion.keyword.text, ad_group_criterion.keyword.match_type,
-            ad_group_criterion.status, metrics.clicks, metrics.cost_micros, metrics.conversions
+            ad_group_criterion.status, ad_group_criterion.negative,
+            metrics.clicks, metrics.cost_micros, metrics.conversions
           FROM keyword_view
           WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
             AND ad_group_criterion.status = ENABLED
+            AND ad_group_criterion.negative = FALSE
             AND metrics.cost_micros >= ${Math.round(minSpend * 1_000_000)}
             AND metrics.clicks >= ${minClicks}
             AND metrics.conversions = 0
@@ -1197,9 +1201,11 @@ function advancedReadTools(env) {
                             `
             SELECT campaign.name, ad_group.name, ad_group_criterion.resource_name,
               ad_group_criterion.status, ad_group_criterion.keyword.text,
-              ad_group_criterion.keyword.match_type, ad_group_criterion.quality_info.quality_score
+              ad_group_criterion.keyword.match_type, ad_group_criterion.negative,
+              ad_group_criterion.quality_info.quality_score
             FROM keyword_view
-            WHERE campaign.resource_name = '${campaignResourceName}' ${keywordFilter}
+            WHERE campaign.resource_name = '${campaignResourceName}'
+              AND ad_group_criterion.negative = FALSE ${keywordFilter}
             LIMIT ${limit}
           `,
                         ).catch((error) => [{ error: error.message }]),
@@ -1279,9 +1285,11 @@ function advancedReadTools(env) {
                             env,
                             `
             SELECT ad_group_criterion.resource_name, ad_group_criterion.status, ad_group_criterion.keyword.text,
-              ad_group_criterion.keyword.match_type, ad_group_criterion.quality_info.quality_score
+              ad_group_criterion.keyword.match_type, ad_group_criterion.negative,
+              ad_group_criterion.quality_info.quality_score
             FROM keyword_view
             WHERE ad_group.resource_name = '${adGroupResourceName}'
+              AND ad_group_criterion.negative = FALSE
             LIMIT ${limit}
           `,
                         ).catch((error) => [{ error: error.message }]),
@@ -1442,8 +1450,9 @@ function advancedReadTools(env) {
                 env,
                 "get_keyword_performance",
                 "keyword_view",
-                "campaign.name, ad_group.name, ad_group_criterion.resource_name, ad_group_criterion.keyword.text, ad_group_criterion.keyword.match_type, ad_group_criterion.quality_info.quality_score",
+                "campaign.name, ad_group.name, ad_group_criterion.resource_name, ad_group_criterion.keyword.text, ad_group_criterion.keyword.match_type, ad_group_criterion.negative, ad_group_criterion.quality_info.quality_score",
                 "ad_group_criterion.keyword.text",
+                ["ad_group_criterion.negative = FALSE"],
             ),
             reportTool(
                 env,
@@ -2232,7 +2241,7 @@ function simpleCampaignTool(
   return simpleQueryTool(env, name, description, schema, queryFactory);
 }
 
-function reportTool(env, name, resource, selectFields, orderField) {
+function reportTool(env, name, resource, selectFields, orderField, extraConditions = []) {
   return {
     name,
     description: `Read ${name.replaceAll("_", " ")} for a date range.`,
@@ -2257,6 +2266,7 @@ function reportTool(env, name, resource, selectFields, orderField) {
           `campaign.resource_name = '${campaignResourceName}'`,
         adGroupResourceName &&
           `ad_group.resource_name = '${adGroupResourceName}'`,
+        ...extraConditions,
       ]
         .filter(Boolean)
         .join(" AND ");

@@ -43,6 +43,8 @@ const defaultChartTools = {
   rsi: true,
   williamsR: true,
   tooltip: true,
+  swingProjection: true,
+  signalMarkers: true,
 };
 
 const signalStyles = {
@@ -373,6 +375,7 @@ function SingleAnalysis({ item }) {
             </span>
           </div>
           <ActionBlock item={item} />
+          <ScoreExplanationPanel item={item} />
           <RuleEnginePanel item={item} />
         </div>
         <div className="grid grid-cols-2 gap-2 text-xs md:min-w-[320px]">
@@ -520,6 +523,45 @@ function RuleEnginePanel({ item }) {
   );
 }
 
+function ScoreExplanationPanel({ item }) {
+  const rows = item.scoreDetails?.rows || [];
+  const projection = item.swingProjection;
+  if (!rows.length && !projection) return null;
+
+  return (
+    <div className="mt-4 rounded-lg border border-slate-200 bg-white p-4">
+      <div className="flex flex-col gap-1 md:flex-row md:items-end md:justify-between">
+        <div>
+          <h3 className="text-xs font-black uppercase tracking-wide text-slate-500">Signal Score & 5-Day Swing Pattern</h3>
+          <p className="mt-1 text-xs font-semibold text-slate-500">
+            Score is rule-based. The swing projection averages recent bullish and bearish run length, then projects the current measured move inside the latest five-candle weekly high/low.
+          </p>
+        </div>
+        <span className="text-sm font-black text-slate-950">{item.score}/100</span>
+      </div>
+      <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+        {rows.map((row) => (
+          <div key={row.label} className="rounded-md border border-slate-200 bg-slate-50 p-3">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs font-black text-slate-950">{row.label}</p>
+              <p className="text-xs font-black text-slate-700">{row.points}/{row.max}</p>
+            </div>
+            <p className="mt-2 text-[11px] font-semibold leading-4 text-slate-600">{row.detail}</p>
+          </div>
+        ))}
+      </div>
+      {projection ? (
+        <div className="mt-3 grid gap-2 md:grid-cols-4">
+          <Metric label="Pattern" value={`${projection.direction} day ${projection.durationDays}/${projection.expectedDays}`} />
+          <Metric label="Projected price" value={money(projection.projectedPrice)} />
+          <Metric label="Weekly scope" value={`${money(projection.weeklyLow)} - ${money(projection.weeklyHigh)}`} />
+          <Metric label="Avg moves" value={`Bull ${number(projection.averageBullMovePct)}% / Bear ${number(projection.averageBearMovePct)}%`} />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function PlanStep({ label, value, detail }) {
   return (
     <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
@@ -565,9 +607,13 @@ function ActionBlock({ item }) {
 }
 
 function ChartPanel({ item, timeframe, tools, onToggleTool }) {
-  const rows = useMemo(() => chartRowsForTimeframe(item.chart || [], timeframe), [item.chart, timeframe]);
+  const rows = useMemo(() => chartRowsForTimeframe(item, timeframe), [item, timeframe]);
   const latest = rows[rows.length - 1] || {};
-  const timeframeLabel = timeframe === "1D" ? "latest daily candle" : `${timeframe} daily candles`;
+  const timeframeLabel = timeframe === "1D" && item.intradayChart?.length
+    ? "1 day, 5-minute candles"
+    : timeframe === "1D"
+      ? "latest daily candle"
+      : `${timeframe} daily candles`;
   const indicatorCards = [
     tools.volume ? <VolumeChart key="volume" rows={rows} /> : null,
     tools.macd ? <MacdChart key="macd" rows={rows} /> : null,
@@ -582,7 +628,7 @@ function ChartPanel({ item, timeframe, tools, onToggleTool }) {
         <div>
           <h2 className="text-sm font-black uppercase tracking-wide text-slate-950">Big Candlestick Chart</h2>
           <p className="mt-1 text-xs font-bold text-slate-500">
-            {timeframeLabel}. Using daily candle data. Entry confirmation is based on daily candle close.
+            {timeframeLabel}. Rule signals still use daily candle close; 1D chart uses intraday candles when Yahoo returns them.
           </p>
         </div>
         <div className="flex flex-wrap gap-2 text-xs font-bold text-slate-600">
@@ -600,7 +646,7 @@ function ChartPanel({ item, timeframe, tools, onToggleTool }) {
       </div>
       <ChartRuleOverlay item={item} />
       <div className="mt-4">
-        <CandlestickChart rows={rows} item={item} tools={tools} />
+        <CandlestickChart rows={rows} item={item} tools={tools} timeframe={timeframe} />
       </div>
       <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <Metric label="Open" value={money(latest.open)} />
@@ -656,6 +702,8 @@ function ChartToolBar({ tools, onToggleTool }) {
     ["rsi", "RSI"],
     ["williamsR", "Williams %R"],
     ["tooltip", "Cursor tooltip"],
+    ["swingProjection", "5-day swing"],
+    ["signalMarkers", "Signal markers"],
   ];
 
   return (
@@ -675,13 +723,13 @@ function ChartToolBar({ tools, onToggleTool }) {
         ))}
       </div>
       <p className="mt-2 text-xs font-semibold text-slate-500">
-        💡 <strong>Chart Controls:</strong> Hover for values · Drag to pan · Scroll to zoom · Double-click to reset view
+        <strong>Chart Controls:</strong> Hover for values and score details · Drag to pan · Scroll to zoom · Double-click to reset view
       </p>
     </div>
   );
 }
 
-function CandlestickChart({ rows, item, tools }) {
+function CandlestickChart({ rows, item, tools, timeframe }) {
   const [hover, setHover] = useState(null);
   const [panOffset, setPanOffset] = useState(0);
   const [zoomLevel, setZoomLevel] = useState(1);
@@ -704,6 +752,7 @@ function CandlestickChart({ rows, item, tools }) {
     return <div className="flex min-h-[360px] items-center justify-center rounded-lg bg-slate-50 text-sm font-bold text-slate-500">No valid chart data. Check 1D candle availability.</div>;
   }
 
+  const projection = item.swingProjection || {};
   const priceValues = validRows.flatMap((row) => [
     row.high,
     row.low,
@@ -717,6 +766,9 @@ function CandlestickChart({ rows, item, tools }) {
     row.bbLower,
     item.stop,
     item.target,
+    projection.projectedPrice,
+    projection.weeklyHigh,
+    projection.weeklyLow,
   ]).filter(Number.isFinite);
   
   const minValue = priceValues.length ? Math.min(...priceValues) : 0;
@@ -736,6 +788,7 @@ function CandlestickChart({ rows, item, tools }) {
     .map((row, index) => Number.isFinite(row[key]) ? `${x(index)},${y(row[key])}` : null)
     .filter(Boolean)
     .join(" ");
+  const timeTicks = buildTimeTicks(validRows, timeframe);
 
   function handlePointerMove(event) {
     if (isDragging) return;
@@ -845,6 +898,27 @@ function CandlestickChart({ rows, item, tools }) {
           </g>
         ) : null}
 
+        {tools.swingProjection && Number.isFinite(projection.weeklyHigh) && Number.isFinite(projection.weeklyLow) ? (
+          <g>
+            <rect
+              x={padding.left}
+              y={y(projection.weeklyHigh)}
+              width={plotWidth}
+              height={Math.max(1, y(projection.weeklyLow) - y(projection.weeklyHigh))}
+              fill="#dbeafe"
+              opacity="0.22"
+            />
+            <line x1={padding.left} x2={width - padding.right} y1={y(projection.weeklyHigh)} y2={y(projection.weeklyHigh)} stroke="#2563eb" strokeDasharray="4 5" />
+            <line x1={padding.left} x2={width - padding.right} y1={y(projection.weeklyLow)} y2={y(projection.weeklyLow)} stroke="#2563eb" strokeDasharray="4 5" />
+            <text x={width - padding.right - 8} y={y(projection.weeklyHigh) - 6} textAnchor="end" className="fill-blue-700 text-[11px] font-black">
+              Weekly high {money(projection.weeklyHigh)}
+            </text>
+            <text x={width - padding.right - 8} y={y(projection.weeklyLow) + 14} textAnchor="end" className="fill-blue-700 text-[11px] font-black">
+              Weekly low {money(projection.weeklyLow)}
+            </text>
+          </g>
+        ) : null}
+
         {tools.bollinger ? (
           <>
             <polyline fill="none" stroke="#94a3b8" strokeWidth="1.5" points={linePoints("bbUpper")} />
@@ -867,7 +941,25 @@ function CandlestickChart({ rows, item, tools }) {
           </g>
         )) : null}
 
-        {rows.map((row, index) => {
+        {tools.swingProjection && Number.isFinite(projection.projectedPrice) ? (
+          <g>
+            <line
+              x1={x(Math.max(0, validRows.length - 5))}
+              x2={width - padding.right}
+              y1={y(validRows[validRows.length - 1]?.close)}
+              y2={y(projection.projectedPrice)}
+              stroke={projection.direction === "Bearish" ? "#dc2626" : "#16a34a"}
+              strokeWidth="2.4"
+              strokeDasharray="8 6"
+            />
+            <circle cx={width - padding.right} cy={y(projection.projectedPrice)} r="4" fill={projection.direction === "Bearish" ? "#dc2626" : "#16a34a"} />
+            <text x={width - padding.right - 8} y={y(projection.projectedPrice) - 9} textAnchor="end" className="fill-slate-950 text-[12px] font-black">
+              Projected {money(projection.projectedPrice)}
+            </text>
+          </g>
+        ) : null}
+
+        {validRows.map((row, index) => {
           const rising = row.close >= row.open;
           const color = rising ? "#16a34a" : "#dc2626";
           const top = y(Math.max(row.open, row.close));
@@ -888,9 +980,17 @@ function CandlestickChart({ rows, item, tools }) {
           );
         })}
 
-        <text x={padding.left} y={height - 12} className="fill-slate-500 text-[12px] font-bold">{validRows[0]?.date}</text>
-        <text x={width - padding.right - 78} y={height - 12} className="fill-slate-500 text-[12px] font-bold">{validRows[validRows.length - 1]?.date}</text>
-        {tools.tooltip && hover ? <ChartHover hover={hover} width={width} height={height} padding={padding} /> : null}
+        {tools.signalMarkers ? (
+          <SignalMarkers rows={validRows} item={item} x={x} y={y} padding={padding} height={height} />
+        ) : null}
+
+        {timeTicks.map((tick) => (
+          <g key={`${tick.index}-${tick.label}`}>
+            <line x1={x(tick.index)} x2={x(tick.index)} y1={padding.top} y2={height - padding.bottom} stroke="#e2e8f0" strokeDasharray="2 4" />
+            <text x={x(tick.index)} y={height - 12} textAnchor="middle" className="fill-slate-500 text-[11px] font-bold">{tick.label}</text>
+          </g>
+        ))}
+        {tools.tooltip && hover ? <ChartHover hover={hover} width={width} height={height} padding={padding} item={item} /> : null}
         {zoomLevel !== 1 || panOffset !== 0 ? (
           <g pointerEvents="none">
             <text x={width - 120} y={30} className="fill-slate-500 text-[10px] font-bold">Zoom: {zoomLevel.toFixed(1)}x | Pan offset</text>
@@ -901,10 +1001,37 @@ function CandlestickChart({ rows, item, tools }) {
   );
 }
 
-function ChartHover({ hover, width, height, padding }) {
+function SignalMarkers({ rows, item, x, y, padding, height }) {
+  const latest = rows[rows.length - 1];
+  if (!latest) return null;
+  const signal = item.signal || "WAIT";
+  const isEntry = signal.includes("ENTRY");
+  const isExit = signal.includes("EXIT");
+  const color = isEntry ? "#16a34a" : isExit ? "#dc2626" : "#f59e0b";
+  const label = isEntry ? "BUY" : isExit ? "OUT" : "WAIT";
+  const index = rows.length - 1;
+  const markerY = isEntry ? y(latest.low) + 18 : y(latest.high) - 18;
+  const points = isEntry
+    ? `${x(index) - 8},${markerY + 8} ${x(index) + 8},${markerY + 8} ${x(index)},${markerY - 8}`
+    : `${x(index) - 8},${markerY - 8} ${x(index) + 8},${markerY - 8} ${x(index)},${markerY + 8}`;
+
+  return (
+    <g pointerEvents="none">
+      <polygon points={points} fill={color} opacity="0.95" />
+      <rect x={Math.max(padding.left + 4, x(index) - 34)} y={Math.max(padding.top + 4, Math.min(height - padding.bottom - 26, markerY + 12))} width="68" height="22" rx="4" fill="#ffffff" stroke={color} />
+      <text x={x(index)} y={Math.max(padding.top + 20, Math.min(height - padding.bottom - 10, markerY + 28))} textAnchor="middle" className="fill-slate-950 text-[10px] font-black">
+        {label} {item.score}/100
+      </text>
+    </g>
+  );
+}
+
+function ChartHover({ hover, width, height, padding, item }) {
   const row = hover.row || {};
-  const boxWidth = 230;
-  const boxHeight = 230;
+  const boxWidth = 300;
+  const scoreRows = item.scoreDetails?.rows || [];
+  const projection = item.swingProjection || {};
+  const boxHeight = 260 + Math.min(scoreRows.length, 6) * 16;
   const boxX = hover.x > width - padding.right - boxWidth - 20 ? hover.x - boxWidth - 14 : hover.x + 14;
   const boxY = Math.max(padding.top + 6, Math.min(height - padding.bottom - boxHeight - 6, hover.y - 80));
   const yPrice = Math.max(padding.top, Math.min(height - padding.bottom, hover.y));
@@ -920,6 +1047,8 @@ function ChartHover({ hover, width, height, padding }) {
     ["Williams %R", number(row.williamsR)],
     ["MACD", number(row.macd)],
     ["ADX", number(row.adx)],
+    ["Signal", item.signal],
+    ["Score", `${item.score}/100`],
   ];
 
   return (
@@ -937,6 +1066,21 @@ function ChartHover({ hover, width, height, padding }) {
           <text x={boxX + boxWidth - 12} y={boxY + 24 + index * 18} textAnchor="end" className="fill-slate-950 text-[11px] font-black">{value}</text>
         </g>
       ))}
+      <text x={boxX + 12} y={boxY + 24 + lines.length * 18} className="fill-slate-500 text-[11px] font-black">Score details</text>
+      {scoreRows.slice(0, 6).map((score, index) => (
+        <g key={score.label}>
+          <text x={boxX + 12} y={boxY + 42 + lines.length * 18 + index * 16} className="fill-slate-600 text-[10px] font-bold">
+            {score.label}
+          </text>
+          <text x={boxX + boxWidth - 12} y={boxY + 42 + lines.length * 18 + index * 16} textAnchor="end" className="fill-slate-950 text-[10px] font-black">
+            {score.points}/{score.max}
+          </text>
+        </g>
+      ))}
+      <text x={boxX + 12} y={boxY + boxHeight - 34} className="fill-slate-500 text-[10px] font-black">5-day swing</text>
+      <text x={boxX + 12} y={boxY + boxHeight - 16} className="fill-slate-950 text-[10px] font-bold">
+        {truncateText(projection.summary || "No projection.", 58)}
+      </text>
     </g>
   );
 }
@@ -1085,6 +1229,11 @@ function BacktestPanel({ item }) {
         <Metric label="Max drawdown" value={`${number(backtest.maxDrawdown)}%`} />
         <Metric label="Average win" value={`${number(backtest.averageWin)}%`} />
         <Metric label="Average loss" value={`${number(backtest.averageLoss)}%`} />
+        <Metric label="Average trade" value={`${number(backtest.averageTrade)}%`} />
+        <Metric label="Expectancy" value={`${number(backtest.expectancy)}%`} />
+        <Metric label="Profit factor" value={number(backtest.profitFactor)} />
+        <Metric label="Target hit rate" value={`${number(backtest.targetHitRate)}%`} />
+        <Metric label="Average hold" value={`${number(backtest.averageHoldDays)} days`} />
         <Metric label="Best trade" value={`${number(backtest.bestTrade)}%`} />
         <Metric label="Worst trade" value={`${number(backtest.worstTrade)}%`} />
         <Metric label="Alert level" value={backtest.alert?.level || "info"} />
@@ -1230,12 +1379,39 @@ function williamsStatus(value) {
   return "Neutral momentum zone.";
 }
 
-function chartRowsForTimeframe(rows, timeframe) {
+function chartRowsForTimeframe(item, timeframe) {
+  const sourceRows = timeframe === "1D" && item?.intradayChart?.length ? item.intradayChart : item?.chart || [];
   const sessions = timeframes.find((item) => item.label === timeframe)?.sessions || 126;
-  const cleanRows = (rows || []).filter((row) =>
+  const cleanRows = (sourceRows || []).filter((row) =>
     [row.open, row.high, row.low, row.close].every((value) => Number.isFinite(Number(value)))
   );
-  return cleanRows.slice(-sessions);
+  return cleanRows.slice(-(timeframe === "1D" && item?.intradayChart?.length ? 96 : sessions));
+}
+
+function buildTimeTicks(rows, timeframe) {
+  if (!rows.length) return [];
+  const tickCount = timeframe === "1D" ? 7 : timeframe === "5D" ? 6 : 8;
+  const used = new Set();
+  return Array.from({ length: tickCount }, (_, index) => {
+    const rowIndex = Math.round((index / Math.max(tickCount - 1, 1)) * (rows.length - 1));
+    if (used.has(rowIndex)) return null;
+    used.add(rowIndex);
+    return {
+      index: rowIndex,
+      label: formatAxisLabel(rows[rowIndex]?.date, timeframe),
+    };
+  }).filter(Boolean);
+}
+
+function formatAxisLabel(value, timeframe) {
+  const text = String(value || "");
+  if (timeframe === "1D") {
+    const time = text.match(/\d{1,2}:\d{2}\s?(AM|PM)/i)?.[0];
+    return time || text;
+  }
+  if (timeframe === "5D") return text.replace(/^\d{4}-/, "");
+  if (["1M", "3M", "6M"].includes(timeframe)) return text.slice(5);
+  return text.slice(0, 7);
 }
 
 function SignalPill({ signal }) {

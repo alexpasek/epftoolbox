@@ -184,10 +184,12 @@ export const reportingTools = [
         `),
         queryGoogleAds(`
           SELECT campaign.name, ad_group.name, ad_group_criterion.resource_name,
-            ad_group_criterion.status, ad_group_criterion.keyword.text,
-            ad_group_criterion.keyword.match_type, ad_group_criterion.quality_info.quality_score
+            ad_group_criterion.status, ad_group_criterion.negative,
+            ad_group_criterion.keyword.text, ad_group_criterion.keyword.match_type,
+            ad_group_criterion.quality_info.quality_score
           FROM keyword_view
-          WHERE campaign.resource_name = '${resourceName}' ${keywordFilter}
+          WHERE campaign.resource_name = '${resourceName}'
+            AND ad_group_criterion.negative = FALSE ${keywordFilter}
           LIMIT ${limit}
         `),
         queryGoogleAds(`

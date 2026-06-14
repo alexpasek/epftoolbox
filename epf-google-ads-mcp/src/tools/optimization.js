@@ -96,12 +96,14 @@ export const optimizationTools = [
           ad_group_criterion.keyword.text,
           ad_group_criterion.keyword.match_type,
           ad_group_criterion.status,
+          ad_group_criterion.negative,
           metrics.clicks,
           metrics.cost_micros,
           metrics.conversions
         FROM keyword_view
         WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
           AND ad_group_criterion.status = ENABLED
+          AND ad_group_criterion.negative = FALSE
           AND metrics.cost_micros >= ${minMicros}
           AND metrics.clicks >= ${minClicks}
           AND metrics.conversions = 0

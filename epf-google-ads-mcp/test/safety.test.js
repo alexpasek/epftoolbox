@@ -147,3 +147,41 @@ test("business profile location filter tool previews asset set listing filter up
     ]
   );
 });
+
+test("list_keywords excludes ad group negatives from positive keyword output", async () => {
+  const originalFetch = globalThis.fetch;
+  const queries = [];
+  globalThis.fetch = async (url, options = {}) => {
+    if (String(url).includes("oauth2.googleapis.com/token")) {
+      return {
+        ok: true,
+        json: async () => ({ access_token: "test-token" }),
+      };
+    }
+
+    const body = JSON.parse(options.body || "{}");
+    queries.push(body.query);
+    return {
+      ok: true,
+      json: async () => ({ results: [] }),
+    };
+  };
+
+  try {
+    const tool = workerTools({
+      GOOGLE_ADS_DEVELOPER_TOKEN: "dev",
+      GOOGLE_ADS_CLIENT_ID: "client",
+      GOOGLE_ADS_CLIENT_SECRET: "secret",
+      GOOGLE_ADS_REFRESH_TOKEN: "refresh",
+      GOOGLE_ADS_LOGIN_CUSTOMER_ID: "123",
+      GOOGLE_ADS_CUSTOMER_ID: "456",
+    }).find((item) => item.name === "list_keywords");
+
+    await tool.handler({ limit: 10 });
+
+    assert.match(queries[0], /ad_group_criterion\.negative = FALSE/);
+    assert.match(queries[0], /ad_group_criterion\.negative/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
