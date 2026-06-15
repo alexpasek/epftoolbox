@@ -120,10 +120,11 @@ async function loadYahooCandles(ticker, range = "5y", interval = "1d", options =
 
 function analyzeTicker(ticker, candles, accountSize, riskPercent, intradayCandles = []) {
   const rows = addIndicators(candles);
-  const latest = buildSnapshot(rows, rows.length - 1, accountSize, riskPercent);
+  const intradayRows = intradayCandles.length ? addIndicators(intradayCandles) : [];
+  const latest = buildSnapshot(rows, rows.length - 1, accountSize, riskPercent, intradayRows);
   const backtest = runBacktest(rows);
   const chart = chartRows(rows.slice(-1300));
-  const intradayChart = intradayCandles.length ? chartRows(addIndicators(intradayCandles)) : [];
+  const intradayChart = intradayRows.length ? chartRows(intradayRows) : [];
 
   return {
     ok: true,
@@ -208,7 +209,7 @@ function addIndicators(candles) {
   }));
 }
 
-function buildSnapshot(rows, index, accountSize, riskPercent) {
+function buildSnapshot(rows, index, accountSize, riskPercent, intradayRows = []) {
   const row = rows[index];
   const prev = rows[index - 1] || row;
   const prev2 = rows[index - 2] || prev;
@@ -219,7 +220,7 @@ function buildSnapshot(rows, index, accountSize, riskPercent) {
   const score = scoreSetup(facts);
   const scoreDetails = scoreBreakdown(facts);
   const swingProjection = buildSwingProjection(rows, index);
-  const ruleEngine = buildRuleEngine(row, prev, prev2, levels, risk, trend, facts, accountSize, riskPercent, swingProjection);
+  const ruleEngine = buildRuleEngine(row, prev, prev2, levels, risk, trend, facts, accountSize, riskPercent, swingProjection, intradayRows);
   const signal = ruleEngine.swing.now;
   const action = buildAction(row, prev, signal, trend, facts, risk, ruleEngine.swing);
   const strategies = strategyPlans(row, prev, levels, risk, accountSize, riskPercent, signal, trend, facts, ruleEngine);
@@ -402,25 +403,12 @@ function points(items, max) {
   return (items.filter(Boolean).length / items.length) * max;
 }
 
-function buildRuleEngine(row, prev, prev2, levels, risk, trend, facts, accountSize, riskPercent, swingProjection) {
+function buildRuleEngine(row, prev, prev2, levels, risk, trend, facts, accountSize, riskPercent, swingProjection, intradayRows = []) {
   const swing = swingDecision(row, prev, levels, risk, trend, facts);
   const position = positionDecision(row, prev, levels, risk, trend, facts);
-  const day = {
-    mode: "Day trade",
-    now: "WAIT",
-    enabled: false,
-    why: "Day trade unavailable. Current data is daily only.",
-    enterOnlyIf: "Load 5m or 15m intraday candles before using day-trade rules.",
-    stopArea: null,
-    targetArea: null,
-    riskReward: null,
-    riskPercentUsed: Math.min(riskPercent, 0.5),
-    warning: "Do not use daily candles for day-trade entries. No margin or automatic trading.",
-    passed: [],
-    failed: ["Intraday candles are not available."],
-  };
+  const day = dayDecision(intradayRows, accountSize, riskPercent);
   return {
-    source: "Daily candles only",
+    source: day.enabled ? "Daily candles + 5-minute intraday candles" : "Daily candles only",
     disclaimer: "Analysis and education only. No broker connection, no market orders, no automatic trading, and no guaranteed profit.",
     indicatorRules: indicatorRuleCards(row, prev, prev2, levels, risk, facts, trend),
     day,
@@ -528,6 +516,140 @@ function indicatorRuleCards(row, prev, prev2, levels, risk, facts, trend) {
       "Minimum risk/reward: day 1.5:1, swing 2:1, position 3:1."
     ),
   ];
+}
+
+function dayDecision(intradayRows, accountSize, riskPercent) {
+  const rows = intradayRows.filter((row) =>
+    [row.Open, row.High, row.Low, row.Close].every((value) => Number.isFinite(value))
+  );
+  if (rows.length < 20) {
+    return {
+      mode: "Day trade",
+      now: "WAIT",
+      enabled: false,
+      why: "Day trade unavailable because Yahoo did not return enough 5-minute candles.",
+      enterOnlyIf: "Refresh during market hours, then use 5-minute candles only for day-trade rules.",
+      stopArea: null,
+      targetArea: null,
+      riskReward: null,
+      riskPercentUsed: Math.min(riskPercent, 0.5),
+      warning: "Do not use daily candles for day-trade entries. No margin or automatic trading.",
+      passed: [],
+      failed: ["Intraday candles are not available."],
+    };
+  }
+
+  const latest = rows[rows.length - 1];
+  const prev = rows[rows.length - 2] || latest;
+  const openingRangeRows = rows.slice(0, Math.min(6, rows.length));
+  const openingRangeHigh = max(openingRangeRows.map((row) => row.High));
+  const openingRangeLow = min(openingRangeRows.map((row) => row.Low));
+  const sessionHigh = max(rows.map((row) => row.High));
+  const sessionLow = min(rows.map((row) => row.Low));
+  const volumeAverage = avg(rows.slice(-20).map((row) => row.Volume || 0));
+  const atrValue = Number.isFinite(latest.ATR) ? latest.ATR : Math.max((sessionHigh - sessionLow) / 6, latest.Close * 0.0025);
+  const entry = Math.max(openingRangeHigh, latest.High);
+  const stop = Math.min(latest.Low, latest.Close - atrValue * 0.75);
+  const riskPerShare = Math.max(entry - stop, 0.01);
+  const target = entry + riskPerShare * 1.5;
+  const riskReward = (target - entry) / riskPerShare;
+  const dayRiskDollars = accountSize * (Math.min(riskPercent, 0.5) / 100);
+  const shares = Math.max(0, Math.floor(dayRiskDollars / riskPerShare));
+
+  const aboveOpeningRange = latest.Close > openingRangeHigh;
+  const reclaimingOpeningRange = latest.Close > openingRangeHigh * 0.998 && latest.Close > prev.Close;
+  const aboveIntradayEma = latest.Close > latest.EMA20 && latest.EMA20 >= latest.EMA50;
+  const momentumImproving = latest.MACDHist > prev.MACDHist || latest.RSI > prev.RSI;
+  const volumeOkay = latest.Volume >= volumeAverage * 0.8;
+  const exitTrigger = latest.Close < latest.EMA20 || latest.Close < openingRangeLow || latest.Close <= stop;
+  const entryConfirmed = aboveOpeningRange && aboveIntradayEma && momentumImproving && volumeOkay;
+  const entryWatch = reclaimingOpeningRange && momentumImproving && !exitTrigger;
+
+  if (exitTrigger) {
+    return {
+      ...decision(
+        "Day trade",
+        "EXIT TRIGGER",
+        "5-minute structure is weak: price lost EMA20, opening range low, or the intraday stop.",
+        `Do not enter unless a 5-minute candle reclaims ${money(entry)} with volume at least 80% of the 20-candle average.`,
+        stop,
+        target,
+        riskReward,
+        ["5-minute exit condition is active."],
+        "A day trade should be closed the same session; do not average down."
+      ),
+      enabled: true,
+      riskPercentUsed: Math.min(riskPercent, 0.5),
+      shares,
+      openingRangeHigh: round(openingRangeHigh),
+      openingRangeLow: round(openingRangeLow),
+      entryArea: round(entry),
+    };
+  }
+
+  if (entryConfirmed) {
+    return {
+      ...decision(
+        "Day trade",
+        "ENTRY CONFIRMED",
+        "5-minute price broke the opening range while holding EMA20/EMA50 with momentum and volume support.",
+        `Buy only above ${money(entry)} on the next 5-minute candle; cancel if price falls back under ${money(openingRangeHigh)}.`,
+        stop,
+        target,
+        riskReward,
+        ["Opening range break", "Intraday EMA trend", "Momentum improving", "Volume acceptable"],
+        "If price closes below the stop on a 5-minute candle, the day-trade setup fails."
+      ),
+      enabled: true,
+      riskPercentUsed: Math.min(riskPercent, 0.5),
+      shares,
+      openingRangeHigh: round(openingRangeHigh),
+      openingRangeLow: round(openingRangeLow),
+      entryArea: round(entry),
+    };
+  }
+
+  if (entryWatch) {
+    return {
+      ...decision(
+        "Day trade",
+        "ENTRY WATCH",
+        "5-minute momentum is improving near the opening range breakout level, but confirmation is not complete.",
+        `Wait for a 5-minute candle close above ${money(entry)} with volume at least 80% of the 20-candle average.`,
+        stop,
+        target,
+        riskReward,
+        ["Near opening range break", "Momentum improving"],
+        "Skip if volume fades or the next candle closes below EMA20."
+      ),
+      enabled: true,
+      riskPercentUsed: Math.min(riskPercent, 0.5),
+      shares,
+      openingRangeHigh: round(openingRangeHigh),
+      openingRangeLow: round(openingRangeLow),
+      entryArea: round(entry),
+    };
+  }
+
+  return {
+    ...decision(
+      "Day trade",
+      "WAIT",
+      "The 5-minute chart has no clean opening range breakout or risk setup right now.",
+      `Wait for a 5-minute candle close above ${money(entry)} with improving MACD/RSI and acceptable volume.`,
+      stop,
+      target,
+      riskReward,
+      [],
+      "Do not force a same-day trade when the opening range and momentum do not agree."
+    ),
+    enabled: true,
+    riskPercentUsed: Math.min(riskPercent, 0.5),
+    shares,
+    openingRangeHigh: round(openingRangeHigh),
+    openingRangeLow: round(openingRangeLow),
+    entryArea: round(entry),
+  };
 }
 
 function ruleCard(name, status, why, rule) {
@@ -879,14 +1001,14 @@ function strategyPlans(row, prev, levels, risk, accountSize, riskPercent, signal
   return [
     makeStrategyPlan({
       label: "Day trade",
-      horizon: "Unavailable until intraday data exists",
+      horizon: ruleEngine.day.enabled ? "Same session, 5-minute candles" : "Unavailable until intraday data exists",
       now: ruleEngine.day.now,
-      enabled: false,
+      enabled: ruleEngine.day.enabled,
       why: ruleEngine.day.why,
       entryCondition: ruleEngine.day.enterOnlyIf,
-      entry: dayEntry,
-      stop: dayStop,
-      target: dayEntry + dayRisk * 1.5,
+      entry: ruleEngine.day.entryArea ?? dayEntry,
+      stop: ruleEngine.day.stopArea ?? dayStop,
+      target: ruleEngine.day.targetArea ?? dayEntry + dayRisk * 1.5,
       accountSize,
       maxRiskDollars: dayRiskDollars,
       warning: ruleEngine.day.warning,
