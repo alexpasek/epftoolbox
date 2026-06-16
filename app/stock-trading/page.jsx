@@ -487,9 +487,6 @@ export default function StockTradingPage() {
           {selected ? (
             <>
               <SingleAnalysis item={selected} />
-              <BeginnerPlan item={selected} />
-              <OneDayTradeChecklist item={selected} />
-              <TraderSetupsPanel setups={selected.traderSetups || []} />
               <ChartPanel
                 item={selected}
                 data={data}
@@ -531,6 +528,9 @@ export default function StockTradingPage() {
                   setChartTools(nextTools);
                 }}
               />
+              <BeginnerPlan item={selected} />
+              <OneDayTradeChecklist item={selected} />
+              <TraderSetupsPanel setups={selected.traderSetups || []} />
               <OverviewTable
                 rows={data?.results || []}
                 selectedTicker={selectedTicker}
