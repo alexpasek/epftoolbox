@@ -43,10 +43,16 @@ const timeframes = [
 const chartTypes = [
   { key: "candles", label: "Candles" },
   { key: "heikinAshi", label: "Heikin Ashi" },
+  { key: "renko", label: "Renko" },
   { key: "bars", label: "Bars" },
   { key: "line", label: "Line" },
   { key: "area", label: "Area" },
   { key: "baseline", label: "Baseline" },
+];
+
+const chartWorkspaces = [
+  { key: "chart1", label: "Chart 1", detail: "Clean" },
+  { key: "chart2", label: "Chart 2", detail: "Pro Stack" },
 ];
 
 const defaultChartTools = {
@@ -69,7 +75,194 @@ const defaultChartTools = {
   vwap: true,
   openingRange: true,
   previousClose: true,
+  supertrend: false,
+  ichimoku: false,
+  volumeProfile: false,
+  pivots: true,
+  atrBands: false,
+  stochastic: false,
+  relativeVolume: true,
 };
+
+const chartPresetTools = {
+  clean: {
+    ema20: true,
+    ema50: true,
+    ema200: false,
+    sma20: false,
+    sma50: true,
+    sma200: false,
+    bollinger: false,
+    stopTarget: true,
+    volume: true,
+    macd: false,
+    dmi: false,
+    rsi: false,
+    williamsR: false,
+    tooltip: true,
+    swingProjection: false,
+    signalMarkers: true,
+    vwap: true,
+    openingRange: true,
+    previousClose: true,
+    supertrend: false,
+    ichimoku: false,
+    volumeProfile: false,
+    pivots: true,
+    atrBands: false,
+    stochastic: false,
+    relativeVolume: true,
+  },
+  day: {
+    ema20: true,
+    ema50: true,
+    ema200: false,
+    sma20: false,
+    sma50: false,
+    sma200: false,
+    bollinger: false,
+    stopTarget: true,
+    volume: true,
+    macd: true,
+    dmi: false,
+    rsi: true,
+    williamsR: false,
+    tooltip: true,
+    swingProjection: false,
+    signalMarkers: true,
+    vwap: true,
+    openingRange: true,
+    previousClose: true,
+    supertrend: true,
+    ichimoku: false,
+    volumeProfile: true,
+    pivots: true,
+    atrBands: true,
+    stochastic: true,
+    relativeVolume: true,
+  },
+  swing: defaultChartTools,
+  investment: {
+    ema20: false,
+    ema50: true,
+    ema200: true,
+    sma20: false,
+    sma50: true,
+    sma200: true,
+    bollinger: false,
+    stopTarget: true,
+    volume: true,
+    macd: true,
+    dmi: true,
+    rsi: true,
+    williamsR: false,
+    tooltip: true,
+    swingProjection: true,
+    signalMarkers: true,
+    vwap: false,
+    openingRange: false,
+    previousClose: false,
+    supertrend: true,
+    ichimoku: true,
+    volumeProfile: false,
+    pivots: true,
+    atrBands: false,
+    stochastic: false,
+    relativeVolume: true,
+  },
+  pro: {
+    ema20: true,
+    ema50: true,
+    ema200: true,
+    sma20: false,
+    sma50: true,
+    sma200: true,
+    bollinger: true,
+    stopTarget: true,
+    volume: true,
+    macd: true,
+    dmi: true,
+    rsi: true,
+    williamsR: true,
+    tooltip: true,
+    swingProjection: true,
+    signalMarkers: true,
+    vwap: true,
+    openingRange: true,
+    previousClose: true,
+    supertrend: true,
+    ichimoku: true,
+    volumeProfile: true,
+    pivots: true,
+    atrBands: true,
+    stochastic: true,
+    relativeVolume: true,
+  },
+};
+
+const chartPresets = [
+  { key: "clean", label: "Clean", detail: "Low clutter" },
+  { key: "day", label: "Day", detail: "VWAP + OR + Supertrend" },
+  { key: "swing", label: "Swing", detail: "MA + bands + momentum" },
+  { key: "investment", label: "Long", detail: "200-day trend + cloud" },
+  { key: "pro", label: "Pro", detail: "Full stack" },
+];
+
+const toolGroups = [
+  {
+    key: "trend",
+    label: "Trend",
+    tools: [
+      ["ema20", "EMA20"],
+      ["ema50", "EMA50"],
+      ["ema200", "EMA200"],
+      ["sma50", "SMA50"],
+      ["sma200", "SMA200"],
+      ["supertrend", "Supertrend"],
+      ["ichimoku", "Ichimoku"],
+    ],
+  },
+  {
+    key: "day",
+    label: "Day Trade",
+    tools: [
+      ["vwap", "VWAP"],
+      ["openingRange", "Opening range"],
+      ["previousClose", "Prev close"],
+      ["volumeProfile", "Vol profile"],
+      ["pivots", "Pivots"],
+      ["atrBands", "ATR bands"],
+    ],
+  },
+  {
+    key: "risk",
+    label: "Risk",
+    tools: [
+      ["stopTarget", "Stop/Target"],
+      ["signalMarkers", "Signals"],
+      ["swingProjection", "Projection"],
+    ],
+  },
+  {
+    key: "momentum",
+    label: "Momentum",
+    tools: [
+      ["volume", "Volume"],
+      ["macd", "MACD"],
+      ["rsi", "RSI"],
+      ["dmi", "DMI/ADX"],
+      ["williamsR", "Williams %R"],
+      ["stochastic", "Stochastic"],
+      ["relativeVolume", "Rel volume"],
+      ["bollinger", "Bollinger"],
+    ],
+  },
+  {
+    key: "view",
+    label: "View",
+    tools: [["tooltip", "Tooltip"]],
+  },
+];
 
 const chartColors = {
   up: "#16853a",
@@ -94,6 +287,31 @@ const chartColors = {
   axis: "#c8d0da",
   projectionFill: "#dbeafe",
   cursor: "#475569",
+};
+
+const chartIndicatorHelp = {
+  ema20: "EMA20: fast trend line. Good for short-term trend direction.",
+  ema50: "EMA50: medium trend line. Often used as dynamic support/resistance.",
+  ema200: "EMA200: long trend line. Price above it is usually stronger.",
+  sma20: "SMA20: 20-period simple average.",
+  sma50: "SMA50: 50-period simple average.",
+  sma200: "SMA200: 200-period simple average.",
+  bbUpper: "BB Upper: upper Bollinger Band. Price near it can be stretched.",
+  bbLower: "BB Lower: lower Bollinger Band. Price near it can be weak or oversold.",
+  vwap: "VWAP: volume-weighted average price. Day traders use it as fair value.",
+  stop: "Stop: invalidation level. Trade idea is wrong below/above this area.",
+  target: "Target: planned profit area.",
+  entry: "Entry: trigger price area for the plan.",
+  supertrendUp: "Supertrend Up: trend-following support line.",
+  supertrendDown: "Supertrend Down: trend-following resistance line.",
+  previousClose: "Prev: previous daily close.",
+  openingRangeHigh: "OR High: opening range high.",
+  openingRangeLow: "OR Low: opening range low.",
+  pivot: "P: pivot point from the previous session.",
+  r1: "R1: first resistance level.",
+  r2: "R2: second resistance level.",
+  s1: "S1: first support level.",
+  s2: "S2: second support level.",
 };
 
 const signalStyles = {
@@ -127,6 +345,8 @@ export default function StockTradingPage() {
   const [selectedTicker, setSelectedTicker] = useState(defaultTickers[0]);
   const [timeframe, setTimeframe] = useState("6M");
   const [chartType, setChartType] = useState("candles");
+  const [chartWorkspace, setChartWorkspace] = useState("chart1");
+  const [activePreset, setActivePreset] = useState("swing");
   const [chartTools, setChartTools] = useState(defaultChartTools);
   const [autoRefreshMinutes, setAutoRefreshMinutes] = useState("off");
   const [data, setData] = useState(null);
@@ -177,9 +397,9 @@ export default function StockTradingPage() {
   }, [autoRefreshMinutes, loadSignals]);
 
   return (
-    <main className="min-h-screen bg-slate-100">
+    <main className="min-h-screen overflow-x-hidden bg-slate-100">
       <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-5 md:flex-row md:items-center md:justify-between">
+        <div className="mx-auto flex max-w-7xl flex-col gap-4 px-3 py-4 sm:px-4 sm:py-5 md:flex-row md:items-center md:justify-between">
           <div>
             <Link href="/" className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
               EPF Toolbox
@@ -195,7 +415,7 @@ export default function StockTradingPage() {
         </div>
       </header>
 
-      <section className="mx-auto grid max-w-[1720px] gap-4 px-4 py-5 xl:grid-cols-[300px_1fr]">
+      <section className="mx-auto grid max-w-[1720px] gap-4 px-3 py-4 sm:px-4 sm:py-5 xl:grid-cols-[300px_1fr]">
         <aside className="space-y-4">
           <section className="rounded-lg border border-slate-300 bg-white p-4 shadow-sm">
             <h2 className="text-sm font-black uppercase tracking-wide text-slate-950">Controls</h2>
@@ -270,58 +490,46 @@ export default function StockTradingPage() {
               <BeginnerPlan item={selected} />
               <OneDayTradeChecklist item={selected} />
               <TraderSetupsPanel setups={selected.traderSetups || []} />
-              <div className="rounded-lg border border-slate-300 bg-white p-4 shadow-sm">
-                <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-end">
-                  <div>
-                    <h2 className="text-sm font-black uppercase tracking-wide text-slate-500">Live Price & Chart Controls</h2>
-                    <div className="mt-2 flex flex-wrap items-center gap-3">
-                      <select
-                        value={selectedTicker}
-                        onChange={(event) => setSelectedTicker(event.target.value)}
-                        className="w-full max-w-xs rounded-md border border-slate-300 bg-white px-3 py-2 text-lg font-black text-slate-950"
-                      >
-                        {(data?.results || []).filter((row) => row.ok).map((row) => (
-                          <option key={row.ticker} value={row.ticker}>{row.ticker}</option>
-                        ))}
-                      </select>
-                      <button
-                        type="button"
-                        onClick={loadSignals}
-                        disabled={loading}
-                        className="rounded-md bg-sky-600 px-4 py-2 text-sm font-black text-white disabled:cursor-wait disabled:bg-slate-400"
-                      >
-                        {loading ? "Refreshing..." : "Refresh Price & Charts"}
-                      </button>
-                      <label className="flex items-center gap-2 text-xs font-black uppercase tracking-wide text-slate-500">
-                        Auto
-                        <select
-                          value={autoRefreshMinutes}
-                          onChange={(event) => setAutoRefreshMinutes(event.target.value)}
-                          className="rounded-md border border-slate-300 bg-white px-2 py-2 text-sm font-bold normal-case tracking-normal text-slate-900"
-                        >
-                          <option value="off">Off</option>
-                          <option value="1">1 min</option>
-                          <option value="5">5 min</option>
-                          <option value="15">15 min</option>
-                        </select>
-                      </label>
-                    </div>
-                    <p className="mt-2 text-xs font-semibold text-slate-500">
-                      Last loaded: {data?.generatedAt ? new Date(data.generatedAt).toLocaleString() : "not loaded yet"}.
-                    </p>
-                  </div>
-                  <div className="space-y-2">
-                    <ChartTypeButtons value={chartType} onChange={setChartType} />
-                    <TimeframeButtons value={timeframe} onChange={setTimeframe} />
-                  </div>
-                </div>
-              </div>
               <ChartPanel
                 item={selected}
+                data={data}
+                rows={data?.results || []}
+                selectedTicker={selectedTicker}
+                onSelectTicker={setSelectedTicker}
+                onRefresh={loadSignals}
+                loading={loading}
+                autoRefreshMinutes={autoRefreshMinutes}
+                onAutoRefreshChange={setAutoRefreshMinutes}
                 timeframe={timeframe}
+                onTimeframeChange={setTimeframe}
                 chartType={chartType}
+                onChartTypeChange={setChartType}
+                chartWorkspace={chartWorkspace}
+                onChartWorkspaceChange={(workspace) => {
+                  setChartWorkspace(workspace);
+                  if (workspace === "chart2") {
+                    setActivePreset("pro");
+                    setChartType("heikinAshi");
+                    setChartTools(chartPresetTools.pro);
+                  }
+                }}
+                activePreset={activePreset}
+                onApplyPreset={(preset) => {
+                  setActivePreset(preset);
+                  setChartTools(chartPresetTools[preset] || defaultChartTools);
+                  if (preset === "day") setTimeframe("1D");
+                  if (preset === "investment") setTimeframe("2Y");
+                  if (preset === "pro") setChartWorkspace("chart2");
+                }}
                 tools={chartTools}
-                onToggleTool={(tool) => setChartTools((current) => ({ ...current, [tool]: !current[tool] }))}
+                onToggleTool={(tool) => {
+                  setActivePreset("custom");
+                  setChartTools((current) => ({ ...current, [tool]: !current[tool] }));
+                }}
+                onSetTools={(nextTools) => {
+                  setActivePreset("custom");
+                  setChartTools(nextTools);
+                }}
               />
               <OverviewTable
                 rows={data?.results || []}
@@ -344,19 +552,22 @@ export default function StockTradingPage() {
 
 function ChartTypeButtons({ value, onChange }) {
   return (
-    <div className="flex flex-wrap justify-start gap-2 xl:justify-end">
+    <div className="-mx-1 flex snap-x gap-2 overflow-x-auto px-1 pb-1 sm:flex-wrap sm:justify-start sm:overflow-visible xl:justify-end">
       {chartTypes.map((item) => (
         <button
           key={item.key}
           type="button"
           onClick={() => onChange(item.key)}
-          className={`rounded-md border px-3 py-2 text-sm font-black ${
+          className={`shrink-0 snap-start rounded-md border px-3 py-2 text-sm font-black ${
             value === item.key
               ? "border-sky-700 bg-sky-700 text-white"
               : "border-slate-300 bg-white text-slate-700 hover:border-slate-500"
           }`}
         >
-          {item.label}
+          <span className="inline-flex items-center gap-2">
+            <span className={`h-2.5 w-2.5 rounded-full ${value === item.key ? "bg-emerald-300" : "bg-rose-400"}`} />
+            {item.label}
+          </span>
         </button>
       ))}
     </div>
@@ -365,13 +576,13 @@ function ChartTypeButtons({ value, onChange }) {
 
 function TimeframeButtons({ value, onChange }) {
   return (
-    <div className="flex flex-wrap gap-2">
+    <div className="-mx-1 flex snap-x gap-2 overflow-x-auto px-1 pb-1 sm:flex-wrap sm:overflow-visible">
       {timeframes.map((item) => (
         <button
           key={item.label}
           type="button"
           onClick={() => onChange(item.label)}
-          className={`rounded-md border px-3 py-2 text-sm font-black ${
+          className={`shrink-0 snap-start rounded-md border px-3 py-2 text-sm font-black ${
             value === item.label
               ? "border-slate-950 bg-slate-950 text-white"
               : "border-slate-300 bg-white text-slate-700 hover:border-slate-500"
@@ -440,7 +651,7 @@ function OverviewTable({ rows, selectedTicker, onSelect, loading }) {
 
 function SingleAnalysis({ item }) {
   return (
-    <section className="rounded-lg border border-slate-300 bg-white p-4 shadow-sm">
+    <section className="rounded-lg border border-slate-300 bg-white p-3 shadow-sm sm:p-4">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
           <div className="flex flex-wrap items-center gap-3">
@@ -481,7 +692,7 @@ function BeginnerPlan({ item }) {
         <div>
           <h2 className="text-sm font-black uppercase tracking-wide text-slate-500">Beginner Trade Plan</h2>
           <div className="mt-2 flex flex-wrap items-center gap-3">
-            <span className="text-3xl font-black text-slate-950">{money(item.price)}</span>
+            <span className="text-2xl font-black text-slate-950 sm:text-3xl">{money(item.price)}</span>
             <SignalPill signal={item.signal} />
             <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-black text-slate-700">Rule-based signal, not financial advice</span>
           </div>
@@ -741,7 +952,28 @@ function ActionBlock({ item }) {
   );
 }
 
-function ChartPanel({ item, timeframe, chartType, tools, onToggleTool }) {
+function ChartPanel({
+  item,
+  data,
+  rows: watchlistRows,
+  selectedTicker,
+  onSelectTicker,
+  onRefresh,
+  loading,
+  autoRefreshMinutes,
+  onAutoRefreshChange,
+  timeframe,
+  onTimeframeChange,
+  chartType,
+  onChartTypeChange,
+  chartWorkspace,
+  onChartWorkspaceChange,
+  activePreset,
+  onApplyPreset,
+  tools,
+  onToggleTool,
+  onSetTools,
+}) {
   const rows = useMemo(() => chartRowsForTimeframe(item, timeframe), [item, timeframe]);
   const latest = rows[rows.length - 1] || {};
   const timeframeLabel = timeframe === "1D" && item.intradayChart?.length
@@ -753,36 +985,51 @@ function ChartPanel({ item, timeframe, chartType, tools, onToggleTool }) {
     tools.volume ? <VolumeChart key="volume" rows={rows} /> : null,
     tools.macd ? <MacdChart key="macd" rows={rows} /> : null,
     tools.rsi ? <SparkChart key="rsi" title="RSI 14" rows={rows} keys={[["rsi", chartColors.rsi]]} height={150} fixedMin={0} fixedMax={100} levels={[70, 30]} note="Above 70 is stretched. Below 30 is oversold." /> : null,
+    tools.stochastic ? <SparkChart key="stochastic" title="Stochastic 14/3" rows={withStochasticRows(rows)} keys={[["stochK", "#0ea5e9"], ["stochD", "#ef4444"]]} height={150} fixedMin={0} fixedMax={100} levels={[80, 20]} note="Short-term momentum. Above 80 is hot; below 20 is cold." /> : null,
     tools.williamsR ? <SparkChart key="williamsR" title="Williams %R" rows={rows} keys={[["williamsR", chartColors.williamsR]]} height={150} fixedMin={-100} fixedMax={0} levels={[-20, -80]} note={williamsStatus(latest.williamsR)} /> : null,
     tools.dmi ? <SparkChart key="dmi" title="DMI 14" rows={rows} keys={[["plusDI", chartColors.plusDI], ["minusDI", chartColors.minusDI], ["adx", chartColors.adx]]} height={150} fixedMin={0} fixedMax={60} note="+DI over -DI favors buyers. ADX shows trend strength." /> : null,
+    tools.relativeVolume ? <RelativeVolumeCard key="relativeVolume" rows={rows} /> : null,
   ].filter(Boolean);
+  const isProWorkspace = chartWorkspace === "chart2";
 
   return (
     <section className="rounded-lg border border-slate-300 bg-white p-4 shadow-sm">
-      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+      <ChartTopControls
+        data={data}
+        watchlistRows={watchlistRows}
+        selectedTicker={selectedTicker}
+        onSelectTicker={onSelectTicker}
+        onRefresh={onRefresh}
+        loading={loading}
+        autoRefreshMinutes={autoRefreshMinutes}
+        onAutoRefreshChange={onAutoRefreshChange}
+        timeframe={timeframe}
+        onTimeframeChange={onTimeframeChange}
+        chartType={chartType}
+        onChartTypeChange={onChartTypeChange}
+        chartWorkspace={chartWorkspace}
+        onChartWorkspaceChange={onChartWorkspaceChange}
+        activePreset={activePreset}
+        onApplyPreset={onApplyPreset}
+      />
+      <div className="mt-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
         <div>
-          <h2 className="text-sm font-black uppercase tracking-wide text-slate-950">Big Candlestick Chart</h2>
+          <h2 className="text-sm font-black uppercase tracking-wide text-slate-950">
+            {isProWorkspace ? "Chart 2 Pro Stack" : "Chart 1 Clean Price Chart"}
+          </h2>
           <p className="mt-1 text-xs font-bold text-slate-500">
             {timeframeLabel}. Rule signals still use daily candle close; 1D chart uses intraday candles when Yahoo returns them.
           </p>
         </div>
-        <div className="flex flex-wrap gap-2 text-xs font-bold text-slate-600">
-          <Legend color={chartColors.up} label="Up candle" />
-          <Legend color={chartColors.down} label="Down candle" />
-          <Legend color={chartColors.bollinger} label="Bollinger" />
-          <Legend color={chartColors.ema20} label="EMA20" />
-          <Legend color={chartColors.sma20} label="SMA20" />
-          <Legend color={chartColors.sma50} label="SMA50" />
-          <Legend color={chartColors.sma200} label="SMA200" />
-        </div>
+        <DataSourceBadge />
       </div>
       <div className="mt-4">
-        <ChartToolBar tools={tools} onToggleTool={onToggleTool} />
+        <ChartToolBar tools={tools} onToggleTool={onToggleTool} onSetTools={onSetTools} />
       </div>
-      <ChartRuleOverlay item={item} />
+      {isProWorkspace ? <ProStackSummary /> : <ChartRuleOverlay item={item} />}
       <div className="mt-4">
         <CandlestickChart
-          key={`${item.ticker}-${timeframe}-${chartType}-${rows.length}`}
+          key={`${item.ticker}-${timeframe}-${chartType}-${chartWorkspace}-${rows.length}`}
           rows={rows}
           item={item}
           tools={tools}
@@ -828,49 +1075,204 @@ function ChartRuleOverlay({ item }) {
   );
 }
 
-function ChartToolBar({ tools, onToggleTool }) {
-  const items = [
-    ["ema20", "EMA20"],
-    ["ema50", "EMA50"],
-    ["ema200", "EMA200"],
-    ["sma20", "SMA20"],
-    ["sma50", "SMA50"],
-    ["sma200", "SMA200"],
-    ["bollinger", "Bollinger"],
-    ["stopTarget", "Stop/Target"],
-    ["volume", "Volume"],
-    ["macd", "MACD"],
-    ["dmi", "DMI/ADX"],
-    ["rsi", "RSI"],
-    ["williamsR", "Williams %R"],
-    ["tooltip", "Cursor tooltip"],
-    ["swingProjection", "5-day swing"],
-    ["signalMarkers", "Signal markers"],
-    ["vwap", "VWAP"],
-    ["openingRange", "Opening range"],
-    ["previousClose", "Prev close"],
-  ];
-
+function ChartTopControls({
+  data,
+  watchlistRows,
+  selectedTicker,
+  onSelectTicker,
+  onRefresh,
+  loading,
+  autoRefreshMinutes,
+  onAutoRefreshChange,
+  timeframe,
+  onTimeframeChange,
+  chartType,
+  onChartTypeChange,
+  chartWorkspace,
+  onChartWorkspaceChange,
+  activePreset,
+  onApplyPreset,
+}) {
   return (
-    <div>
-      <div className="flex flex-wrap gap-2 rounded-lg border border-slate-200 bg-slate-50 p-2">
-        {items.map(([key, label]) => (
-          <button
-            key={key}
-            type="button"
-            onClick={() => onToggleTool(key)}
-            className={`rounded-md border px-2.5 py-1.5 text-xs font-black ${
-              tools[key] ? "border-slate-900 bg-white text-slate-950" : "border-slate-200 bg-slate-100 text-slate-500"
-            }`}
-          >
-            {label}
-          </button>
+    <div className="rounded-lg border border-slate-200 bg-slate-50 p-2 sm:p-3">
+      <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-start">
+        <div>
+          <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 sm:flex sm:flex-wrap sm:items-center sm:gap-3">
+            <select
+              value={selectedTicker}
+              onChange={(event) => onSelectTicker(event.target.value)}
+              className="min-w-0 rounded-md border border-slate-300 bg-white px-3 py-2 text-base font-black text-slate-950 sm:w-full sm:max-w-xs sm:text-lg"
+            >
+              {(watchlistRows || []).filter((row) => row.ok).map((row) => (
+                <option key={row.ticker} value={row.ticker}>{row.ticker}</option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={onRefresh}
+              disabled={loading}
+              className="rounded-md bg-sky-600 px-3 py-2 text-sm font-black text-white disabled:cursor-wait disabled:bg-slate-400 sm:px-4"
+            >
+              {loading ? "Refreshing..." : "Refresh"}
+            </button>
+            <label className="col-span-2 flex items-center gap-2 text-xs font-black uppercase tracking-wide text-slate-500 sm:col-span-1">
+              Auto
+              <select
+                value={autoRefreshMinutes}
+                onChange={(event) => onAutoRefreshChange(event.target.value)}
+                className="rounded-md border border-slate-300 bg-white px-2 py-2 text-sm font-bold normal-case tracking-normal text-slate-900"
+              >
+                <option value="off">Off</option>
+                <option value="1">1 min</option>
+                <option value="5">5 min</option>
+                <option value="15">15 min</option>
+              </select>
+            </label>
+          </div>
+          <p className="mt-2 text-xs font-semibold text-slate-500">
+            Data source: Yahoo Finance chart endpoint. Manual/auto refresh only; no broker feed, no websocket, no order execution. Last loaded: {data?.generatedAt ? new Date(data.generatedAt).toLocaleString() : "not loaded yet"}.
+          </p>
+        </div>
+        <div className="min-w-0 space-y-2">
+          <SwitchRow>
+            {chartWorkspaces.map((workspace) => (
+              <ModeSwitchButton
+                key={workspace.key}
+                active={chartWorkspace === workspace.key}
+                label={workspace.label}
+                detail={workspace.detail}
+                onClick={() => onChartWorkspaceChange(workspace.key)}
+              />
+            ))}
+          </SwitchRow>
+          <SwitchRow>
+            {chartPresets.map((preset) => (
+              <ModeSwitchButton
+                key={preset.key}
+                active={activePreset === preset.key}
+                neutral={activePreset === "custom"}
+                label={preset.label}
+                detail={preset.detail}
+                onClick={() => onApplyPreset(preset.key)}
+              />
+            ))}
+          </SwitchRow>
+          <ChartTypeButtons value={chartType} onChange={onChartTypeChange} />
+          <TimeframeButtons value={timeframe} onChange={onTimeframeChange} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SwitchRow({ children }) {
+  return <div className="-mx-1 flex snap-x gap-2 overflow-x-auto px-1 pb-1 sm:flex-wrap sm:overflow-visible xl:justify-end">{children}</div>;
+}
+
+function ModeSwitchButton({ active, neutral = false, label, detail, onClick }) {
+  const color = active ? "bg-emerald-500" : neutral ? "bg-slate-400" : "bg-rose-500";
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`min-w-[92px] shrink-0 snap-start rounded-md border px-2.5 py-2 text-left ${
+        active ? "border-slate-950 bg-white text-slate-950" : "border-slate-200 bg-slate-100 text-slate-600"
+      }`}
+    >
+      <span className="flex items-center gap-2 text-xs font-black">
+        <span className={`h-2.5 w-2.5 rounded-full ${color}`} />
+        {label}
+      </span>
+      <span className="mt-1 block text-[10px] font-bold text-slate-500">{detail}</span>
+    </button>
+  );
+}
+
+function DataSourceBadge() {
+  return (
+    <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900">
+      Delayed/API data, not broker live tape
+    </div>
+  );
+}
+
+function ProStackSummary() {
+  return (
+    <div className="mt-4 grid gap-2 md:grid-cols-3">
+      <MiniInfo title="Day trade" text="VWAP, opening range, previous close, Supertrend, volume." />
+      <MiniInfo title="Swing trade" text="EMA/SMA trend, Bollinger, MACD, RSI, DMI/ADX." />
+      <MiniInfo title="Long trend" text="EMA200/SMA200 and Ichimoku-style cloud context." />
+    </div>
+  );
+}
+
+function MiniInfo({ title, text }) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+      <p className="text-[10px] font-black uppercase tracking-wide text-slate-500">{title}</p>
+      <p className="mt-1 text-xs font-bold leading-5 text-slate-700">{text}</p>
+    </div>
+  );
+}
+
+function ChartToolBar({ tools, onToggleTool, onSetTools }) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-slate-50 p-2 sm:p-3">
+      <div className="-mx-1 grid auto-cols-[minmax(190px,240px)] grid-flow-col gap-2 overflow-x-auto px-1 pb-1 sm:gap-3 xl:mx-0 xl:grid-flow-row xl:grid-cols-5 xl:overflow-visible xl:px-0 xl:pb-0">
+        {toolGroups.map((group) => (
+          <ToolGroup key={group.key} group={group} tools={tools} onToggleTool={onToggleTool} onSetTools={onSetTools} />
         ))}
       </div>
       <p className="mt-2 text-xs font-semibold text-slate-500">
-        <strong>Chart Controls:</strong> Hover for values · Use mouse wheel or trackpad pinch to zoom · Drag to pan · Double-click the chart to reset view
+        <strong>Switch colors:</strong> green on, red off, grey mixed group. Hover chart for values, scroll/pinch to zoom, drag to pan.
       </p>
     </div>
+  );
+}
+
+function ToolGroup({ group, tools, onToggleTool, onSetTools }) {
+  const states = group.tools.map(([key]) => Boolean(tools[key]));
+  const allOn = states.every(Boolean);
+  const allOff = states.every((value) => !value);
+  const groupState = allOn ? "on" : allOff ? "off" : "mixed";
+  const color = groupState === "on" ? "bg-emerald-500" : groupState === "off" ? "bg-rose-500" : "bg-slate-400";
+  const icon = groupState === "on" ? "✓" : groupState === "off" ? "×" : "−";
+
+  function toggleGroup() {
+    const nextValue = !allOn;
+    onSetTools({
+      ...tools,
+      ...Object.fromEntries(group.tools.map(([key]) => [key, nextValue])),
+    });
+  }
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-2">
+      <button type="button" onClick={toggleGroup} className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left hover:bg-slate-50">
+        <span className="text-xs font-black uppercase tracking-wide text-slate-700">{group.label}</span>
+        <span className={`flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-black text-white ${color}`}>{icon}</span>
+      </button>
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {group.tools.map(([key, label]) => (
+          <ToolSwitch key={key} active={Boolean(tools[key])} label={label} onClick={() => onToggleTool(key)} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ToolSwitch({ active, label, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`inline-flex max-w-full items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-black ${
+        active ? "border-emerald-200 bg-emerald-50 text-emerald-900" : "border-rose-200 bg-rose-50 text-rose-900"
+      }`}
+    >
+      <span className={`h-2 w-2 rounded-full ${active ? "bg-emerald-500" : "bg-rose-500"}`} />
+      <span className="truncate">{label}</span>
+    </button>
   );
 }
 
@@ -882,11 +1284,19 @@ function TradingViewChart({ rows, item, tools, timeframe, chartType }) {
   const containerRef = useRef(null);
   const chartRef = useRef(null);
   const [hover, setHover] = useState(null);
+  const [focusedIndicator, setFocusedIndicator] = useState(null);
+  const [overlayLabels, setOverlayLabels] = useState([]);
   const validRows = useMemo(() => rows.filter(isValidPriceRow), [rows]);
-  const displayRows = useMemo(
-    () => chartType === "heikinAshi" ? buildHeikinAshiRows(validRows) : validRows,
-    [chartType, validRows]
+  const displayRows = useMemo(() => {
+    if (chartType === "heikinAshi") return buildHeikinAshiRows(validRows);
+    if (chartType === "renko") return buildRenkoRows(validRows);
+    return validRows;
+  }, [chartType, validRows]);
+  const focusChoices = useMemo(
+    () => buildFocusChoices(validRows, item, tools, timeframe),
+    [validRows, item, tools, timeframe]
   );
+  const activeFocusedIndicator = focusChoices.some((choice) => choice.key === focusedIndicator) ? focusedIndicator : null;
 
   useEffect(() => {
     const container = containerRef.current;
@@ -932,6 +1342,29 @@ function TradingViewChart({ rows, item, tools, timeframe, chartType }) {
 
     const primarySeries = addPrimarySeries(chart, displayRows, chartType);
 
+    const lineFocusOptions = (key, color, options = {}) => {
+      const isFocused = activeFocusedIndicator === key;
+      const hasFocus = Boolean(activeFocusedIndicator);
+      return {
+        color: hasFocus && !isFocused ? hexToRgba(color, 0.28) : color,
+        lineWidth: isFocused ? 4 : options.lineWidth || 2,
+        lineStyle: isFocused ? 0 : options.lineStyle || 0,
+        lastValueVisible: false,
+        priceLineVisible: false,
+      };
+    };
+
+    const priceLineFocusOptions = (key, color, options = {}) => {
+      const isFocused = activeFocusedIndicator === key;
+      const hasFocus = Boolean(activeFocusedIndicator);
+      return {
+        color: hasFocus && !isFocused ? hexToRgba(color, 0.3) : color,
+        lineWidth: isFocused ? 4 : options.lineWidth || 1,
+        lineStyle: isFocused ? 0 : options.lineStyle || 2,
+        axisLabelVisible: false,
+      };
+    };
+
     const addLine = (key, color, title, options = {}) => {
       if (options.enabled === false) return null;
       if (Object.prototype.hasOwnProperty.call(tools, key) && !tools[key]) return null;
@@ -939,12 +1372,13 @@ function TradingViewChart({ rows, item, tools, timeframe, chartType }) {
         .filter((row) => Number.isFinite(row[key]))
         .map((row) => ({ time: chartTime(row), value: row[key] }));
       if (!data.length) return null;
+      const focusOptions = lineFocusOptions(key, color, options);
       const series = chart.addSeries(LineSeries, {
-        color,
-        lineWidth: options.lineWidth || 2,
-        lineStyle: options.lineStyle || 0,
-        priceLineVisible: false,
-        lastValueVisible: false,
+        color: focusOptions.color,
+        lineWidth: focusOptions.lineWidth,
+        lineStyle: focusOptions.lineStyle,
+        priceLineVisible: focusOptions.priceLineVisible,
+        lastValueVisible: focusOptions.lastValueVisible,
         title,
       });
       series.setData(data);
@@ -960,15 +1394,57 @@ function TradingViewChart({ rows, item, tools, timeframe, chartType }) {
     addLine("bbUpper", chartColors.bollinger, "BB Upper", { lineWidth: 1, enabled: tools.bollinger });
     addLine("bbLower", chartColors.bollinger, "BB Lower", { lineWidth: 1, enabled: tools.bollinger });
 
+    if (tools.supertrend) {
+      const supertrend = buildSupertrendData(validRows);
+      [
+        ["supertrendUp", "Supertrend up", supertrend.up, chartColors.up],
+        ["supertrendDown", "Supertrend down", supertrend.down, chartColors.down],
+      ].forEach(([key, title, seriesData, color]) => {
+        if (!seriesData.length) return;
+        const focusOptions = lineFocusOptions(key, color);
+        const series = chart.addSeries(LineSeries, {
+          color: focusOptions.color,
+          lineWidth: focusOptions.lineWidth,
+          lineStyle: focusOptions.lineStyle,
+          priceLineVisible: false,
+          lastValueVisible: focusOptions.lastValueVisible,
+          title,
+        });
+        series.setData(seriesData);
+      });
+    }
+
+    if (tools.ichimoku) {
+      const cloud = buildIchimokuData(validRows);
+      [
+        ["Tenkan 9", cloud.conversion, "#0ea5e9", 1],
+        ["Kijun 26", cloud.base, "#ef4444", 1],
+        ["Cloud A", cloud.spanA, "rgba(22, 133, 58, 0.82)", 2],
+        ["Cloud B", cloud.spanB, "rgba(185, 41, 47, 0.82)", 2],
+      ].forEach(([title, seriesData, color, lineStyle]) => {
+        if (!seriesData.length) return;
+        const series = chart.addSeries(LineSeries, {
+          color,
+          lineWidth: 1,
+          lineStyle,
+          priceLineVisible: false,
+          lastValueVisible: false,
+          title,
+        });
+        series.setData(seriesData);
+      });
+    }
+
     if (tools.vwap) {
       const vwapData = buildVwapData(validRows);
       if (vwapData.length) {
+        const focusOptions = lineFocusOptions("vwap", "#0f766e");
         const vwapSeries = chart.addSeries(LineSeries, {
-          color: "#0f766e",
-          lineWidth: 2,
-          lineStyle: 0,
+          color: focusOptions.color,
+          lineWidth: focusOptions.lineWidth,
+          lineStyle: focusOptions.lineStyle,
           priceLineVisible: false,
-          lastValueVisible: false,
+          lastValueVisible: focusOptions.lastValueVisible,
           title: "VWAP",
         });
         vwapSeries.setData(vwapData);
@@ -990,21 +1466,36 @@ function TradingViewChart({ rows, item, tools, timeframe, chartType }) {
       })));
     }
 
+    if (tools.volumeProfile) {
+      const profileData = buildVolumeProfileData(validRows);
+      profileData.forEach((level) => {
+        primarySeries.createPriceLine({
+          price: level.price,
+          color: `rgba(15, 23, 42, ${level.opacity})`,
+          lineWidth: level.isPointOfControl ? 2 : 1,
+          lineStyle: level.isPointOfControl ? 0 : 2,
+          axisLabelVisible: false,
+          title: level.isPointOfControl ? "POC" : "",
+        });
+      });
+    }
+
     if (tools.stopTarget) {
       [
-        ["Stop", item.stop, chartColors.down],
-        ["Target", item.target, chartColors.up],
-        ["Entry", item.action?.enterOnlyIfPrice || item.strategies?.find((plan) => plan.label === "Day trade")?.entry, chartColors.ema20],
+        ["stop", "Stop", item.stop, chartColors.down],
+        ["target", "Target", item.target, chartColors.up],
+        ["entry", "Entry", item.action?.enterOnlyIfPrice || item.strategies?.find((plan) => plan.label === "Day trade")?.entry, chartColors.ema20],
       ]
-        .filter(([, value]) => Number.isFinite(value))
-        .forEach(([title, price, color]) => {
+        .filter(([, , value]) => Number.isFinite(value))
+        .forEach(([key, title, price, color]) => {
+          const focusOptions = priceLineFocusOptions(key, color, { lineWidth: 2 });
           primarySeries.createPriceLine({
             price,
-            color,
-            lineWidth: 2,
-            lineStyle: 2,
-            axisLabelVisible: true,
-            title: `${title} ${money(price)}`,
+            color: focusOptions.color,
+            lineWidth: focusOptions.lineWidth,
+            lineStyle: focusOptions.lineStyle,
+            axisLabelVisible: focusOptions.axisLabelVisible,
+            title,
           });
         });
     }
@@ -1013,16 +1504,17 @@ function TradingViewChart({ rows, item, tools, timeframe, chartType }) {
       const openingRange = buildOpeningRange(validRows);
       if (openingRange) {
         [
-          ["OR High", openingRange.high, "#0369a1"],
-          ["OR Low", openingRange.low, "#7c3aed"],
-        ].forEach(([title, price, color]) => {
+          ["openingRangeHigh", "OR High", openingRange.high, "#0369a1"],
+          ["openingRangeLow", "OR Low", openingRange.low, "#7c3aed"],
+        ].forEach(([key, title, price, color]) => {
+          const focusOptions = priceLineFocusOptions(key, color);
           primarySeries.createPriceLine({
             price,
-            color,
-            lineWidth: 1,
-            lineStyle: 2,
-            axisLabelVisible: true,
-            title: `${title} ${money(price)}`,
+            color: focusOptions.color,
+            lineWidth: focusOptions.lineWidth,
+            lineStyle: focusOptions.lineStyle,
+            axisLabelVisible: focusOptions.axisLabelVisible,
+            title,
           });
         });
       }
@@ -1031,15 +1523,43 @@ function TradingViewChart({ rows, item, tools, timeframe, chartType }) {
     if (tools.previousClose && timeframe === "1D") {
       const previousClose = previousDailyClose(item);
       if (Number.isFinite(previousClose)) {
+        const focusOptions = priceLineFocusOptions("previousClose", "#64748b", { lineStyle: 3 });
         primarySeries.createPriceLine({
           price: previousClose,
-          color: "#64748b",
-          lineWidth: 1,
-          lineStyle: 3,
-          axisLabelVisible: true,
-          title: `Prev close ${money(previousClose)}`,
+          color: focusOptions.color,
+          lineWidth: focusOptions.lineWidth,
+          lineStyle: focusOptions.lineStyle,
+          axisLabelVisible: focusOptions.axisLabelVisible,
+          title: "Prev",
         });
       }
+    }
+
+    if (tools.pivots) {
+      buildPivotLevels(item).forEach((level) => {
+        const focusOptions = priceLineFocusOptions(level.key, level.color, { lineWidth: level.major ? 2 : 1, lineStyle: level.major ? 0 : 2 });
+        primarySeries.createPriceLine({
+          price: level.price,
+          color: focusOptions.color,
+          lineWidth: focusOptions.lineWidth,
+          lineStyle: focusOptions.lineStyle,
+          axisLabelVisible: focusOptions.axisLabelVisible,
+          title: level.label,
+        });
+      });
+    }
+
+    if (tools.atrBands) {
+      buildAtrBands(validRows).forEach((level) => {
+        primarySeries.createPriceLine({
+          price: level.price,
+          color: level.color,
+          lineWidth: 1,
+          lineStyle: 2,
+          axisLabelVisible: true,
+          title: level.label,
+        });
+      });
     }
 
     if (tools.signalMarkers) {
@@ -1056,35 +1576,93 @@ function TradingViewChart({ rows, item, tools, timeframe, chartType }) {
     }
 
     chart.timeScale().fitContent();
+
+    const updateOverlayLabels = () => {
+      const height = container.clientHeight || 620;
+      const labels = focusChoices
+        .map((choice) => {
+          if (!Number.isFinite(choice.price)) return null;
+          const y = primarySeries.priceToCoordinate(choice.price);
+          if (!Number.isFinite(y)) return null;
+          return {
+            ...choice,
+            y: Math.max(16, Math.min(height - 18, y)),
+          };
+        })
+        .filter(Boolean);
+      setOverlayLabels(stackOverlayLabels(labels, height, activeFocusedIndicator));
+    };
+    const requestOverlayUpdate = () => {
+      window.requestAnimationFrame(updateOverlayLabels);
+    };
+    requestOverlayUpdate();
+    chart.timeScale().subscribeVisibleLogicalRangeChange(requestOverlayUpdate);
+
     chart.subscribeCrosshairMove((param) => {
       const row = validRows.find((entry) => chartTime(entry) === param.time);
       setHover(row ? { row } : null);
     });
 
     return () => {
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(requestOverlayUpdate);
       chart.remove();
       chartRef.current = null;
     };
-  }, [displayRows, validRows, item, tools, timeframe, chartType]);
+  }, [displayRows, validRows, item, tools, timeframe, chartType, activeFocusedIndicator, focusChoices]);
 
   if (!validRows.length) {
-    return <div className="flex min-h-[360px] items-center justify-center rounded-lg bg-slate-50 text-sm font-bold text-slate-500">No valid chart data. Check 1D candle availability.</div>;
+    return <div className="flex min-h-[280px] items-center justify-center rounded-lg bg-slate-50 px-3 text-center text-sm font-bold text-slate-500 sm:min-h-[360px]">No valid chart data. Check 1D candle availability.</div>;
   }
 
   return (
     <div className="relative overflow-hidden rounded-lg border border-slate-200 bg-white">
-      <div className="absolute left-3 top-3 z-10 rounded-md border border-slate-200 bg-white/95 px-3 py-2 shadow-sm">
-        <p className="text-[10px] font-black uppercase tracking-wide text-slate-500">TradingView Lightweight Chart</p>
-        <p className="mt-1 text-xs font-bold text-slate-700">Scroll to zoom, drag to pan, hover for OHLC.</p>
-      </div>
-      {tools.tooltip && hover?.row ? (
-        <div className="absolute right-3 top-3 z-10 grid grid-cols-2 gap-x-4 gap-y-1 rounded-md border border-slate-200 bg-white/95 px-3 py-2 text-xs shadow-sm">
-          <span className="font-bold text-slate-500">Time</span><span className="font-black text-slate-950">{hover.row.date}</span>
-          <span className="font-bold text-slate-500">O/H/L/C</span><span className="font-black text-slate-950">{money(hover.row.open)} / {money(hover.row.high)} / {money(hover.row.low)} / {money(hover.row.close)}</span>
-          <span className="font-bold text-slate-500">Volume</span><span className="font-black text-slate-950">{number(hover.row.volume)}</span>
+        <div className="absolute left-2 top-2 z-10 max-w-[220px] rounded-md border border-slate-200 bg-white/95 px-2 py-1.5 shadow-sm sm:left-3 sm:top-3 sm:max-w-none sm:px-3 sm:py-2">
+          <p className="text-[10px] font-black uppercase tracking-wide text-slate-500">TradingView Lightweight Chart</p>
+          <p className="mt-1 hidden text-xs font-bold text-slate-700 sm:block">Scroll to zoom, drag to pan, hover for OHLC.</p>
         </div>
-      ) : null}
-      <div ref={containerRef} className="h-[420px] w-full md:h-[540px] xl:h-[620px]" />
+        {tools.tooltip && hover?.row ? (
+          <div className="absolute right-2 top-2 z-10 grid max-w-[210px] grid-cols-2 gap-x-2 gap-y-1 rounded-md border border-slate-200 bg-white/95 px-2 py-1.5 text-[11px] shadow-sm sm:right-3 sm:top-3 sm:max-w-none sm:gap-x-4 sm:px-3 sm:py-2 sm:text-xs">
+            <span className="font-bold text-slate-500">Time</span><span className="font-black text-slate-950">{hover.row.date}</span>
+            <span className="font-bold text-slate-500">O/H/L/C</span><span className="font-black text-slate-950">{money(hover.row.open)} / {money(hover.row.high)} / {money(hover.row.low)} / {money(hover.row.close)}</span>
+            <span className="font-bold text-slate-500">Volume</span><span className="font-black text-slate-950">{number(hover.row.volume)}</span>
+          </div>
+        ) : null}
+        {overlayLabels.length ? (
+          <div className="pointer-events-none absolute inset-y-0 right-0 z-20 w-[118px] sm:w-[132px]">
+            {overlayLabels.map((label) => {
+              const active = activeFocusedIndicator === label.key;
+              return (
+                <button
+                  key={label.key}
+                  type="button"
+                  title={chartIndicatorHelp[label.key] || label.label}
+                  onClick={() => setFocusedIndicator(active ? null : label.key)}
+                  className={`pointer-events-auto absolute right-0 grid h-6 grid-cols-[minmax(0,1fr)_52px] overflow-hidden rounded-l-md text-[10px] font-black shadow-sm transition sm:h-7 sm:grid-cols-[minmax(0,1fr)_56px] sm:text-xs ${
+                    active ? "ring-2 ring-slate-950 ring-offset-1" : ""
+                  }`}
+                  style={{ top: `${label.y - 12}px` }}
+                >
+                  <span className="flex min-w-0 items-center justify-end gap-1 truncate px-1.5 text-white" style={{ backgroundColor: label.color }}>
+                    <span className="truncate">{label.label}</span>
+                  </span>
+                  <span className="flex items-center justify-center text-white" style={{ backgroundColor: label.color }}>
+                    {money(label.price)}
+                  </span>
+                </button>
+              );
+            })}
+            {activeFocusedIndicator ? (
+              <button
+                type="button"
+                onClick={() => setFocusedIndicator(null)}
+                className="pointer-events-auto absolute right-0 top-2 rounded-l-md bg-slate-950 px-2 py-1 text-[11px] font-black text-white shadow-sm"
+              >
+                All
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+        <div ref={containerRef} className="h-[360px] w-full sm:h-[420px] md:h-[540px] xl:h-[620px]" />
     </div>
   );
 }
@@ -1101,6 +1679,88 @@ function chartTime(row) {
   if (Number.isFinite(row.timestamp)) return Math.floor(row.timestamp / 1000);
   const parsed = Date.parse(row.date);
   return Number.isFinite(parsed) ? Math.floor(parsed / 1000) : row.date;
+}
+
+function hexToRgba(hex, alpha) {
+  const normalized = String(hex || "").replace("#", "");
+  if (normalized.length !== 6) return hex;
+  const value = Number.parseInt(normalized, 16);
+  const red = (value >> 16) & 255;
+  const green = (value >> 8) & 255;
+  const blue = value & 255;
+  return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
+}
+
+function buildFocusChoices(rows, item, tools, timeframe) {
+  const choices = [];
+  const add = (key, label, color, price, enabled = true, priority = 50) => {
+    if (enabled && Number.isFinite(price) && !choices.some((choice) => choice.key === key)) {
+      choices.push({ key, label, color, price: roundChartValue(price), priority });
+    }
+  };
+  const hasSeriesData = (key) => rows.some((row) => Number.isFinite(row[key]));
+  const latestSeriesValue = (key) => {
+    for (let index = rows.length - 1; index >= 0; index -= 1) {
+      if (Number.isFinite(rows[index]?.[key])) return rows[index][key];
+    }
+    return null;
+  };
+
+  add("ema20", "EMA20", chartColors.ema20, latestSeriesValue("ema20"), tools.ema20 && hasSeriesData("ema20"), 78);
+  add("ema50", "EMA50", chartColors.ema50, latestSeriesValue("ema50"), tools.ema50 && hasSeriesData("ema50"), 72);
+  add("ema200", "EMA200", chartColors.ema200, latestSeriesValue("ema200"), tools.ema200 && hasSeriesData("ema200"), 62);
+  add("sma20", "SMA20", chartColors.sma20, latestSeriesValue("sma20"), tools.sma20 && hasSeriesData("sma20"), 58);
+  add("sma50", "SMA50", chartColors.sma50, latestSeriesValue("sma50"), tools.sma50 && hasSeriesData("sma50"), 70);
+  add("sma200", "SMA200", chartColors.sma200, latestSeriesValue("sma200"), tools.sma200 && hasSeriesData("sma200"), 60);
+  add("bbUpper", "BB Upper", chartColors.bollinger, latestSeriesValue("bbUpper"), tools.bollinger && hasSeriesData("bbUpper"), 42);
+  add("bbLower", "BB Lower", chartColors.bollinger, latestSeriesValue("bbLower"), tools.bollinger && hasSeriesData("bbLower"), 42);
+
+  const vwapData = buildVwapData(rows);
+  add("vwap", "VWAP", "#0f766e", vwapData[vwapData.length - 1]?.value, tools.vwap && vwapData.length > 0, 90);
+
+  if (tools.supertrend) {
+    const supertrend = buildSupertrendData(rows);
+    add("supertrendUp", "Super Up", chartColors.up, supertrend.up[supertrend.up.length - 1]?.value, supertrend.up.length > 0, 74);
+    add("supertrendDown", "Super Down", chartColors.down, supertrend.down[supertrend.down.length - 1]?.value, supertrend.down.length > 0, 74);
+  }
+
+  const entryPrice = item.action?.enterOnlyIfPrice || item.strategies?.find((plan) => plan.label === "Day trade")?.entry;
+  add("entry", "Entry", chartColors.ema20, entryPrice, tools.stopTarget, 100);
+  add("target", "Target", chartColors.up, item.target, tools.stopTarget, 98);
+  add("stop", "Stop", chartColors.down, item.stop, tools.stopTarget, 98);
+
+  if (tools.openingRange && timeframe === "1D") {
+    const openingRange = buildOpeningRange(rows);
+    add("openingRangeHigh", "OR High", "#0369a1", openingRange?.high, true, 86);
+    add("openingRangeLow", "OR Low", "#7c3aed", openingRange?.low, true, 86);
+  }
+
+  add("previousClose", "Prev", "#64748b", previousDailyClose(item), tools.previousClose && timeframe === "1D", 84);
+  if (tools.pivots) {
+    buildPivotLevels(item).forEach((level) => add(level.key, level.label, level.color, level.price, true, level.major ? 88 : 82));
+  }
+  return choices;
+}
+
+function stackOverlayLabels(labels, height, activeKey) {
+  const minGap = 25;
+  const minY = 18;
+  const maxY = height - 18;
+  const selected = [];
+  const sortedByPriority = [...labels].sort((a, b) => {
+    if (a.key === activeKey) return -1;
+    if (b.key === activeKey) return 1;
+    return (b.priority || 0) - (a.priority || 0);
+  });
+
+  sortedByPriority.forEach((label) => {
+    const y = Math.max(minY, Math.min(maxY, label.y));
+    const candidate = { ...label, y };
+    const collides = selected.some((existing) => Math.abs(existing.y - candidate.y) < minGap);
+    if (!collides || label.key === activeKey) selected.push(candidate);
+  });
+
+  return selected.sort((a, b) => a.y - b.y);
 }
 
 function addPrimarySeries(chart, rows, chartType) {
@@ -1207,6 +1867,37 @@ function buildHeikinAshiRows(rows) {
   return output;
 }
 
+function buildRenkoRows(rows) {
+  if (!rows.length) return [];
+  const ranges = rows.map((row) => Math.max(row.high - row.low, 0)).filter((value) => value > 0);
+  const averageRange = ranges.length ? ranges.reduce((sum, value) => sum + value, 0) / ranges.length : rows[0].close * 0.006;
+  const brickSize = Math.max(0.01, averageRange * 0.75);
+  const output = [];
+  let brickClose = rows[0].close;
+  rows.slice(1).forEach((row) => {
+    let move = row.close - brickClose;
+    let brickCounter = 0;
+    while (Math.abs(move) >= brickSize && brickCounter < 8) {
+      const direction = move > 0 ? 1 : -1;
+      const open = brickClose;
+      const close = brickClose + brickSize * direction;
+      output.push({
+        ...row,
+        timestamp: Number.isFinite(row.timestamp) ? row.timestamp + brickCounter * 1000 : row.timestamp,
+        date: `${row.date} R${brickCounter + 1}`,
+        open: roundChartValue(open),
+        high: roundChartValue(Math.max(open, close)),
+        low: roundChartValue(Math.min(open, close)),
+        close: roundChartValue(close),
+      });
+      brickClose = close;
+      move = row.close - brickClose;
+      brickCounter += 1;
+    }
+  });
+  return output.length ? output : rows;
+}
+
 function buildVwapData(rows) {
   let cumulativePriceVolume = 0;
   let cumulativeVolume = 0;
@@ -1225,11 +1916,113 @@ function buildVwapData(rows) {
     .filter(Boolean);
 }
 
+function buildSupertrendData(rows, period = 10, multiplier = 3) {
+  const trueRanges = rows.map((row, index) => {
+    const previousClose = rows[index - 1]?.close ?? row.close;
+    return Math.max(row.high - row.low, Math.abs(row.high - previousClose), Math.abs(row.low - previousClose));
+  });
+  const atrValues = rollingAverage(trueRanges, period);
+  let finalUpper = null;
+  let finalLower = null;
+  let trend = "up";
+  const up = [];
+  const down = [];
+
+  rows.forEach((row, index) => {
+    const atrValue = atrValues[index];
+    if (!Number.isFinite(atrValue)) return;
+    const middle = (row.high + row.low) / 2;
+    const basicUpper = middle + multiplier * atrValue;
+    const basicLower = middle - multiplier * atrValue;
+    const previous = rows[index - 1] || row;
+
+    finalUpper = finalUpper === null || basicUpper < finalUpper || previous.close > finalUpper ? basicUpper : finalUpper;
+    finalLower = finalLower === null || basicLower > finalLower || previous.close < finalLower ? basicLower : finalLower;
+
+    if (trend === "down" && row.close > finalUpper) trend = "up";
+    else if (trend === "up" && row.close < finalLower) trend = "down";
+
+    const point = { time: chartTime(row), value: roundChartValue(trend === "up" ? finalLower : finalUpper) };
+    if (trend === "up") up.push(point);
+    else down.push(point);
+  });
+
+  return { up, down };
+}
+
+function buildIchimokuData(rows) {
+  const conversion = midpointSeries(rows, 9);
+  const base = midpointSeries(rows, 26);
+  const spanB = midpointSeries(rows, 52);
+  const spanA = rows
+    .map((row, index) => {
+      const conversionPoint = conversion.find((point) => point.time === chartTime(row));
+      const basePoint = base.find((point) => point.time === chartTime(row));
+      if (!conversionPoint || !basePoint) return null;
+      return {
+        time: chartTime(row),
+        value: roundChartValue((conversionPoint.value + basePoint.value) / 2),
+      };
+    })
+    .filter(Boolean);
+
+  return { conversion, base, spanA, spanB };
+}
+
+function midpointSeries(rows, period) {
+  return rows
+    .map((row, index) => {
+      const windowRows = rows.slice(Math.max(0, index - period + 1), index + 1);
+      if (windowRows.length < period) return null;
+      return {
+        time: chartTime(row),
+        value: roundChartValue((Math.max(...windowRows.map((item) => item.high)) + Math.min(...windowRows.map((item) => item.low))) / 2),
+      };
+    })
+    .filter(Boolean);
+}
+
+function rollingAverage(values, period) {
+  return values.map((_, index) => {
+    if (index < period - 1) return null;
+    const windowValues = values.slice(index - period + 1, index + 1);
+    return windowValues.reduce((sum, value) => sum + value, 0) / period;
+  });
+}
+
 function roundChartValue(value, digits = 2) {
   const number = Number(value);
   if (!Number.isFinite(number)) return null;
   const factor = 10 ** digits;
   return Math.round(number * factor) / factor;
+}
+
+function buildVolumeProfileData(rows) {
+  const validRows = rows.filter((row) => Number.isFinite(row.close) && Number.isFinite(row.volume) && row.volume > 0);
+  if (validRows.length < 10) return [];
+  const lows = validRows.map((row) => row.low).filter(Number.isFinite);
+  const highs = validRows.map((row) => row.high).filter(Number.isFinite);
+  const minPrice = Math.min(...lows);
+  const maxPrice = Math.max(...highs);
+  const bucketCount = 12;
+  const bucketSize = (maxPrice - minPrice) / bucketCount;
+  if (!Number.isFinite(bucketSize) || bucketSize <= 0) return [];
+  const buckets = Array.from({ length: bucketCount }, (_, index) => ({
+    price: minPrice + bucketSize * (index + 0.5),
+    volume: 0,
+  }));
+  validRows.forEach((row) => {
+    const index = Math.max(0, Math.min(bucketCount - 1, Math.floor((row.close - minPrice) / bucketSize)));
+    buckets[index].volume += row.volume || 0;
+  });
+  const maxVolume = Math.max(...buckets.map((bucket) => bucket.volume), 1);
+  return buckets
+    .filter((bucket) => bucket.volume > 0)
+    .map((bucket) => ({
+      price: roundChartValue(bucket.price),
+      opacity: roundChartValue(0.12 + (bucket.volume / maxVolume) * 0.34, 2),
+      isPointOfControl: bucket.volume === maxVolume,
+    }));
 }
 
 function buildOpeningRange(rows) {
@@ -1796,6 +2589,31 @@ function VolumeChart({ rows }) {
   );
 }
 
+function RelativeVolumeCard({ rows }) {
+  const latest = rows[rows.length - 1];
+  const priorRows = rows.slice(Math.max(0, rows.length - 21), Math.max(0, rows.length - 1));
+  const averageVolume = priorRows.length ? priorRows.reduce((sum, row) => sum + (row.volume || 0), 0) / priorRows.length : 0;
+  const relativeVolume = averageVolume ? (latest?.volume || 0) / averageVolume : 0;
+  const status = relativeVolume >= 1.5 ? "High participation" : relativeVolume >= 1 ? "Above average" : relativeVolume >= 0.7 ? "Normal" : "Quiet";
+  const barWidth = Math.max(4, Math.min(100, relativeVolume * 45));
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-xs font-black uppercase tracking-wide text-slate-700">Relative Volume</h3>
+          <p className="mt-1 text-[11px] font-bold text-slate-500">Current bar volume versus recent average.</p>
+        </div>
+        <span className="text-sm font-black text-slate-950">{number(relativeVolume)}x</span>
+      </div>
+      <div className="mt-3 h-3 overflow-hidden rounded-full bg-slate-200">
+        <div className={`h-full rounded-full ${relativeVolume >= 1 ? "bg-emerald-500" : "bg-amber-500"}`} style={{ width: `${barWidth}%` }} />
+      </div>
+      <p className="mt-2 text-xs font-bold text-slate-600">{status}</p>
+    </div>
+  );
+}
+
 function SparkBars({ rows }) {
   const width = 760;
   const height = 170;
@@ -2007,7 +2825,87 @@ function chartRowsForTimeframe(item, timeframe) {
   const cleanRows = (sourceRows || []).filter((row) =>
     [row.open, row.high, row.low, row.close].every((value) => Number.isFinite(Number(value)))
   );
-  return cleanRows.slice(-(timeframe === "1D" && item?.intradayChart?.length ? 96 : sessions));
+  if (timeframe === "1D" && item?.intradayChart?.length) {
+    return latestTorontoSessionRows(cleanRows).slice(-96);
+  }
+  return cleanRows.slice(-sessions);
+}
+
+function latestTorontoSessionRows(rows) {
+  if (!rows.length) return rows;
+  const latest = rows[rows.length - 1];
+  const latestSession = torontoDateKey(latest.timestamp) || String(latest.date || "").split(" ")[0];
+  return rows.filter((row) => (torontoDateKey(row.timestamp) || String(row.date || "").split(" ")[0]) === latestSession);
+}
+
+function torontoDateKey(timestamp) {
+  if (!Number.isFinite(timestamp)) return "";
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Toronto",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(timestamp));
+}
+
+function withStochasticRows(rows, period = 14, smooth = 3) {
+  const rawK = rows.map((row, index) => {
+    const windowRows = rows.slice(Math.max(0, index - period + 1), index + 1);
+    if (windowRows.length < period) return null;
+    const highestHigh = Math.max(...windowRows.map((item) => item.high));
+    const lowestLow = Math.min(...windowRows.map((item) => item.low));
+    const range = highestHigh - lowestLow;
+    return range ? ((row.close - lowestLow) / range) * 100 : null;
+  });
+  const smoothK = movingAverageNullable(rawK, smooth);
+  const smoothD = movingAverageNullable(smoothK, smooth);
+  return rows.map((row, index) => ({
+    ...row,
+    stochK: roundChartValue(smoothK[index]),
+    stochD: roundChartValue(smoothD[index]),
+  }));
+}
+
+function movingAverageNullable(values, period) {
+  return values.map((_, index) => {
+    const windowValues = values.slice(Math.max(0, index - period + 1), index + 1).filter(Number.isFinite);
+    if (windowValues.length < period) return null;
+    return windowValues.reduce((sum, value) => sum + value, 0) / windowValues.length;
+  });
+}
+
+function buildPivotLevels(item) {
+  const chart = item?.chart || [];
+  const previous = chart.length >= 2 ? chart[chart.length - 2] : null;
+  if (!previous) return [];
+  const pivot = (previous.high + previous.low + previous.close) / 3;
+  const r1 = pivot * 2 - previous.low;
+  const s1 = pivot * 2 - previous.high;
+  const r2 = pivot + (previous.high - previous.low);
+  const s2 = pivot - (previous.high - previous.low);
+  return [
+    { key: "pivot", label: "P", price: roundChartValue(pivot), color: "#475569", major: true },
+    { key: "r1", label: "R1", price: roundChartValue(r1), color: chartColors.down },
+    { key: "s1", label: "S1", price: roundChartValue(s1), color: chartColors.up },
+    { key: "r2", label: "R2", price: roundChartValue(r2), color: chartColors.down },
+    { key: "s2", label: "S2", price: roundChartValue(s2), color: chartColors.up },
+  ].filter((level) => Number.isFinite(level.price));
+}
+
+function buildAtrBands(rows, period = 14) {
+  if (rows.length < period + 1) return [];
+  const latest = rows[rows.length - 1];
+  const trueRanges = rows.map((row, index) => {
+    const previousClose = rows[index - 1]?.close ?? row.close;
+    return Math.max(row.high - row.low, Math.abs(row.high - previousClose), Math.abs(row.low - previousClose));
+  });
+  const atr = trueRanges.slice(-period).reduce((sum, value) => sum + value, 0) / period;
+  return [
+    { label: "+1 ATR", price: roundChartValue(latest.close + atr), color: chartColors.down },
+    { label: "-1 ATR", price: roundChartValue(latest.close - atr), color: chartColors.up },
+    { label: "+2 ATR", price: roundChartValue(latest.close + atr * 2), color: chartColors.down },
+    { label: "-2 ATR", price: roundChartValue(latest.close - atr * 2), color: chartColors.up },
+  ].filter((level) => Number.isFinite(level.price));
 }
 
 function buildTimeTicks(rows, timeframe) {
