@@ -486,7 +486,6 @@ export default function StockTradingPage() {
         <div className="space-y-4">
           {selected ? (
             <>
-              <SingleAnalysis item={selected} />
               <ChartPanel
                 item={selected}
                 data={data}
@@ -528,16 +527,19 @@ export default function StockTradingPage() {
                   setChartTools(nextTools);
                 }}
               />
-              <BeginnerPlan item={selected} />
-              <OneDayTradeChecklist item={selected} />
-              <TraderSetupsPanel setups={selected.traderSetups || []} />
-              <OverviewTable
-                rows={data?.results || []}
-                selectedTicker={selectedTicker}
-                onSelect={setSelectedTicker}
-                loading={loading}
-              />
-              <BacktestPanel item={selected} />
+              <SingleAnalysis item={selected} />
+              <div className="hidden sm:contents">
+                <BeginnerPlan item={selected} />
+                <OneDayTradeChecklist item={selected} />
+                <TraderSetupsPanel setups={selected.traderSetups || []} />
+                <OverviewTable
+                  rows={data?.results || []}
+                  selectedTicker={selectedTicker}
+                  onSelect={setSelectedTicker}
+                  loading={loading}
+                />
+                <BacktestPanel item={selected} />
+              </div>
             </>
           ) : (
             <section className="rounded-lg border border-slate-300 bg-white p-8 text-center text-sm text-slate-600">
@@ -661,9 +663,11 @@ function SingleAnalysis({ item }) {
               Score {item.score}/100
             </span>
           </div>
-          <ActionBlock item={item} />
-          <ScoreExplanationPanel item={item} />
-          <RuleEnginePanel item={item} />
+          <div className="hidden sm:block">
+            <ActionBlock item={item} />
+            <ScoreExplanationPanel item={item} />
+            <RuleEnginePanel item={item} />
+          </div>
         </div>
         <div className="grid grid-cols-2 gap-2 text-xs md:min-w-[320px]">
           <Metric label="Price" value={money(item.price)} />
