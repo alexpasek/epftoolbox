@@ -346,8 +346,8 @@ export default function StockTradingPage() {
   const [timeframe, setTimeframe] = useState("6M");
   const [chartType, setChartType] = useState("candles");
   const [chartWorkspace, setChartWorkspace] = useState("chart1");
-  const [activePreset, setActivePreset] = useState("swing");
-  const [chartTools, setChartTools] = useState(defaultChartTools);
+  const [activePreset, setActivePreset] = useState("clean");
+  const [chartTools, setChartTools] = useState(chartPresetTools.clean);
   const [autoRefreshMinutes, setAutoRefreshMinutes] = useState("off");
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -687,7 +687,7 @@ function BeginnerPlan({ item }) {
   const warning = action.whatCanGoWrong || "If the rule fails, do not force the trade.";
 
   return (
-    <section className="rounded-lg border border-slate-300 bg-white p-4 shadow-sm">
+    <section className="rounded-lg border border-slate-300 bg-white p-3 shadow-sm sm:p-4">
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div>
           <h2 className="text-sm font-black uppercase tracking-wide text-slate-500">Beginner Trade Plan</h2>
@@ -1026,7 +1026,6 @@ function ChartPanel({
       <div className="mt-4">
         <ChartToolBar tools={tools} onToggleTool={onToggleTool} onSetTools={onSetTools} />
       </div>
-      {isProWorkspace ? <ProStackSummary /> : <ChartRuleOverlay item={item} />}
       <div className="mt-4">
         <CandlestickChart
           key={`${item.ticker}-${timeframe}-${chartType}-${chartWorkspace}-${rows.length}`}
@@ -1037,13 +1036,14 @@ function ChartPanel({
           chartType={chartType}
         />
       </div>
-      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+      {isProWorkspace ? <ProStackSummary /> : <ChartRuleOverlay item={item} />}
+      <div className="mt-3 grid grid-cols-4 gap-1.5 sm:mt-4 sm:gap-3 md:grid-cols-2 xl:grid-cols-4">
         <Metric label="Open" value={money(latest.open)} />
         <Metric label="High" value={money(latest.high)} />
         <Metric label="Low" value={money(latest.low)} />
         <Metric label="Close" value={money(latest.close)} />
       </div>
-      <div className="mt-4 grid gap-4">
+      <div className="mt-4 hidden gap-4 md:grid">
         {indicatorCards}
       </div>
     </section>
@@ -1055,7 +1055,7 @@ function ChartRuleOverlay({ item }) {
   if (!notes.length) return null;
 
   return (
-    <div className="mt-4 grid gap-2 lg:grid-cols-[160px_minmax(0,1fr)_minmax(0,1fr)_130px_130px]">
+    <div className="mt-4 hidden gap-2 sm:grid lg:grid-cols-[160px_minmax(0,1fr)_minmax(0,1fr)_130px_130px]">
       {notes.map((note) => (
         <div
           key={note.label}
@@ -1198,7 +1198,7 @@ function DataSourceBadge() {
 
 function ProStackSummary() {
   return (
-    <div className="mt-4 grid gap-2 md:grid-cols-3">
+    <div className="mt-4 hidden gap-2 sm:grid md:grid-cols-3">
       <MiniInfo title="Day trade" text="VWAP, opening range, previous close, Supertrend, volume." />
       <MiniInfo title="Swing trade" text="EMA/SMA trend, Bollinger, MACD, RSI, DMI/ADX." />
       <MiniInfo title="Long trend" text="EMA200/SMA200 and Ichimoku-style cloud context." />
@@ -1616,7 +1616,7 @@ function TradingViewChart({ rows, item, tools, timeframe, chartType }) {
 
   return (
     <div className="relative overflow-hidden rounded-lg border border-slate-200 bg-white">
-        <div className="absolute left-2 top-2 z-10 max-w-[220px] rounded-md border border-slate-200 bg-white/95 px-2 py-1.5 shadow-sm sm:left-3 sm:top-3 sm:max-w-none sm:px-3 sm:py-2">
+        <div className="absolute left-2 top-2 z-10 hidden max-w-[220px] rounded-md border border-slate-200 bg-white/95 px-2 py-1.5 shadow-sm sm:left-3 sm:top-3 sm:block sm:max-w-none sm:px-3 sm:py-2">
           <p className="text-[10px] font-black uppercase tracking-wide text-slate-500">TradingView Lightweight Chart</p>
           <p className="mt-1 hidden text-xs font-bold text-slate-700 sm:block">Scroll to zoom, drag to pan, hover for OHLC.</p>
         </div>
@@ -1628,7 +1628,7 @@ function TradingViewChart({ rows, item, tools, timeframe, chartType }) {
           </div>
         ) : null}
         {overlayLabels.length ? (
-          <div className="pointer-events-none absolute inset-y-0 right-0 z-20 w-[118px] sm:w-[132px]">
+          <div className="pointer-events-none absolute inset-y-0 right-0 z-20 w-[104px] sm:w-[132px]">
             {overlayLabels.map((label) => {
               const active = activeFocusedIndicator === label.key;
               return (
@@ -1637,7 +1637,7 @@ function TradingViewChart({ rows, item, tools, timeframe, chartType }) {
                   type="button"
                   title={chartIndicatorHelp[label.key] || label.label}
                   onClick={() => setFocusedIndicator(active ? null : label.key)}
-                  className={`pointer-events-auto absolute right-0 grid h-6 grid-cols-[minmax(0,1fr)_52px] overflow-hidden rounded-l-md text-[10px] font-black shadow-sm transition sm:h-7 sm:grid-cols-[minmax(0,1fr)_56px] sm:text-xs ${
+                  className={`pointer-events-auto absolute right-0 grid h-6 grid-cols-[minmax(0,1fr)_46px] overflow-hidden rounded-l-md text-[10px] font-black shadow-sm transition sm:h-7 sm:grid-cols-[minmax(0,1fr)_56px] sm:text-xs ${
                     active ? "ring-2 ring-slate-950 ring-offset-1" : ""
                   }`}
                   style={{ top: `${label.y - 12}px` }}
@@ -1662,7 +1662,7 @@ function TradingViewChart({ rows, item, tools, timeframe, chartType }) {
             ) : null}
           </div>
         ) : null}
-        <div ref={containerRef} className="h-[360px] w-full sm:h-[420px] md:h-[540px] xl:h-[620px]" />
+        <div ref={containerRef} className="h-[430px] w-full sm:h-[460px] md:h-[540px] xl:h-[620px]" />
     </div>
   );
 }
@@ -1747,6 +1747,7 @@ function stackOverlayLabels(labels, height, activeKey) {
   const minY = 18;
   const maxY = height - 18;
   const selected = [];
+  const maxLabels = Math.max(5, Math.min(9, Math.floor((height - minY * 2) / minGap)));
   const sortedByPriority = [...labels].sort((a, b) => {
     if (a.key === activeKey) return -1;
     if (b.key === activeKey) return 1;
@@ -1754,13 +1755,25 @@ function stackOverlayLabels(labels, height, activeKey) {
   });
 
   sortedByPriority.forEach((label) => {
+    if (selected.length >= maxLabels && label.key !== activeKey) return;
     const y = Math.max(minY, Math.min(maxY, label.y));
-    const candidate = { ...label, y };
+    const candidate = { ...label, y: nearestOpenLabelY(y, selected, minY, maxY, minGap) };
     const collides = selected.some((existing) => Math.abs(existing.y - candidate.y) < minGap);
-    if (!collides || label.key === activeKey) selected.push(candidate);
+    if (!collides) selected.push(candidate);
   });
 
   return selected.sort((a, b) => a.y - b.y);
+}
+
+function nearestOpenLabelY(targetY, selected, minY, maxY, minGap) {
+  if (!selected.some((label) => Math.abs(label.y - targetY) < minGap)) return targetY;
+  for (let offset = minGap; offset <= maxY - minY; offset += minGap) {
+    const down = Math.min(maxY, targetY + offset);
+    if (!selected.some((label) => Math.abs(label.y - down) < minGap)) return down;
+    const up = Math.max(minY, targetY - offset);
+    if (!selected.some((label) => Math.abs(label.y - up) < minGap)) return up;
+  }
+  return targetY;
 }
 
 function addPrimarySeries(chart, rows, chartType) {
@@ -2967,9 +2980,9 @@ function RuleStatusPill({ status }) {
 
 function Metric({ label, value }) {
   return (
-    <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
-      <div className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{label}</div>
-      <div className="mt-1 text-sm font-black text-slate-950">{value ?? "-"}</div>
+    <div className="min-w-0 rounded-md border border-slate-200 bg-slate-50 px-1.5 py-2 sm:px-3">
+      <div className="truncate text-[9px] font-bold uppercase tracking-wide text-slate-500 sm:text-[11px]">{label}</div>
+      <div className="mt-1 truncate text-xs font-black text-slate-950 sm:text-sm">{value ?? "-"}</div>
     </div>
   );
 }
