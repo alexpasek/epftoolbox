@@ -396,8 +396,22 @@ export default function StockTradingPage() {
     return () => window.clearInterval(interval);
   }, [autoRefreshMinutes, loadSignals]);
 
+  useEffect(() => {
+    const previousBodyOverflow = document.body.style.overflowX;
+    const previousHtmlOverflow = document.documentElement.style.overflowX;
+    const previousBodyMaxWidth = document.body.style.maxWidth;
+    document.body.style.overflowX = "hidden";
+    document.documentElement.style.overflowX = "hidden";
+    document.body.style.maxWidth = "100vw";
+    return () => {
+      document.body.style.overflowX = previousBodyOverflow;
+      document.documentElement.style.overflowX = previousHtmlOverflow;
+      document.body.style.maxWidth = previousBodyMaxWidth;
+    };
+  }, []);
+
   return (
-    <main className="min-h-screen overflow-x-hidden bg-slate-100">
+    <main className="min-h-screen w-full max-w-[100vw] overflow-x-hidden bg-slate-100">
       <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto flex max-w-7xl flex-col gap-4 px-3 py-4 sm:px-4 sm:py-5 md:flex-row md:items-center md:justify-between">
           <div>
@@ -415,9 +429,9 @@ export default function StockTradingPage() {
         </div>
       </header>
 
-      <section className="mx-auto grid max-w-[1720px] gap-4 px-3 py-4 sm:px-4 sm:py-5 xl:grid-cols-[300px_1fr]">
-        <aside className="space-y-4">
-          <section className="rounded-lg border border-slate-300 bg-white p-4 shadow-sm">
+      <section className="mx-auto grid w-full max-w-[1720px] min-w-0 gap-4 overflow-x-hidden px-3 py-4 sm:px-4 sm:py-5 xl:grid-cols-[300px_minmax(0,1fr)]">
+        <aside className="min-w-0 space-y-4">
+          <section className="min-w-0 rounded-lg border border-slate-300 bg-white p-4 shadow-sm">
             <h2 className="text-sm font-black uppercase tracking-wide text-slate-950">Controls</h2>
             <label className="mt-3 block text-xs font-bold text-slate-600">Watchlist</label>
             <textarea
@@ -459,7 +473,7 @@ export default function StockTradingPage() {
             {error ? <p className="mt-3 text-sm font-semibold text-rose-700">{error}</p> : null}
           </section>
 
-          <section className="rounded-lg border border-slate-300 bg-white p-4 shadow-sm">
+          <section className="min-w-0 rounded-lg border border-slate-300 bg-white p-4 shadow-sm">
             <h2 className="text-sm font-black uppercase tracking-wide text-slate-950">Signal Score</h2>
             <div className="mt-3 space-y-2 text-sm text-slate-700">
               <ScoreLine label="Trend" value="25" />
@@ -471,7 +485,7 @@ export default function StockTradingPage() {
             </div>
           </section>
 
-          <section className="rounded-lg border border-slate-300 bg-white p-4 shadow-sm">
+          <section className="min-w-0 rounded-lg border border-slate-300 bg-white p-4 shadow-sm">
             <h2 className="text-sm font-black uppercase tracking-wide text-slate-950">Signal Meaning</h2>
             <div className="mt-3 space-y-2 text-xs text-slate-700">
               <p><strong>ENTRY CONFIRMED:</strong> latest closed candle confirms the entry rule.</p>
@@ -483,7 +497,7 @@ export default function StockTradingPage() {
           </section>
         </aside>
 
-        <div className="space-y-4">
+        <div className="min-w-0 max-w-full space-y-4 overflow-x-hidden">
           {selected ? (
             <>
               <ChartPanel
@@ -542,7 +556,7 @@ export default function StockTradingPage() {
               </div>
             </>
           ) : (
-            <section className="rounded-lg border border-slate-300 bg-white p-8 text-center text-sm text-slate-600">
+            <section className="min-w-0 rounded-lg border border-slate-300 bg-white p-8 text-center text-sm text-slate-600">
               {loading ? "Loading ETF signals..." : "No ETF analysis loaded yet."}
             </section>
           )}
@@ -554,7 +568,7 @@ export default function StockTradingPage() {
 
 function ChartTypeButtons({ value, onChange }) {
   return (
-    <div className="-mx-1 flex snap-x gap-2 overflow-x-auto px-1 pb-1 sm:flex-wrap sm:justify-start sm:overflow-visible xl:justify-end">
+    <div className="-mx-1 flex max-w-full snap-x gap-2 overflow-x-auto px-1 pb-1 sm:flex-wrap sm:justify-start sm:overflow-visible xl:justify-end">
       {chartTypes.map((item) => (
         <button
           key={item.key}
@@ -578,7 +592,7 @@ function ChartTypeButtons({ value, onChange }) {
 
 function TimeframeButtons({ value, onChange }) {
   return (
-    <div className="-mx-1 flex snap-x gap-2 overflow-x-auto px-1 pb-1 sm:flex-wrap sm:overflow-visible">
+    <div className="-mx-1 flex max-w-full snap-x gap-2 overflow-x-auto px-1 pb-1 sm:flex-wrap sm:overflow-visible">
       {timeframes.map((item) => (
         <button
           key={item.label}
@@ -653,10 +667,10 @@ function OverviewTable({ rows, selectedTicker, onSelect, loading }) {
 
 function SingleAnalysis({ item }) {
   return (
-    <section className="rounded-lg border border-slate-300 bg-white p-3 shadow-sm sm:p-4">
-      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-        <div>
-          <div className="flex flex-wrap items-center gap-3">
+    <section className="min-w-0 max-w-full overflow-x-hidden rounded-lg border border-slate-300 bg-white p-3 shadow-sm sm:p-4">
+      <div className="flex min-w-0 flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div className="min-w-0">
+          <div className="flex min-w-0 flex-wrap items-center gap-3">
             <h2 className="text-2xl font-black text-slate-950">{item.ticker}</h2>
             <SignalPill signal={item.signal} />
             <span className="rounded-md border border-slate-300 px-2 py-1 text-xs font-black text-slate-700">
@@ -669,7 +683,7 @@ function SingleAnalysis({ item }) {
             <RuleEnginePanel item={item} />
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-2 text-xs md:min-w-[320px]">
+        <div className="grid min-w-0 grid-cols-2 gap-2 text-xs md:min-w-[320px]">
           <Metric label="Price" value={money(item.price)} />
           <Metric label="Trend" value={item.trend} />
           <Metric label="Stop" value={money(item.stop)} />
@@ -1027,7 +1041,7 @@ function ChartPanel({
         </div>
         <DataSourceBadge />
       </div>
-      <div className="mt-4">
+      <div className="mt-4 min-w-0 max-w-full">
         <ChartToolBar tools={tools} onToggleTool={onToggleTool} onSetTools={onSetTools} />
       </div>
       <div className="mt-4">
@@ -1041,7 +1055,7 @@ function ChartPanel({
         />
       </div>
       {isProWorkspace ? <ProStackSummary /> : <ChartRuleOverlay item={item} />}
-      <div className="mt-3 grid grid-cols-4 gap-1.5 sm:mt-4 sm:gap-3 md:grid-cols-2 xl:grid-cols-4">
+      <div className="mt-3 grid min-w-0 grid-cols-4 gap-1.5 sm:mt-4 sm:gap-3 md:grid-cols-2 xl:grid-cols-4">
         <Metric label="Open" value={money(latest.open)} />
         <Metric label="High" value={money(latest.high)} />
         <Metric label="Low" value={money(latest.low)} />
@@ -1098,7 +1112,7 @@ function ChartTopControls({
   onApplyPreset,
 }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-slate-50 p-2 sm:p-3">
+    <div className="min-w-0 max-w-full overflow-x-hidden rounded-lg border border-slate-200 bg-slate-50 p-2 sm:p-3">
       <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-start">
         <div>
           <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 sm:flex sm:flex-wrap sm:items-center sm:gap-3">
@@ -1137,7 +1151,7 @@ function ChartTopControls({
             Data source: Yahoo Finance chart endpoint. Manual/auto refresh only; no broker feed, no websocket, no order execution. Last loaded: {data?.generatedAt ? new Date(data.generatedAt).toLocaleString() : "not loaded yet"}.
           </p>
         </div>
-        <div className="min-w-0 space-y-2">
+        <div className="min-w-0 max-w-full space-y-2 overflow-x-hidden">
           <SwitchRow>
             {chartWorkspaces.map((workspace) => (
               <ModeSwitchButton
@@ -1170,7 +1184,7 @@ function ChartTopControls({
 }
 
 function SwitchRow({ children }) {
-  return <div className="-mx-1 flex snap-x gap-2 overflow-x-auto px-1 pb-1 sm:flex-wrap sm:overflow-visible xl:justify-end">{children}</div>;
+  return <div className="-mx-1 flex max-w-full snap-x gap-2 overflow-x-auto px-1 pb-1 sm:flex-wrap sm:overflow-visible xl:justify-end">{children}</div>;
 }
 
 function ModeSwitchButton({ active, neutral = false, label, detail, onClick }) {
@@ -1221,8 +1235,8 @@ function MiniInfo({ title, text }) {
 
 function ChartToolBar({ tools, onToggleTool, onSetTools }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-slate-50 p-2 sm:p-3">
-      <div className="-mx-1 grid auto-cols-[minmax(190px,240px)] grid-flow-col gap-2 overflow-x-auto px-1 pb-1 sm:gap-3 xl:mx-0 xl:grid-flow-row xl:grid-cols-5 xl:overflow-visible xl:px-0 xl:pb-0">
+    <div className="min-w-0 max-w-full overflow-x-hidden rounded-lg border border-slate-200 bg-slate-50 p-2 sm:p-3">
+      <div className="-mx-1 grid max-w-full auto-cols-[minmax(172px,210px)] grid-flow-col gap-2 overflow-x-auto px-1 pb-1 sm:auto-cols-[minmax(190px,240px)] sm:gap-3 xl:mx-0 xl:grid-flow-row xl:grid-cols-5 xl:overflow-visible xl:px-0 xl:pb-0">
         {toolGroups.map((group) => (
           <ToolGroup key={group.key} group={group} tools={tools} onToggleTool={onToggleTool} onSetTools={onSetTools} />
         ))}
@@ -1619,7 +1633,7 @@ function TradingViewChart({ rows, item, tools, timeframe, chartType }) {
   }
 
   return (
-    <div className="relative overflow-hidden rounded-lg border border-slate-200 bg-white">
+    <div className="relative w-full min-w-0 max-w-full overflow-hidden rounded-lg border border-slate-200 bg-white">
         <div className="absolute left-2 top-2 z-10 hidden max-w-[220px] rounded-md border border-slate-200 bg-white/95 px-2 py-1.5 shadow-sm sm:left-3 sm:top-3 sm:block sm:max-w-none sm:px-3 sm:py-2">
           <p className="text-[10px] font-black uppercase tracking-wide text-slate-500">TradingView Lightweight Chart</p>
           <p className="mt-1 hidden text-xs font-bold text-slate-700 sm:block">Scroll to zoom, drag to pan, hover for OHLC.</p>
@@ -1632,7 +1646,7 @@ function TradingViewChart({ rows, item, tools, timeframe, chartType }) {
           </div>
         ) : null}
         {overlayLabels.length ? (
-          <div className="pointer-events-none absolute inset-y-0 right-0 z-20 w-[104px] sm:w-[132px]">
+          <div className="pointer-events-none absolute inset-y-0 right-0 z-20 w-[92px] sm:w-[132px]">
             {overlayLabels.map((label) => {
               const active = activeFocusedIndicator === label.key;
               return (
@@ -1641,7 +1655,7 @@ function TradingViewChart({ rows, item, tools, timeframe, chartType }) {
                   type="button"
                   title={chartIndicatorHelp[label.key] || label.label}
                   onClick={() => setFocusedIndicator(active ? null : label.key)}
-                  className={`pointer-events-auto absolute right-0 grid h-6 grid-cols-[minmax(0,1fr)_46px] overflow-hidden rounded-l-md text-[10px] font-black shadow-sm transition sm:h-7 sm:grid-cols-[minmax(0,1fr)_56px] sm:text-xs ${
+                  className={`pointer-events-auto absolute right-0 grid h-6 grid-cols-[minmax(0,1fr)_42px] overflow-hidden rounded-l-md text-[9px] font-black shadow-sm transition sm:h-7 sm:grid-cols-[minmax(0,1fr)_56px] sm:text-xs ${
                     active ? "ring-2 ring-slate-950 ring-offset-1" : ""
                   }`}
                   style={{ top: `${label.y - 12}px` }}
@@ -1666,7 +1680,7 @@ function TradingViewChart({ rows, item, tools, timeframe, chartType }) {
             ) : null}
           </div>
         ) : null}
-        <div ref={containerRef} className="h-[430px] w-full sm:h-[460px] md:h-[540px] xl:h-[620px]" />
+        <div ref={containerRef} className="h-[430px] w-full min-w-0 max-w-full touch-pan-y sm:h-[460px] md:h-[540px] xl:h-[620px]" />
     </div>
   );
 }
