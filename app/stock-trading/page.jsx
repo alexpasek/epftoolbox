@@ -1303,7 +1303,6 @@ function TradingViewChart({ rows, item, tools, timeframe, chartType }) {
   const chartRef = useRef(null);
   const [hover, setHover] = useState(null);
   const [focusedIndicator, setFocusedIndicator] = useState(null);
-  const [overlayLabels, setOverlayLabels] = useState([]);
   const validRows = useMemo(() => rows.filter(isValidPriceRow), [rows]);
   const displayRows = useMemo(() => {
     if (chartType === "heikinAshi") return buildHeikinAshiRows(validRows);
@@ -1315,6 +1314,10 @@ function TradingViewChart({ rows, item, tools, timeframe, chartType }) {
     [validRows, item, tools, timeframe]
   );
   const activeFocusedIndicator = focusChoices.some((choice) => choice.key === focusedIndicator) ? focusedIndicator : null;
+  const overlayLabels = useMemo(
+    () => compactOverlayLabels(focusChoices, activeFocusedIndicator),
+    [focusChoices, activeFocusedIndicator]
+  );
 
   useEffect(() => {
     const container = containerRef.current;
@@ -1574,7 +1577,7 @@ function TradingViewChart({ rows, item, tools, timeframe, chartType }) {
           color: level.color,
           lineWidth: 1,
           lineStyle: 2,
-          axisLabelVisible: true,
+          axisLabelVisible: false,
           title: level.label,
         });
       });
@@ -1595,34 +1598,12 @@ function TradingViewChart({ rows, item, tools, timeframe, chartType }) {
 
     chart.timeScale().fitContent();
 
-    const updateOverlayLabels = () => {
-      const height = container.clientHeight || 620;
-      const labels = focusChoices
-        .map((choice) => {
-          if (!Number.isFinite(choice.price)) return null;
-          const y = primarySeries.priceToCoordinate(choice.price);
-          if (!Number.isFinite(y)) return null;
-          return {
-            ...choice,
-            y: Math.max(16, Math.min(height - 18, y)),
-          };
-        })
-        .filter(Boolean);
-      setOverlayLabels(stackOverlayLabels(labels, height, activeFocusedIndicator));
-    };
-    const requestOverlayUpdate = () => {
-      window.requestAnimationFrame(updateOverlayLabels);
-    };
-    requestOverlayUpdate();
-    chart.timeScale().subscribeVisibleLogicalRangeChange(requestOverlayUpdate);
-
     chart.subscribeCrosshairMove((param) => {
       const row = validRows.find((entry) => chartTime(entry) === param.time);
       setHover(row ? { row } : null);
     });
 
     return () => {
-      chart.timeScale().unsubscribeVisibleLogicalRangeChange(requestOverlayUpdate);
       chart.remove();
       chartRef.current = null;
     };
@@ -1634,7 +1615,43 @@ function TradingViewChart({ rows, item, tools, timeframe, chartType }) {
 
   return (
     <div className="relative w-full min-w-0 max-w-full overflow-hidden rounded-lg border border-slate-200 bg-white">
-        <div className="absolute left-2 top-2 z-10 hidden max-w-[220px] rounded-md border border-slate-200 bg-white/95 px-2 py-1.5 shadow-sm sm:left-3 sm:top-3 sm:block sm:max-w-none sm:px-3 sm:py-2">
+        {overlayLabels.length ? (
+          <div className="border-b border-slate-200 bg-white px-2 py-2 sm:px-3">
+            <div className="flex max-w-full snap-x gap-1 overflow-x-auto pb-1 sm:flex-wrap sm:gap-1.5 sm:overflow-visible sm:pb-0">
+              {activeFocusedIndicator ? (
+                <button
+                  type="button"
+                  onClick={() => setFocusedIndicator(null)}
+                  className="shrink-0 snap-start rounded-md bg-slate-950 px-2 py-1.5 text-[10px] font-black text-white shadow-sm sm:px-2.5 sm:text-[11px]"
+                >
+                  All
+                </button>
+              ) : null}
+              {overlayLabels.map((label) => {
+                const active = activeFocusedIndicator === label.key;
+                return (
+                  <button
+                    key={label.key}
+                    type="button"
+                    title={chartIndicatorHelp[label.key] || label.label}
+                    onClick={() => setFocusedIndicator(active ? null : label.key)}
+                    className={`grid shrink-0 snap-start grid-cols-[auto_auto] overflow-hidden rounded-md border text-[10px] font-black shadow-sm transition sm:text-xs ${
+                      active ? "border-slate-950 ring-2 ring-slate-950 ring-offset-1" : "border-white"
+                    }`}
+                  >
+                    <span className="flex min-w-0 items-center px-1.5 py-1.5 text-white sm:px-2" style={{ backgroundColor: label.color }}>
+                      <span className="max-w-[74px] truncate sm:max-w-[120px]">{label.label}</span>
+                    </span>
+                    <span className="flex items-center justify-center px-1.5 py-1.5 text-white sm:px-2" style={{ backgroundColor: label.color }}>
+                      {money(label.price)}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
+        <div className="absolute left-2 top-14 z-10 hidden max-w-[220px] rounded-md border border-slate-200 bg-white/95 px-2 py-1.5 shadow-sm sm:left-3 sm:top-16 sm:block sm:max-w-none sm:px-3 sm:py-2">
           <p className="text-[10px] font-black uppercase tracking-wide text-slate-500">TradingView Lightweight Chart</p>
           <p className="mt-1 hidden text-xs font-bold text-slate-700 sm:block">Scroll to zoom, drag to pan, hover for OHLC.</p>
         </div>
@@ -1643,41 +1660,6 @@ function TradingViewChart({ rows, item, tools, timeframe, chartType }) {
             <span className="font-bold text-slate-500">Time</span><span className="font-black text-slate-950">{hover.row.date}</span>
             <span className="font-bold text-slate-500">O/H/L/C</span><span className="font-black text-slate-950">{money(hover.row.open)} / {money(hover.row.high)} / {money(hover.row.low)} / {money(hover.row.close)}</span>
             <span className="font-bold text-slate-500">Volume</span><span className="font-black text-slate-950">{number(hover.row.volume)}</span>
-          </div>
-        ) : null}
-        {overlayLabels.length ? (
-          <div className="pointer-events-none absolute inset-y-0 right-0 z-20 w-[92px] sm:w-[132px]">
-            {overlayLabels.map((label) => {
-              const active = activeFocusedIndicator === label.key;
-              return (
-                <button
-                  key={label.key}
-                  type="button"
-                  title={chartIndicatorHelp[label.key] || label.label}
-                  onClick={() => setFocusedIndicator(active ? null : label.key)}
-                  className={`pointer-events-auto absolute right-0 grid h-6 grid-cols-[minmax(0,1fr)_42px] overflow-hidden rounded-l-md text-[9px] font-black shadow-sm transition sm:h-7 sm:grid-cols-[minmax(0,1fr)_56px] sm:text-xs ${
-                    active ? "ring-2 ring-slate-950 ring-offset-1" : ""
-                  }`}
-                  style={{ top: `${label.y - 12}px` }}
-                >
-                  <span className="flex min-w-0 items-center justify-end gap-1 truncate px-1.5 text-white" style={{ backgroundColor: label.color }}>
-                    <span className="truncate">{label.label}</span>
-                  </span>
-                  <span className="flex items-center justify-center text-white" style={{ backgroundColor: label.color }}>
-                    {money(label.price)}
-                  </span>
-                </button>
-              );
-            })}
-            {activeFocusedIndicator ? (
-              <button
-                type="button"
-                onClick={() => setFocusedIndicator(null)}
-                className="pointer-events-auto absolute right-0 top-2 rounded-l-md bg-slate-950 px-2 py-1 text-[11px] font-black text-white shadow-sm"
-              >
-                All
-              </button>
-            ) : null}
           </div>
         ) : null}
         <div ref={containerRef} className="h-[430px] w-full min-w-0 max-w-full touch-pan-y sm:h-[460px] md:h-[540px] xl:h-[620px]" />
@@ -1760,12 +1742,9 @@ function buildFocusChoices(rows, item, tools, timeframe) {
   return choices;
 }
 
-function stackOverlayLabels(labels, height, activeKey) {
-  const minGap = 25;
-  const minY = 18;
-  const maxY = height - 18;
+function compactOverlayLabels(labels, activeKey) {
   const selected = [];
-  const maxLabels = Math.max(5, Math.min(9, Math.floor((height - minY * 2) / minGap)));
+  const maxLabels = 14;
   const sortedByPriority = [...labels].sort((a, b) => {
     if (a.key === activeKey) return -1;
     if (b.key === activeKey) return 1;
@@ -1774,24 +1753,10 @@ function stackOverlayLabels(labels, height, activeKey) {
 
   sortedByPriority.forEach((label) => {
     if (selected.length >= maxLabels && label.key !== activeKey) return;
-    const y = Math.max(minY, Math.min(maxY, label.y));
-    const candidate = { ...label, y: nearestOpenLabelY(y, selected, minY, maxY, minGap) };
-    const collides = selected.some((existing) => Math.abs(existing.y - candidate.y) < minGap);
-    if (!collides) selected.push(candidate);
+    selected.push(label);
   });
 
-  return selected.sort((a, b) => a.y - b.y);
-}
-
-function nearestOpenLabelY(targetY, selected, minY, maxY, minGap) {
-  if (!selected.some((label) => Math.abs(label.y - targetY) < minGap)) return targetY;
-  for (let offset = minGap; offset <= maxY - minY; offset += minGap) {
-    const down = Math.min(maxY, targetY + offset);
-    if (!selected.some((label) => Math.abs(label.y - down) < minGap)) return down;
-    const up = Math.max(minY, targetY - offset);
-    if (!selected.some((label) => Math.abs(label.y - up) < minGap)) return up;
-  }
-  return targetY;
+  return selected.sort((a, b) => (b.priority || 0) - (a.priority || 0));
 }
 
 function addPrimarySeries(chart, rows, chartType) {
