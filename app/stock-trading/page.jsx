@@ -992,6 +992,7 @@ function ChartPanel({
   onToggleTool,
   onSetTools,
 }) {
+  const [crosshairRow, setCrosshairRow] = useState(null);
   const rows = useMemo(() => chartRowsForTimeframe(item, timeframe), [item, timeframe]);
   const latest = rows[rows.length - 1] || {};
   const timeframeLabel = timeframe === "1D" && item.intradayChart?.length
@@ -1000,12 +1001,12 @@ function ChartPanel({
       ? "latest daily candle"
       : `${timeframe} daily candles`;
   const indicatorCards = [
-    tools.volume ? <VolumeChart key="volume" rows={rows} /> : null,
-    tools.macd ? <MacdChart key="macd" rows={rows} /> : null,
-    tools.rsi ? <SparkChart key="rsi" title="RSI 14" rows={rows} keys={[["rsi", chartColors.rsi]]} height={150} fixedMin={0} fixedMax={100} levels={[70, 30]} note="Above 70 is stretched. Below 30 is oversold." /> : null,
-    tools.stochastic ? <SparkChart key="stochastic" title="Stochastic 14/3" rows={withStochasticRows(rows)} keys={[["stochK", "#0ea5e9"], ["stochD", "#ef4444"]]} height={150} fixedMin={0} fixedMax={100} levels={[80, 20]} note="Short-term momentum. Above 80 is hot; below 20 is cold." /> : null,
-    tools.williamsR ? <SparkChart key="williamsR" title="Williams %R" rows={rows} keys={[["williamsR", chartColors.williamsR]]} height={150} fixedMin={-100} fixedMax={0} levels={[-20, -80]} note={williamsStatus(latest.williamsR)} /> : null,
-    tools.dmi ? <SparkChart key="dmi" title="DMI 14" rows={rows} keys={[["plusDI", chartColors.plusDI], ["minusDI", chartColors.minusDI], ["adx", chartColors.adx]]} height={150} fixedMin={0} fixedMax={60} note="+DI over -DI favors buyers. ADX shows trend strength." /> : null,
+    tools.volume ? <VolumeChart key="volume" rows={rows} crosshairRow={crosshairRow} onCrosshairRowChange={setCrosshairRow} /> : null,
+    tools.macd ? <MacdChart key="macd" rows={rows} crosshairRow={crosshairRow} onCrosshairRowChange={setCrosshairRow} /> : null,
+    tools.rsi ? <SparkChart key="rsi" title="RSI 14" rows={rows} keys={[["rsi", chartColors.rsi]]} height={150} fixedMin={0} fixedMax={100} levels={[70, 30]} note="Above 70 is stretched. Below 30 is oversold." crosshairRow={crosshairRow} onCrosshairRowChange={setCrosshairRow} /> : null,
+    tools.stochastic ? <SparkChart key="stochastic" title="Stochastic 14/3" rows={withStochasticRows(rows)} keys={[["stochK", "#0ea5e9"], ["stochD", "#ef4444"]]} height={150} fixedMin={0} fixedMax={100} levels={[80, 20]} note="Short-term momentum. Above 80 is hot; below 20 is cold." crosshairRow={crosshairRow} onCrosshairRowChange={setCrosshairRow} /> : null,
+    tools.williamsR ? <SparkChart key="williamsR" title="Williams %R" rows={rows} keys={[["williamsR", chartColors.williamsR]]} height={150} fixedMin={-100} fixedMax={0} levels={[-20, -80]} note={williamsStatus(latest.williamsR)} crosshairRow={crosshairRow} onCrosshairRowChange={setCrosshairRow} /> : null,
+    tools.dmi ? <SparkChart key="dmi" title="DMI 14" rows={rows} keys={[["plusDI", chartColors.plusDI], ["minusDI", chartColors.minusDI], ["adx", chartColors.adx]]} height={150} fixedMin={0} fixedMax={60} note="+DI over -DI favors buyers. ADX shows trend strength." crosshairRow={crosshairRow} onCrosshairRowChange={setCrosshairRow} /> : null,
     tools.relativeVolume ? <RelativeVolumeCard key="relativeVolume" rows={rows} /> : null,
   ].filter(Boolean);
   const isProWorkspace = chartWorkspace === "chart2";
@@ -1052,6 +1053,8 @@ function ChartPanel({
           tools={tools}
           timeframe={timeframe}
           chartType={chartType}
+          crosshairRow={crosshairRow}
+          onCrosshairRowChange={setCrosshairRow}
         />
       </div>
       {isProWorkspace ? <ProStackSummary /> : <ChartRuleOverlay item={item} />}
@@ -1294,13 +1297,14 @@ function ToolSwitch({ active, label, onClick }) {
   );
 }
 
-function CandlestickChart({ rows, item, tools, timeframe, chartType }) {
-  return <TradingViewChart rows={rows} item={item} tools={tools} timeframe={timeframe} chartType={chartType} />;
+function CandlestickChart({ rows, item, tools, timeframe, chartType, crosshairRow, onCrosshairRowChange }) {
+  return <TradingViewChart rows={rows} item={item} tools={tools} timeframe={timeframe} chartType={chartType} crosshairRow={crosshairRow} onCrosshairRowChange={onCrosshairRowChange} />;
 }
 
-function TradingViewChart({ rows, item, tools, timeframe, chartType }) {
+function TradingViewChart({ rows, item, tools, timeframe, chartType, crosshairRow, onCrosshairRowChange }) {
   const containerRef = useRef(null);
   const chartRef = useRef(null);
+  const primarySeriesRef = useRef(null);
   const [hover, setHover] = useState(null);
   const [focusedIndicator, setFocusedIndicator] = useState(null);
   const validRows = useMemo(() => rows.filter(isValidPriceRow), [rows]);
@@ -1362,6 +1366,7 @@ function TradingViewChart({ rows, item, tools, timeframe, chartType }) {
     chartRef.current = chart;
 
     const primarySeries = addPrimarySeries(chart, displayRows, chartType);
+    primarySeriesRef.current = primarySeries;
 
     const lineFocusOptions = (key, color, options = {}) => {
       const isFocused = activeFocusedIndicator === key;
@@ -1599,15 +1604,33 @@ function TradingViewChart({ rows, item, tools, timeframe, chartType }) {
     chart.timeScale().fitContent();
 
     chart.subscribeCrosshairMove((param) => {
+      if (!param.time || !param.point) {
+        setHover(null);
+        onCrosshairRowChange?.(null);
+        return;
+      }
       const row = validRows.find((entry) => chartTime(entry) === param.time);
-      setHover(row ? { row } : null);
+      const cursorPrice = primarySeries.coordinateToPrice(param.point.y);
+      const nextHover = row ? { row, price: Number.isFinite(cursorPrice) ? cursorPrice : row.close, time: param.time } : null;
+      setHover(nextHover);
+      onCrosshairRowChange?.(nextHover?.row || null);
     });
 
     return () => {
       chart.remove();
       chartRef.current = null;
+      primarySeriesRef.current = null;
     };
-  }, [displayRows, validRows, item, tools, timeframe, chartType, activeFocusedIndicator, focusChoices]);
+  }, [displayRows, validRows, item, tools, timeframe, chartType, activeFocusedIndicator, focusChoices, onCrosshairRowChange]);
+
+  useEffect(() => {
+    if (!chartRef.current || !primarySeriesRef.current) return;
+    if (!crosshairRow) {
+      chartRef.current.clearCrosshairPosition?.();
+      return;
+    }
+    chartRef.current.setCrosshairPosition?.(crosshairRow.close, chartTime(crosshairRow), primarySeriesRef.current);
+  }, [crosshairRow]);
 
   if (!validRows.length) {
     return <div className="flex min-h-[280px] items-center justify-center rounded-lg bg-slate-50 px-3 text-center text-sm font-bold text-slate-500 sm:min-h-[360px]">No valid chart data. Check 1D candle availability.</div>;
@@ -1657,7 +1680,8 @@ function TradingViewChart({ rows, item, tools, timeframe, chartType }) {
         </div>
         {tools.tooltip && hover?.row ? (
           <div className="absolute right-2 top-2 z-10 grid max-w-[210px] grid-cols-2 gap-x-2 gap-y-1 rounded-md border border-slate-200 bg-white/95 px-2 py-1.5 text-[11px] shadow-sm sm:right-3 sm:top-3 sm:max-w-none sm:gap-x-4 sm:px-3 sm:py-2 sm:text-xs">
-            <span className="font-bold text-slate-500">Time</span><span className="font-black text-slate-950">{hover.row.date}</span>
+            <span className="font-bold text-slate-500">Time</span><span className="font-black text-slate-950">{formatChartCrosshairTime(hover.time || chartTime(hover.row), timeframe)}</span>
+            <span className="font-bold text-slate-500">Cursor</span><span className="font-black text-slate-950">{money(hover.price)}</span>
             <span className="font-bold text-slate-500">O/H/L/C</span><span className="font-black text-slate-950">{money(hover.row.open)} / {money(hover.row.high)} / {money(hover.row.low)} / {money(hover.row.close)}</span>
             <span className="font-bold text-slate-500">Volume</span><span className="font-black text-slate-950">{number(hover.row.volume)}</span>
           </div>
@@ -2496,7 +2520,7 @@ function ChartHover({ hover, width, height, padding, item }) {
   );
 }
 
-function MacdChart({ rows }) {
+function MacdChart({ rows, crosshairRow, onCrosshairRowChange }) {
   const width = 760;
   const height = 170;
   const padding = 18;
@@ -2519,6 +2543,9 @@ function MacdChart({ rows }) {
   const zeroY = y(0);
   const step = (width - padding * 2) / Math.max(rows.length, 1);
   const barWidth = Math.max(2, Math.min(8, step * 0.7));
+  const crosshair = chartCrosshairForRows(rows, crosshairRow, width, padding);
+  const crosshairMacd = crosshair?.row?.macd;
+  const handlePointerMove = (event) => onCrosshairRowChange?.(rowFromSvgPointer(event, rows, width, padding));
 
   return (
     <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
@@ -2534,7 +2561,12 @@ function MacdChart({ rows }) {
           <Legend color={chartColors.down} label="Negative bars" />
         </div>
       </div>
-      <svg viewBox={`0 0 ${width} ${height}`} className="h-auto w-full overflow-visible">
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        onPointerMove={handlePointerMove}
+        onPointerLeave={() => onCrosshairRowChange?.(null)}
+        className="h-auto w-full cursor-crosshair overflow-visible"
+      >
         <line x1={padding} x2={width - padding} y1={zeroY} y2={zeroY} stroke={chartColors.axis} />
         <line x1={padding} x2={padding} y1={padding} y2={height - padding} stroke={chartColors.axis} />
         {rows.map((row, index) => {
@@ -2560,12 +2592,23 @@ function MacdChart({ rows }) {
             .join(" ");
           return <polyline key={key} fill="none" stroke={color} strokeWidth="2" points={points} />;
         })}
+        {crosshair ? (
+          <ChartMiniCrosshair
+            x={crosshair.x}
+            y={Number.isFinite(crosshairMacd) ? y(crosshairMacd) : null}
+            width={width}
+            height={height}
+            padding={padding}
+            row={crosshair.row}
+            valueLabel={Number.isFinite(crosshairMacd) ? `MACD ${number(crosshairMacd)}` : "MACD -"}
+          />
+        ) : null}
       </svg>
     </div>
   );
 }
 
-function VolumeChart({ rows }) {
+function VolumeChart({ rows, crosshairRow, onCrosshairRowChange }) {
   const volumeStatus = (() => {
     const latest = rows[rows.length - 1];
     if (!latest?.volumeSma20) return "Volume data";
@@ -2580,7 +2623,7 @@ function VolumeChart({ rows }) {
         <h3 className="text-xs font-black uppercase tracking-wide text-slate-700">Volume</h3>
         <span className="text-xs font-black text-slate-500">{volumeStatus}</span>
       </div>
-      <SparkBars rows={rows} />
+      <SparkBars rows={rows} crosshairRow={crosshairRow} onCrosshairRowChange={onCrosshairRowChange} />
     </div>
   );
 }
@@ -2610,14 +2653,22 @@ function RelativeVolumeCard({ rows }) {
   );
 }
 
-function SparkBars({ rows }) {
+function SparkBars({ rows, crosshairRow, onCrosshairRowChange }) {
   const width = 760;
   const height = 170;
   const padding = 18;
   const maxValue = Math.max(...rows.map((row) => row.volume || 0), 1);
   const barWidth = Math.max(2, (width - padding * 2) / Math.max(rows.length, 1) - 1);
+  const crosshair = chartCrosshairForRows(rows, crosshairRow, width, padding);
+  const y = (value) => height - padding - ((value || 0) / maxValue) * (height - padding * 2);
+  const handlePointerMove = (event) => onCrosshairRowChange?.(rowFromSvgPointer(event, rows, width, padding));
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} className="h-auto w-full">
+    <svg
+      viewBox={`0 0 ${width} ${height}`}
+      onPointerMove={handlePointerMove}
+      onPointerLeave={() => onCrosshairRowChange?.(null)}
+      className="h-auto w-full cursor-crosshair"
+    >
       <line x1={padding} x2={width - padding} y1={height - padding} y2={height - padding} stroke={chartColors.axis} />
       {rows.map((row, index) => {
         const barHeight = ((row.volume || 0) / maxValue) * (height - padding * 2);
@@ -2634,6 +2685,17 @@ function SparkBars({ rows }) {
           />
         );
       })}
+      {crosshair ? (
+        <ChartMiniCrosshair
+          x={crosshair.x}
+          y={y(crosshair.row.volume)}
+          width={width}
+          height={height}
+          padding={padding}
+          row={crosshair.row}
+          valueLabel={`Vol ${number(crosshair.row.volume)}`}
+        />
+      ) : null}
     </svg>
   );
 }
@@ -2745,7 +2807,7 @@ function HelpTip({ label, text }) {
   );
 }
 
-function SparkChart({ title, rows, keys, height = 180, fixedMin, fixedMax, levels = [], note = "" }) {
+function SparkChart({ title, rows, keys, height = 180, fixedMin, fixedMax, levels = [], note = "", crosshairRow, onCrosshairRowChange }) {
   const width = 760;
   const padding = 18;
   if (!rows?.length) {
@@ -2770,6 +2832,10 @@ function SparkChart({ title, rows, keys, height = 180, fixedMin, fixedMax, level
   const range = maxValue - minValue || 1;
   const x = (index) => padding + (index / Math.max(rows.length - 1, 1)) * (width - padding * 2);
   const y = (value) => height - padding - ((value - minValue) / range) * (height - padding * 2);
+  const crosshair = chartCrosshairForRows(rows, crosshairRow, width, padding);
+  const activeKey = keys.find(([key]) => Number.isFinite(crosshair?.row?.[key]))?.[0];
+  const activeValue = activeKey ? crosshair.row[activeKey] : null;
+  const handlePointerMove = (event) => onCrosshairRowChange?.(rowFromSvgPointer(event, rows, width, padding));
 
   return (
     <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
@@ -2787,7 +2853,12 @@ function SparkChart({ title, rows, keys, height = 180, fixedMin, fixedMax, level
           ))}
         </div>
       </div>
-      <svg viewBox={`0 0 ${width} ${height}`} className="h-auto w-full overflow-visible">
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        onPointerMove={handlePointerMove}
+        onPointerLeave={() => onCrosshairRowChange?.(null)}
+        className="h-auto w-full cursor-crosshair overflow-visible"
+      >
         <line x1={padding} x2={width - padding} y1={height - padding} y2={height - padding} stroke={chartColors.axis} />
         <line x1={padding} x2={padding} y1={padding} y2={height - padding} stroke={chartColors.axis} />
         {levels.map((level) => (
@@ -2803,8 +2874,61 @@ function SparkChart({ title, rows, keys, height = 180, fixedMin, fixedMax, level
             .join(" ");
           return <polyline key={key} fill="none" stroke={color} strokeWidth="2" points={points} />;
         })}
+        {crosshair ? (
+          <ChartMiniCrosshair
+            x={crosshair.x}
+            y={Number.isFinite(activeValue) ? y(activeValue) : null}
+            width={width}
+            height={height}
+            padding={padding}
+            row={crosshair.row}
+            valueLabel={activeKey ? `${activeKey} ${number(activeValue)}` : "Value -"}
+          />
+        ) : null}
       </svg>
     </div>
+  );
+}
+
+function chartCrosshairForRows(rows, crosshairRow, width, padding) {
+  if (!rows?.length || !crosshairRow) return null;
+  const targetTime = chartTime(crosshairRow);
+  const index = rows.findIndex((row) => chartTime(row) === targetTime);
+  if (index < 0) return null;
+  return {
+    index,
+    row: rows[index],
+    x: padding + (index / Math.max(rows.length - 1, 1)) * (width - padding * 2),
+  };
+}
+
+function rowFromSvgPointer(event, rows, width, padding) {
+  if (!rows?.length) return null;
+  const rect = event.currentTarget.getBoundingClientRect();
+  const svgX = ((event.clientX - rect.left) / Math.max(rect.width, 1)) * width;
+  const ratio = (svgX - padding) / Math.max(width - padding * 2, 1);
+  const index = Math.max(0, Math.min(rows.length - 1, Math.round(ratio * Math.max(rows.length - 1, 1))));
+  return rows[index] || null;
+}
+
+function ChartMiniCrosshair({ x, y, width, height, padding, row, valueLabel }) {
+  const clampedY = Number.isFinite(y) ? Math.max(padding, Math.min(height - padding, y)) : null;
+  const labelWidth = 184;
+  const labelX = x > width - padding - labelWidth - 10 ? x - labelWidth - 8 : x + 8;
+  const labelY = padding + 6;
+  return (
+    <g pointerEvents="none">
+      <line x1={x} x2={x} y1={padding} y2={height - padding} stroke={chartColors.cursor} strokeDasharray="5 5" opacity="0.75" />
+      {clampedY ? <line x1={padding} x2={width - padding} y1={clampedY} y2={clampedY} stroke={chartColors.cursor} strokeDasharray="5 5" opacity="0.45" /> : null}
+      {clampedY ? <circle cx={x} cy={clampedY} r="3.5" fill={chartColors.cursor} /> : null}
+      <rect x={labelX} y={labelY} width={labelWidth} height="42" rx="6" fill="white" stroke={chartColors.axis} opacity="0.96" />
+      <text x={labelX + 10} y={labelY + 17} className="fill-slate-950 text-[10px] font-black">
+        {row?.date || (row ? formatChartCrosshairTime(chartTime(row), "1Y") : "-")}
+      </text>
+      <text x={labelX + 10} y={labelY + 33} className="fill-slate-600 text-[10px] font-bold">
+        Close {money(row?.close)} / {valueLabel}
+      </text>
+    </g>
   );
 }
 
