@@ -1064,7 +1064,7 @@ function ChartPanel({
         <Metric label="Low" value={money(latest.low)} />
         <Metric label="Close" value={money(latest.close)} />
       </div>
-      <div className="mt-4 hidden gap-4 md:grid">
+      <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {indicatorCards}
       </div>
     </section>
@@ -1305,6 +1305,7 @@ function TradingViewChart({ rows, item, tools, timeframe, chartType, crosshairRo
   const containerRef = useRef(null);
   const chartRef = useRef(null);
   const primarySeriesRef = useRef(null);
+  const [chartSize, setChartSize] = useState({ width: 0, height: 0 });
   const [hover, setHover] = useState(null);
   const [focusedIndicator, setFocusedIndicator] = useState(null);
   const validRows = useMemo(() => rows.filter(isValidPriceRow), [rows]);
@@ -1325,13 +1326,53 @@ function TradingViewChart({ rows, item, tools, timeframe, chartType, crosshairRo
 
   useEffect(() => {
     const container = containerRef.current;
-    if (!container || !displayRows.length) return undefined;
+    if (!container) return undefined;
+
+    let frame = 0;
+    const measure = () => {
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => {
+        const rect = container.getBoundingClientRect();
+        const fallbackWidth = Math.max(280, Math.min(window.innerWidth - 24, 720));
+        const width = Math.floor(rect.width || container.clientWidth || fallbackWidth);
+        const height = Math.floor(rect.height || container.clientHeight || 430);
+        setChartSize((current) => (
+          current.width === width && current.height === height
+            ? current
+            : { width, height }
+        ));
+      });
+    };
+
+    measure();
+
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", measure);
+      return () => {
+        window.cancelAnimationFrame(frame);
+        window.removeEventListener("resize", measure);
+      };
+    }
+
+    const observer = new ResizeObserver(measure);
+    observer.observe(container);
+    window.addEventListener("orientationchange", measure);
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      observer.disconnect();
+      window.removeEventListener("orientationchange", measure);
+    };
+  }, []);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || !displayRows.length || !chartSize.width || !chartSize.height) return undefined;
 
     container.replaceChildren();
     const chart = createChart(container, {
-      width: container.clientWidth,
-      height: 620,
-      autoSize: true,
+      width: chartSize.width,
+      height: chartSize.height,
       layout: {
         background: { type: ColorType.Solid, color: "#ffffff" },
         textColor: "#334155",
@@ -1621,7 +1662,7 @@ function TradingViewChart({ rows, item, tools, timeframe, chartType, crosshairRo
       chartRef.current = null;
       primarySeriesRef.current = null;
     };
-  }, [displayRows, validRows, item, tools, timeframe, chartType, activeFocusedIndicator, focusChoices, onCrosshairRowChange]);
+  }, [displayRows, validRows, item, tools, timeframe, chartType, activeFocusedIndicator, focusChoices, onCrosshairRowChange, chartSize]);
 
   useEffect(() => {
     if (!chartRef.current || !primarySeriesRef.current) return;
